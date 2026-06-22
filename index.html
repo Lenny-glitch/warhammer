@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kill Team — T'au vs Drukhari</title>
+  <style>
+    /* ─── Reset & Variables ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --tau:           #4a9eff;
+      --tau-glow:      rgba(74, 158, 255, 0.25);
+      --drukhari:      #e83c55;
+      --drukhari-glow: rgba(232, 60, 85, 0.25);
+      --bg:            #0e0e1a;
+      --surface:       #181828;
+      --surface2:      #22223a;
+      --border:        #2e2e50;
+      --text:          #dcdcf0;
+      --text-dim:      #6a6a90;
+      --green:         #4caf74;
+      --green-dim:     rgba(76, 175, 116, 0.15);
+      --red-dim:       rgba(200, 60, 60, 0.15);
+      --red-text:      #cc6060;
+      --orange:        #ff8c00;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ─── Dev Banner ─────────────────────────────────────────────────────── */
+    #dev-banner {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 9999;
+      background: var(--orange);
+      color: #000;
+      text-align: center;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    body.dev-mode #dev-banner  { display: block; }
+    body.dev-mode              { padding-top: 29px; }
+
+    /* ─── Normal Mode App Container ─────────────────────────────────────── */
+    #app {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    body.dev-mode #app { display: none; }
+
+    /* ─── Screen System (normal mode) ───────────────────────────────────── */
+    .screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 580px;
+    }
+
+    .screen.active { display: flex; }
+
+    /* ─── Dev Split Container ────────────────────────────────────────────── */
+    #dev-container {
+      display: none;
+      min-height: calc(100vh - 29px);
+    }
+
+    body.dev-mode #dev-container {
+      display: flex;
+    }
+
+    .dev-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      min-width: 0;
+    }
+
+    .dev-panel:last-child { border-right: none; }
+
+    .dev-panel-label {
+      padding: 6px 14px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    #dev-panel-tau      .dev-panel-label { color: var(--tau); }
+    #dev-panel-drukhari .dev-panel-label { color: var(--drukhari); }
+
+    .dev-panel-body {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    /* ─── Panel Content (used in both normal and dev) ───────────────────── */
+    .panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 480px;
+      gap: 0;
+    }
+
+    /* compact variant for dev panels */
+    .panel.compact { max-width: 340px; }
+
+    /* ─── Typography ─────────────────────────────────────────────────────── */
+    .game-title {
+      font-size: 2.4rem;
+      font-weight: 900;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .panel.compact .game-title { font-size: 1.6rem; letter-spacing: 3px; }
+
+    .game-subtitle {
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 2rem;
+    }
+
+    .panel.compact .game-subtitle { margin-bottom: 1.25rem; }
+
+    /* ─── Faction Selection ──────────────────────────────────────────────── */
+    .choose-label {
+      font-size: 12px;
+      color: var(--text-dim);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+      align-self: flex-start;
+    }
+
+    .faction-row {
+      display: flex;
+      gap: 1rem;
+      width: 100%;
+      margin-bottom: 2rem;
+    }
+
+    .panel.compact .faction-row { gap: 0.75rem; margin-bottom: 1.25rem; }
+
+    .faction-card {
+      flex: 1;
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1rem;
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s, opacity 0.15s;
+      text-align: center;
+      color: var(--text);
+      font: inherit;
+    }
+
+    .faction-card:not(:disabled):hover {
+      transform: translateY(-2px);
+    }
+
+    .faction-card.tau:not(:disabled):hover,
+    .faction-card.tau:not(:disabled):focus {
+      border-color: var(--tau);
+      box-shadow: 0 0 0 1px var(--tau), 0 6px 24px var(--tau-glow);
+      outline: none;
+    }
+
+    .faction-card.drukhari:not(:disabled):hover,
+    .faction-card.drukhari:not(:disabled):focus {
+      border-color: var(--drukhari);
+      box-shadow: 0 0 0 1px var(--drukhari), 0 6px 24px var(--drukhari-glow);
+      outline: none;
+    }
+
+    .faction-card:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .faction-card-icon {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      line-height: 1;
+    }
+
+    .panel.compact .faction-card-icon { display: none; }
+
+    .faction-card-name {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .faction-card.tau      .faction-card-name { color: var(--tau); }
+    .faction-card.drukhari .faction-card-name { color: var(--drukhari); }
+
+    .faction-card-detail {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+
+    .faction-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      padding: 3px 8px;
+      border-radius: 3px;
+    }
+
+    .faction-badge.available {
+      background: var(--green-dim);
+      color: var(--green);
+      border: 1px solid rgba(76, 175, 116, 0.3);
+    }
+
+    .faction-badge.taken {
+      background: var(--red-dim);
+      color: var(--red-text);
+      border: 1px solid rgba(200, 60, 60, 0.3);
+    }
+
+    /* ─── Link Row ───────────────────────────────────────────────────────── */
+    .link-section {
+      width: 100%;
+      margin-top: 0.5rem;
+    }
+
+    .link-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .link-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .link-input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 7px 10px;
+      color: var(--text-dim);
+      font-size: 12px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      min-width: 0;
+    }
+
+    /* ─── Buttons ────────────────────────────────────────────────────────── */
+    .btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 7px 14px;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s, border-color 0.1s;
+    }
+
+    .btn:hover { background: #2a2a48; border-color: #444466; }
+
+    /* ─── Waiting Screen ─────────────────────────────────────────────────── */
+    .waiting-faction-name {
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+
+    .waiting-faction-name.tau      { color: var(--tau); }
+    .waiting-faction-name.drukhari { color: var(--drukhari); }
+
+    .waiting-sub {
+      font-size: 13px;
+      color: var(--text-dim);
+      margin-bottom: 2rem;
+    }
+
+    .panel.compact .waiting-sub { margin-bottom: 1rem; font-size: 12px; }
+
+    /* ─── Loading Spinner ────────────────────────────────────────────────── */
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid var(--surface2);
+      border-top-color: var(--tau);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      margin-bottom: 1rem;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Error Screen ───────────────────────────────────────────────────── */
+    .error-box {
+      background: var(--red-dim);
+      border: 1px solid rgba(200, 60, 60, 0.3);
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      color: var(--red-text);
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+      width: 100%;
+      text-align: center;
+    }
+
+    /* ─── Game Screen Placeholder ────────────────────────────────────────── */
+    .game-placeholder {
+      color: var(--text-dim);
+      font-size: 14px;
+      text-align: center;
+    }
+
+    /* ─── Status Flash ───────────────────────────────────────────────────── */
+    .status-flash {
+      font-size: 12px;
+      color: var(--text-dim);
+      min-height: 1.4em;
+      text-align: center;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Dev mode indicator: always in DOM, shown only when ?dev=true -->
+  <div id="dev-banner">
+    ⚠ TEST MODE — Both player perspectives shown side by side
+  </div>
+
+  <!-- Normal mode: one screen visible at a time -->
+  <div id="app">
+    <div id="screen-loading" class="screen active">
+      <div class="spinner"></div>
+      <p style="color:var(--text-dim); font-size:14px;">Loading game…</p>
+    </div>
+
+    <div id="screen-error" class="screen">
+      <h1 class="game-title" style="margin-bottom:1.5rem;">Error</h1>
+      <div class="error-box" id="error-msg">Something went wrong.</div>
+      <button class="btn" onclick="createGame()">Start New Game</button>
+    </div>
+
+    <!-- Content is injected by JS for these three screens -->
+    <div id="screen-faction" class="screen"></div>
+    <div id="screen-waiting" class="screen"></div>
+
+    <div id="screen-game" class="screen">
+      <p class="game-placeholder">Board rendering coming in Step 2.</p>
+    </div>
+  </div>
+
+  <!-- Dev mode: two panels side by side -->
+  <div id="dev-container">
+    <div class="dev-panel" id="dev-panel-tau">
+      <div class="dev-panel-label">Tau Player Perspective</div>
+      <div class="dev-panel-body" id="dev-body-tau"></div>
+    </div>
+    <div class="dev-panel" id="dev-panel-drukhari">
+      <div class="dev-panel-label">Drukhari Player Perspective</div>
+      <div class="dev-panel-body" id="dev-body-drukhari"></div>
+    </div>
+  </div>
+
+  <!-- Firebase compat SDK (v9) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <!-- Project credentials — must exist before this script runs -->
+  <script src="firebase-config.js"></script>
+
+  <script>
+  'use strict';
+
+  // ─── Board constants (used here only for data definitions) ─────────────────
+  const BOARD_W = 22;  // inches
+  const BOARD_H = 30;  // inches
+
+  // ─── Unit factory helpers ────────────────────────────────────────────────────
+  // Canonical coordinate origin: top-left corner.
+  // Tau deploys at the BOTTOM (y ∈ [27, 30]), Drukhari at the TOP (y ∈ [0, 3]).
+  // Unit positions are in inches.
+
+  function makeTauUnits() {
+    // Two rows in the Tau deployment zone
+    const R1Y = 28.0;
+    const R2Y = 29.5;
+    // Row 1 x-positions (5 slots): ION, PF, PF, PF, PF
+    const r1x = [2.5, 6.0, 9.5, 13.0, 17.0];
+    // Row 2 x-positions (5 slots): SU, PF, PF, PF, RR
+    const r2x = [2.5, 6.0, 10.0, 14.0, 19.0];
+
+    const units = [];
+
+    // Shas'ui (leader) — row 2, slot 0
+    units.push({
+      id: 'tau-0', abbr: 'SU', name: "Shas'ui",
+      faction: 'tau', leader: true,
+      wounds: 7, maxWounds: 7,
+      move: 6, bs: 4,
+      weapon: { name: 'Pulse Rifle', range: 30, ap: 0, damage: 1 },
+      x: r2x[0], y: R2Y,
+      activated: false, dead: false,
+    });
+
+    // 7 standard Pathfinders
+    const pfPositions = [
+      { x: r1x[1], y: R1Y },
+      { x: r1x[2], y: R1Y },
+      { x: r1x[3], y: R1Y },
+      { x: r1x[4], y: R1Y },
+      { x: r2x[1], y: R2Y },
+      { x: r2x[2], y: R2Y },
+      { x: r2x[3], y: R2Y },
+    ];
+    pfPositions.forEach((pos, i) => {
+      units.push({
+        id: `tau-${i + 1}`, abbr: 'PF', name: 'Pathfinder',
+        faction: 'tau', leader: false,
+        wounds: 7, maxWounds: 7,
+        move: 6, bs: 4,
+        weapon: { name: 'Pulse Carbine', range: 18, ap: 0, damage: 1 },
+        x: pos.x, y: pos.y,
+        activated: false, dead: false,
+      });
+    });
+
+    // Ion Rifle — row 1, slot 0
+    units.push({
+      id: 'tau-8', abbr: 'IR', name: 'Ion Pathfinder',
+      faction: 'tau', leader: false,
+      wounds: 7, maxWounds: 7,
+      move: 6, bs: 4,
+      weapon: { name: 'Ion Rifle', range: 30, ap: -1, damage: 2 },
+      x: r1x[0], y: R1Y,
+      activated: false, dead: false,
+    });
+
+    // Rail Rifle — row 2, slot 4
+    units.push({
+      id: 'tau-9', abbr: 'RR', name: 'Rail Pathfinder',
+      faction: 'tau', leader: false,
+      wounds: 7, maxWounds: 7,
+      move: 6, bs: 4,
+      weapon: { name: 'Rail Rifle', range: 30, ap: -2, damage: 2 },
+      x: r2x[4], y: R2Y,
+      activated: false, dead: false,
+    });
+
+    return units;
+  }
+
+  function makeDrukhariUnits() {
+    // Two rows in the Drukhari deployment zone
+    const R1Y = 1.0;
+    const R2Y = 2.5;
+    // Row 1 x-positions (6 slots): HX, WY, WY, WY, WY, WY
+    const r1x = [2.0, 5.5, 9.0, 12.5, 16.0, 19.5];
+    // Row 2 x-positions (6 slots): WY, WY, WY, WY, RF, SN
+    const r2x = [2.0, 5.5, 9.0, 12.5, 16.0, 19.5];
+
+    const units = [];
+
+    // Hekatrix (leader) — row 1, slot 0
+    units.push({
+      id: 'dru-0', abbr: 'HX', name: 'Hekatrix',
+      faction: 'drukhari', leader: true,
+      wounds: 8, maxWounds: 8,
+      move: 8, ws: 3,
+      weapon: { name: 'Hekatarii Blade', range: 0, ap: -1, damage: 1 },
+      x: r1x[0], y: R1Y,
+      activated: false, dead: false,
+    });
+
+    // 9 standard Wyches
+    const wyPositions = [
+      { x: r1x[1], y: R1Y },
+      { x: r1x[2], y: R1Y },
+      { x: r1x[3], y: R1Y },
+      { x: r1x[4], y: R1Y },
+      { x: r1x[5], y: R1Y },
+      { x: r2x[0], y: R2Y },
+      { x: r2x[1], y: R2Y },
+      { x: r2x[2], y: R2Y },
+      { x: r2x[3], y: R2Y },
+    ];
+    wyPositions.forEach((pos, i) => {
+      units.push({
+        id: `dru-${i + 1}`, abbr: 'WY', name: 'Wych',
+        faction: 'drukhari', leader: false,
+        wounds: 8, maxWounds: 8,
+        move: 8, ws: 3,
+        weapon: { name: 'Hekatarii Blade', range: 0, ap: -1, damage: 1 },
+        x: pos.x, y: pos.y,
+        activated: false, dead: false,
+      });
+    });
+
+    // Razorflail — row 2, slot 4
+    units.push({
+      id: 'dru-10', abbr: 'RF', name: 'Razorflail Wych',
+      faction: 'drukhari', leader: false,
+      wounds: 8, maxWounds: 8,
+      move: 8, ws: 3,
+      weapon: { name: 'Razorflail', range: 0, ap: 0, damage: 1, specialRule: 'rerollWounds' },
+      x: r2x[4], y: R2Y,
+      activated: false, dead: false,
+    });
+
+    // Shardnet — row 2, slot 5
+    units.push({
+      id: 'dru-11', abbr: 'SN', name: 'Shardnet Wych',
+      faction: 'drukhari', leader: false,
+      wounds: 8, maxWounds: 8,
+      move: 8, ws: 3,
+      weapon: { name: 'Shardnet', range: 0, ap: 0, damage: 1, specialRule: 'minusOneAttack' },
+      x: r2x[5], y: R2Y,
+      activated: false, dead: false,
+    });
+
+    return units;
+  }
+
+  function makeDefaultTerrain() {
+    // All coords in inches. Terrain must stay clear of deployment zones (y < 3, y > 27).
+    return [
+      { id: 't1', x: 8.0, y: 12.0, width: 6.0, height: 5.0 }, // central large building
+      { id: 't2', x: 1.0, y:  5.0, width: 5.0, height: 3.0 }, // top-left ruin
+      { id: 't3', x: 16.0, y: 5.0, width: 5.0, height: 3.0 }, // top-right ruin
+      { id: 't4', x: 1.0, y: 22.0, width: 5.0, height: 3.0 }, // bottom-left ruin
+      { id: 't5', x: 16.0, y: 22.0, width: 5.0, height: 3.0 },// bottom-right ruin
+      { id: 't6', x: 9.0, y:  3.5, width: 3.0, height: 2.0 }, // top-center scatter
+      { id: 't7', x: 9.0, y: 24.5, width: 3.0, height: 2.0 }, // bottom-center scatter
+    ];
+  }
+
+  // ─── App state ──────────────────────────────────────────────────────────────
+  let db;
+  let gameId;
+  let devMode;
+  let gameData  = null;                          // live snapshot from Firebase
+  let myFaction = null;                          // 'tau' | 'drukhari' | null (normal mode)
+  const devFactions = { tau: null, drukhari: null }; // per-panel claimed faction (dev mode)
+
+  // ─── Bootstrap ──────────────────────────────────────────────────────────────
+  window.addEventListener('DOMContentLoaded', () => {
+    if (typeof firebaseConfig === 'undefined') {
+      showError(
+        'firebase-config.js not found.<br>' +
+        'Copy <code>firebase-config.example.js</code> → <code>firebase-config.js</code>' +
+        ' and fill in your Firebase project credentials.'
+      );
+      return;
+    }
+
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+    } catch (e) {
+      showError(`Firebase initialisation failed: ${e.message}`);
+      return;
+    }
+
+    // Normalize the query string in case the user appended ?dev=true to a URL
+    // that already had ?game=ID, producing the malformed ?game=ID?dev=true form.
+    const rawSearch = window.location.search.slice(1).replace(/\?/g, '&');
+    const params = new URLSearchParams(rawSearch);
+    devMode = params.get('dev') === 'true';
+    gameId  = params.get('game') || null;
+
+    if (devMode) {
+      document.body.classList.add('dev-mode');
+    }
+
+    if (!gameId) {
+      createGame();
+    } else {
+      loadGame(gameId);
+    }
+  });
+
+  // ─── Game creation ───────────────────────────────────────────────────────────
+  async function createGame() {
+    showScreen('loading');
+    try {
+      const ref  = db.ref('games').push();
+      gameId     = ref.key;
+
+      await ref.set({
+        players: { tau: null, drukhari: null },
+        state: {
+          round:        1,
+          phase:        'initiative',
+          activePlayer: null,
+          initiative:   null,
+          units: {
+            tau:      makeTauUnits(),
+            drukhari: makeDrukhariUnits(),
+          },
+          terrain: makeDefaultTerrain(),
+        },
+        log: [],
+      });
+
+      // Reflect the new gameId in the URL without navigating
+      const url = new URL(window.location.href);
+      url.searchParams.set('game', gameId);
+      if (devMode) url.searchParams.set('dev', 'true');
+      window.history.replaceState({}, '', url.toString());
+
+      subscribeToGame();
+    } catch (e) {
+      showError(`Failed to create game: ${e.message}`);
+    }
+  }
+
+  // ─── Game loading (join existing) ────────────────────────────────────────────
+  function loadGame(id) {
+    gameId = id;
+    showScreen('loading');
+
+    db.ref(`games/${gameId}`).once('value',
+      snap => {
+        if (!snap.exists()) {
+          showError(
+            `Game <code>${gameId}</code> was not found.<br>` +
+            `<button class="btn" style="margin-top:1rem" onclick="createGame()">Start New Game</button>`
+          );
+          return;
+        }
+        subscribeToGame();
+      },
+      err => showError(`Could not load game: ${err.message}`)
+    );
+  }
+
+  // ─── Firebase real-time listener ─────────────────────────────────────────────
+  function subscribeToGame() {
+    db.ref(`games/${gameId}`).on('value', snap => {
+      gameData = snap.val();
+      if (gameData) render();
+    });
+  }
+
+  // ─── Top-level render dispatcher ─────────────────────────────────────────────
+  function render() {
+    if (devMode) {
+      renderDevMode();
+    } else {
+      renderNormalMode();
+    }
+  }
+
+  // ─── Normal mode rendering ────────────────────────────────────────────────────
+  function renderNormalMode() {
+    const players = gameData.players || {};
+
+    // Restore faction from localStorage on first render after a refresh
+    if (!myFaction) {
+      const stored = localStorage.getItem(`killteam_faction_${gameId}`);
+      if (stored && players[stored] === 'claimed') myFaction = stored;
+    }
+
+    const bothClaimed = players.tau === 'claimed' && players.drukhari === 'claimed';
+
+    if (!myFaction) {
+      mountPanel(
+        document.getElementById('screen-faction'),
+        buildFactionPanel(players, /*panelId*/ null, /*compact*/ false)
+      );
+      showScreen('faction');
+    } else if (!bothClaimed) {
+      mountPanel(
+        document.getElementById('screen-waiting'),
+        buildWaitingPanel(myFaction, /*compact*/ false)
+      );
+      showScreen('waiting');
+    } else {
+      showScreen('game');
+    }
+  }
+
+  // ─── Dev mode rendering ───────────────────────────────────────────────────────
+  function renderDevMode() {
+    ['tau', 'drukhari'].forEach(panelId => renderDevPanel(panelId));
+  }
+
+  function renderDevPanel(panelId) {
+    const body         = document.getElementById(`dev-body-${panelId}`);
+    const players      = gameData.players || {};
+    const claimedFac   = devFactions[panelId];
+    const bothClaimed  = players.tau === 'claimed' && players.drukhari === 'claimed';
+
+    let content;
+    if (!claimedFac) {
+      content = buildFactionPanel(players, panelId, /*compact*/ true);
+    } else if (!bothClaimed) {
+      content = buildWaitingPanel(claimedFac, /*compact*/ true);
+    } else {
+      content = buildGamePlaceholder();
+    }
+
+    mountPanel(body, content);
+  }
+
+  // ─── Panel builders ───────────────────────────────────────────────────────────
+  // Each builder returns a detached DOM element; mountPanel drops it into place.
+
+  function buildFactionPanel(players, panelId, compact) {
+    const tauTaken      = players.tau      === 'claimed';
+    const drukhariTaken = players.drukhari === 'claimed';
+    const gameUrl       = buildGameUrl();
+
+    const wrap = el('div', { className: 'panel' + (compact ? ' compact' : '') });
+
+    wrap.appendChild(el('h1', { className: 'game-title', textContent: 'KILL TEAM' }));
+    wrap.appendChild(el('p',  { className: 'game-subtitle', textContent: "T'au Pathfinders vs Drukhari Wyches" }));
+    wrap.appendChild(el('p',  { className: 'choose-label', textContent: 'Choose your faction' }));
+
+    // Faction cards
+    const row = el('div', { className: 'faction-row' });
+    row.appendChild(buildFactionCard('tau',      tauTaken,      panelId));
+    row.appendChild(buildFactionCard('drukhari', drukhariTaken, panelId));
+    wrap.appendChild(row);
+
+    // Share link (only in full-size panel)
+    if (!compact) {
+      const section = el('div', { className: 'link-section' });
+      section.appendChild(el('p', { className: 'link-label', textContent: 'Share this link with your opponent' }));
+      const linkRow = el('div', { className: 'link-row' });
+      const input   = el('input', { className: 'link-input', type: 'text', value: gameUrl, readOnly: true });
+      const copyBtn = el('button', { className: 'btn', textContent: 'Copy' });
+      copyBtn.addEventListener('click', () => copyToClipboard(input, copyBtn));
+      linkRow.appendChild(input);
+      linkRow.appendChild(copyBtn);
+      section.appendChild(linkRow);
+      wrap.appendChild(section);
+    }
+
+    return wrap;
+  }
+
+  function buildFactionCard(faction, taken, panelId) {
+    const isTau    = faction === 'tau';
+    const label    = isTau ? "T'au Pathfinders" : 'Drukhari Wyches';
+    const detail   = isTau ? '10 operatives · Ranged' : '12 operatives · Melee';
+    const icon     = isTau ? '◉' : '◉';
+
+    const card = el('button', {
+      className: `faction-card ${faction}${taken ? ' taken' : ''}`,
+      disabled:  taken,
+    });
+
+    card.appendChild(el('div', { className: 'faction-card-icon', textContent: icon }));
+    card.appendChild(el('div', { className: 'faction-card-name', textContent: label }));
+    card.appendChild(el('div', { className: 'faction-card-detail', textContent: detail }));
+    card.appendChild(el('div', {
+      className:   'faction-badge ' + (taken ? 'taken' : 'available'),
+      textContent: taken ? 'TAKEN' : 'AVAILABLE',
+    }));
+
+    if (!taken) {
+      card.addEventListener('click', () => claimFaction(faction, panelId));
+    }
+
+    return card;
+  }
+
+  function buildWaitingPanel(faction, compact) {
+    const isTau   = faction === 'tau';
+    const label   = isTau ? "T'au Pathfinders" : 'Drukhari Wyches';
+    const gameUrl = buildGameUrl();
+
+    const wrap = el('div', { className: 'panel' + (compact ? ' compact' : '') });
+
+    wrap.appendChild(el('h1', { className: 'game-title', textContent: 'KILL TEAM' }));
+    wrap.appendChild(el('p',  { className: `waiting-faction-name ${faction}`, textContent: label }));
+    wrap.appendChild(el('p',  { className: 'waiting-sub', textContent: 'Waiting for opponent to join…' }));
+
+    if (!compact) {
+      const section = el('div', { className: 'link-section' });
+      section.appendChild(el('p', { className: 'link-label', textContent: 'Send this link to your opponent' }));
+      const linkRow = el('div', { className: 'link-row' });
+      const input   = el('input', { className: 'link-input', type: 'text', value: gameUrl, readOnly: true });
+      const copyBtn = el('button', { className: 'btn', textContent: 'Copy' });
+      copyBtn.addEventListener('click', () => copyToClipboard(input, copyBtn));
+      linkRow.appendChild(input);
+      linkRow.appendChild(copyBtn);
+      section.appendChild(linkRow);
+      wrap.appendChild(section);
+    }
+
+    return wrap;
+  }
+
+  function buildGamePlaceholder() {
+    const wrap = el('div', { className: 'panel' });
+    wrap.appendChild(el('p', { className: 'game-placeholder', textContent: 'Board rendering coming in Step 2.' }));
+    return wrap;
+  }
+
+  // ─── Mount helper: replace container's children with new element ──────────────
+  function mountPanel(container, newChild) {
+    // Only replace DOM if content actually changed to avoid wiping focused inputs
+    const current = container.firstElementChild;
+    if (current && current.isEqualNode(newChild)) return;
+    container.innerHTML = '';
+    container.appendChild(newChild);
+  }
+
+  // ─── Claim faction via Firebase transaction ───────────────────────────────────
+  async function claimFaction(faction, devPanelId) {
+    const ref = db.ref(`games/${gameId}/players/${faction}`);
+
+    // Set local state before the await so that when Firebase fires its
+    // real-time listener optimistically (before the transaction resolves),
+    // render() already sees the correct faction ownership and advances to
+    // the waiting screen rather than staying on faction selection.
+    if (devPanelId) {
+      devFactions[devPanelId] = faction;
+    } else {
+      myFaction = faction;
+      localStorage.setItem(`killteam_faction_${gameId}`, faction);
+    }
+
+    let committed = false;
+    try {
+      const result = await ref.transaction(current => {
+        // Abort if already claimed by anyone
+        if (current !== null) return undefined;
+        return 'claimed';
+      });
+      committed = result.committed;
+    } catch (e) {
+      // Rollback local state on error
+      if (devPanelId) { devFactions[devPanelId] = null; }
+      else { myFaction = null; localStorage.removeItem(`killteam_faction_${gameId}`); }
+      alert(`Claim failed: ${e.message}`);
+      return;
+    }
+
+    if (!committed) {
+      // Rollback: faction was claimed by opponent between our check and write
+      if (devPanelId) { devFactions[devPanelId] = null; }
+      else { myFaction = null; localStorage.removeItem(`killteam_faction_${gameId}`); }
+      const name = faction === 'tau' ? "T'au" : 'Drukhari';
+      alert(`${name} was just claimed by your opponent. Please choose the other faction.`);
+    }
+  }
+
+  // ─── URL helpers ─────────────────────────────────────────────────────────────
+  function buildGameUrl() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('game', gameId);
+    url.searchParams.delete('dev');  // never share the dev URL
+    return url.toString();
+  }
+
+  // ─── Clipboard helper ─────────────────────────────────────────────────────────
+  function copyToClipboard(inputEl, btnEl) {
+    const text = inputEl.value;
+    const original = btnEl.textContent;
+
+    navigator.clipboard.writeText(text).catch(() => {
+      // Fallback for browsers that block clipboard API
+      inputEl.select();
+      document.execCommand('copy');
+    });
+
+    btnEl.textContent = 'Copied!';
+    setTimeout(() => { btnEl.textContent = original; }, 1800);
+  }
+
+  // ─── Screen visibility (normal mode only) ────────────────────────────────────
+  function showScreen(name) {
+    document.querySelectorAll('#app .screen').forEach(s => s.classList.remove('active'));
+    const target = document.getElementById(`screen-${name}`);
+    if (target) target.classList.add('active');
+  }
+
+  function showError(html) {
+    document.getElementById('error-msg').innerHTML = html;
+    showScreen('error');
+  }
+
+  // ─── DOM creation shorthand ───────────────────────────────────────────────────
+  function el(tag, props = {}) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (k === 'className')   node.className   = v;
+      else if (k === 'textContent') node.textContent = v;
+      else                     node[k]          = v;
+    }
+    return node;
+  }
+  </script>
+</body>
+</html>
