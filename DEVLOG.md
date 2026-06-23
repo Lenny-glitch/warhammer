@@ -181,9 +181,76 @@ Read-only datasheet-style card. Header (name, faction·role, points badge), stat
 | 5 | Library — faction-filtered unit list, search, delete from list | ✓ Complete |
 
 ### What's next (Phase 2)
-- Roster Builder (`#roster/new/{system}`) — pick units from library, choose loadouts, track points
+- Roster Builder (`#roster/new/{system}/{factionId}`) — pick units from library, choose loadouts, track points
 - Roster view (`#roster/{rosterId}`) — shareable roster summary
 - Kill Team Game App — async 2-player implementation wired to Roster Manager
 - Adaptive Equipment rules text entry for Kasrkin Trooper
+
+---
+
+## Phase 2 — In Progress (started 2026-06-23)
+
+### Factions in scope
+- **Tau Pathfinders** — seeded composition rules + 3 test operative units (Shas'ui, Shas'la, Weapons Expert)
+- **Void-dancer Troupe** (replacing Drukhari Wyches) — MHT rules extracted, pending seed after review
+- **Ork Kommandos** (`ork-kommandos`) — fully seeded: composition rules + 11 operative units (Boss Nob through Snipa Boy)
+
+### Discrepancies vs Phase 2 brief (Wahapedia wins per brief instructions)
+
+| Item | Brief said | Wahapedia says | Resolved |
+|---|---|---|---|
+| KT24 points limit | `pointsLimit: 1000` in composition rules | KT24 has no points system — count-based only | `pointsLimit` excluded from composition seed |
+| MB3 RECON DRONE | Not mentioned | Counts as 2 operative selections | `countsAs: 2` unit property; legality checker must use this value |
+
+### Phase 2 routing
+```
+#roster/new/{system}/{factionId}   → Roster Builder
+#roster/{rosterId}                 → Roster View (Step 5)
+```
+Home screen "Browse & Build Roster" now navigates to Library (`#library/{system}`) — user picks faction there, clicks "Build Roster" button in faction header.
+
+### Step 1: Roster Builder shell — COMPLETE (2026-06-23)
+Stacked layout: roster name input + operative counter in header, operative list (empty state), unit browser loaded from Firebase. Add/remove/reorder operatives. Greying logic uses composition rules (slot availability, max constraints, unique constraints). Points shown cosmetically. Save Draft and Publish stubs (disabled, wired in Steps 4/6).
+
+### Extracted Void-dancer Troupe composition (from local MHT — pending seed)
+```
+Total: 8 operatives
+Required: 1 Lead Player (LEADER, APL 3, MOVE 7", SAVE 4+, WOUNDS 9)
+7 from list:
+  - Death Jester (unique, max 1, APL 3, MOVE 7", SAVE 4+, WOUNDS 9)
+  - Player       (repeatable, APL 3, MOVE 7", SAVE 4+, WOUNDS 8)
+  - Shadowseer   (unique, max 1, APL 3, MOVE 7", SAVE 4+, WOUNDS 9)
+Special: max 1 fusion pistol and max 1 neuro disruptor across the whole team
+```
+Weapon profiles (ATK/HIT/DMG/WR) for each operative need targeted extraction or manual entry.
+
+### Ork Kommandos — seeded 2026-06-23
+
+factionId: `ork-kommandos`, parentFaction: Orks
+
+```
+Total: 10 operatives (fixed)
+Required: 1 Boss Nob (Leader)
+Max 2 Bomb Squig (each counts as ½ slot — 2 squigs = 1 slot)
+All other operatives unique except Kommando Boy (role: Boy) and Bomb Squig
+```
+
+11 operative units seeded with full weapon profiles:
+
+| Operative | Role | APL | SAVE | WOUNDS | countsAs |
+|---|---|---|---|---|---|
+| Boss Nob | Leader | 3 | 5+ | 14 | 1 |
+| Bomb Squig | Bomb Squig | 2 | 5+ | 5 | **0.5** |
+| Kommando Boy | Boy | 2 | 5+ | 10 | 1 |
+| Breacha Boy | Breacha Boy | 2 | 5+ | 10 | 1 |
+| Burna Boy | Burna Boy | 2 | 5+ | 10 | 1 |
+| Comms Boy | Comms Boy | 2 | 5+ | 10 | 1 |
+| Dakka Boy | Dakka Boy | 2 | 5+ | 10 | 1 |
+| Grot | Grot | 2 | 5+ | 5 | 1 |
+| Rokkit Boy | Rokkit Boy | 2 | 5+ | 10 | 1 |
+| Slasha Boy | Slasha Boy | 2 | 5+ | 10 | 1 |
+| Snipa Boy | Snipa Boy | 2 | 5+ | 10 | 1 |
+
+Note: Slasha Boy and Comms Boy have the BOY-related compound keywords (SLASHA BOY, COMMS BOY) but NOT the standalone BOY keyword — only Kommando Boy is repeatable.
 
 ---

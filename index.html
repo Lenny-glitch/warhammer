@@ -852,7 +852,26 @@
       padding-bottom: 0.45rem;
       border-bottom: 1px solid var(--border);
       margin-bottom: 0.15rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
+
+    .lib-build-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      padding: 0.18rem 0.55rem;
+      text-transform: uppercase;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .lib-build-btn:hover { color: var(--accent); border-color: var(--accent); }
 
     .lib-unit-row {
       display: flex;
@@ -934,6 +953,157 @@
       font-size: 0.85rem;
       padding: 3.5rem 1rem;
     }
+
+    /* ── ROSTER BUILDER ── */
+    .rb-wrap {
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 1.5rem 1.5rem 6rem;
+    }
+
+    .rb-header {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .rb-header-top {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .rb-name-input { flex: 1; font-size: 1rem; font-weight: 600; }
+
+    .rb-counter {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .rb-counter.full { color: var(--green); }
+    .rb-counter.over { color: var(--red); }
+
+    .rb-meta { font-size: 0.78rem; color: var(--text-dim); }
+
+    .rb-legality-banner {
+      margin-top: 0.6rem;
+      font-size: 0.8rem;
+      border-radius: 5px;
+      padding: 0.45rem 0.75rem;
+      display: none;
+    }
+    .rb-legality-banner.legal {
+      display: block;
+      background: rgba(76,175,116,0.12);
+      border: 1px solid var(--green);
+      color: var(--green);
+    }
+    .rb-legality-banner.illegal {
+      display: block;
+      background: rgba(204,96,96,0.12);
+      border: 1px solid var(--red);
+      color: var(--red);
+    }
+
+    .rb-section-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+    }
+    .rb-browser-label { margin-top: 1.5rem; }
+
+    .rb-op-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-height: 60px;
+    }
+
+    .rb-op-empty {
+      color: var(--text-dim);
+      font-size: 0.82rem;
+      padding: 1.25rem 1rem;
+      text-align: center;
+    }
+
+    .rb-op-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .rb-op-row:last-child { border-bottom: none; }
+
+    .rb-op-info { flex: 1; min-width: 0; }
+    .rb-op-name { font-size: 0.875rem; font-weight: 600; }
+    .rb-op-role { font-size: 0.72rem; color: var(--text-dim); }
+    .rb-op-pts  { font-size: 0.75rem; color: var(--text-dim); flex-shrink: 0; }
+    .rb-op-controls { display: flex; gap: 0.2rem; flex-shrink: 0; }
+
+    .rb-browser {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .rb-unit-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .rb-unit-row:last-child { border-bottom: none; }
+    .rb-unit-row.maxed { opacity: 0.4; }
+
+    .rb-unit-info { flex: 1; min-width: 0; }
+    .rb-unit-name { font-size: 0.85rem; font-weight: 600; }
+    .rb-unit-role { font-size: 0.7rem; color: var(--text-dim); }
+    .rb-unit-pts  { font-size: 0.72rem; color: var(--text-dim); flex-shrink: 0; }
+
+    .rb-add-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.25rem 0.65rem;
+      transition: color 0.1s, border-color 0.1s, background 0.1s;
+      flex-shrink: 0;
+    }
+    .rb-add-btn:hover:not(:disabled) {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .rb-add-btn:disabled { cursor: not-allowed; opacity: 0.4; }
+
+    .rb-actions {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 0.75rem;
+      justify-content: flex-end;
+      padding: 0.875rem 1.5rem;
+      z-index: 9;
+    }
+    .rb-actions .btn { width: auto; padding: 0.75rem 1.5rem; }
   </style>
 </head>
 <body>
@@ -974,13 +1144,8 @@
   <!-- SCREEN: LIBRARY -->
   <div id="screen-library" class="screen"></div>
 
-  <!-- SCREEN: ROSTER BUILDER (placeholder) -->
-  <div id="screen-roster" class="screen">
-    <div class="placeholder">
-      <h2>Roster Builder</h2>
-      <p>Coming soon</p>
-    </div>
-  </div>
+  <!-- SCREEN: ROSTER BUILDER -->
+  <div id="screen-roster" class="screen"></div>
 
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -1062,7 +1227,7 @@
     },
 
     goToRoster() {
-      if (App.selectedSystem) location.hash = `#roster/new/${App.selectedSystem}`;
+      if (App.selectedSystem) location.hash = `#library/${App.selectedSystem}`;
     }
   };
 
@@ -1766,7 +1931,10 @@
 
       list.innerHTML = groups.map(f => `
         <div class="lib-faction-group" data-faction="${f.id}">
-          <div class="lib-faction-header">${f.name}</div>
+          <div class="lib-faction-header">
+            <span>${f.name}</span>
+            <button class="lib-build-btn" onclick="event.stopPropagation();location.hash='#roster/new/${system}/${f.id}'">Build Roster</button>
+          </div>
           ${f.units.map(u => `
             <div class="lib-unit-row"
                  onclick="Library._open('${system}','${f.id}','${u.id}')">
@@ -2024,6 +2192,248 @@
     }
   };
 
+  // ── ROSTER BUILDER ───────────────────────────────────────────────────────────
+
+  const RosterBuilder = {
+    state: null,
+
+    _fresh(system, factionId) {
+      return {
+        rosterId: null, name: '', system, factionId,
+        factionName: '', operatives: [], compositionRules: null,
+        unitLibrary: [], _iCtr: 0,
+      };
+    },
+
+    async render(system, factionId) {
+      if (!system || !factionId) {
+        document.getElementById('screen-roster').innerHTML =
+          '<div class="placeholder"><h2>Select a faction from the Library to build a roster</h2></div>';
+        return;
+      }
+      RosterBuilder.state = RosterBuilder._fresh(system, factionId);
+      const el = document.getElementById('screen-roster');
+      el.innerHTML = RosterBuilder._shell();
+      RosterBuilder._bind();
+      await RosterBuilder._load();
+    },
+
+    async _load() {
+      const { system, factionId } = RosterBuilder.state;
+      try {
+        const [infoSnap, unitsSnap] = await Promise.all([
+          App.db.ref(`gameData/${system}/factions/${factionId}/info`).once('value'),
+          App.db.ref(`gameData/${system}/factions/${factionId}/units`).once('value'),
+        ]);
+
+        const info = infoSnap.val() || {};
+        RosterBuilder.state.factionName      = info.name || factionId;
+        RosterBuilder.state.compositionRules = info.compositionRules || null;
+
+        const def = `${RosterBuilder.state.factionName} Roster`;
+        RosterBuilder.state.name = def;
+        const nameEl = document.getElementById('rb-name');
+        if (nameEl && !nameEl.value) nameEl.value = def;
+        document.getElementById('rb-faction').textContent = RosterBuilder.state.factionName;
+
+        const val = unitsSnap.val() || {};
+        RosterBuilder.state.unitLibrary = Object.entries(val)
+          .map(([id, u]) => ({ ...u, id, countsAs: u.countsAs || 1 }))
+          .sort((a, b) => (a.role || '').localeCompare(b.role || '') || (a.name || '').localeCompare(b.name || ''));
+
+        RosterBuilder._renderBrowser();
+        RosterBuilder._updateHeader();
+      } catch (err) {
+        document.getElementById('rb-browser').innerHTML =
+          `<div class="rb-op-empty">Error loading faction: ${err.message}</div>`;
+      }
+    },
+
+    _shell() {
+      return `
+        <div class="rb-wrap">
+          <div class="rb-header">
+            <div class="rb-header-top">
+              <input class="uf-input rb-name-input" id="rb-name" type="text" placeholder="Roster name…">
+              <div class="rb-counter" id="rb-counter">0 / — ops</div>
+            </div>
+            <div class="rb-meta" id="rb-faction">Loading…</div>
+            <div class="rb-legality-banner" id="rb-legality"></div>
+          </div>
+          <div class="rb-section-label">Operatives</div>
+          <div class="rb-op-list" id="rb-op-list">
+            <div class="rb-op-empty">No operatives added yet.</div>
+          </div>
+          <div class="rb-section-label rb-browser-label">Unit Browser</div>
+          <div class="rb-browser" id="rb-browser">
+            <div class="loading-text">Loading…</div>
+          </div>
+        </div>
+        <div class="rb-actions">
+          <button class="btn btn-secondary" id="rb-save"    disabled>Save Draft</button>
+          <button class="btn btn-primary"   id="rb-publish" disabled>Publish</button>
+        </div>
+      `;
+    },
+
+    _addOperative(unit) {
+      const instanceId = `op_${Date.now()}_${++RosterBuilder.state._iCtr}`;
+      const chosenLoadout = {};
+      RosterBuilder._arr(unit.loadoutOptions).forEach(slot => {
+        const ids = RosterBuilder._arr(slot.weaponIds);
+        if (ids.length) chosenLoadout[slot.slot] = ids[0];
+      });
+      RosterBuilder.state.operatives.push({
+        instanceId, unitId: unit.id, unitName: unit.name,
+        points: unit.points != null ? unit.points : null,
+        countsAs: unit.countsAs || 1, role: unit.role || null,
+        chosenLoadout, notes: '',
+      });
+      RosterBuilder._renderOperatives();
+      RosterBuilder._renderBrowser();
+      RosterBuilder._updateHeader();
+    },
+
+    _removeOperative(instanceId) {
+      RosterBuilder.state.operatives =
+        RosterBuilder.state.operatives.filter(op => op.instanceId !== instanceId);
+      RosterBuilder._renderOperatives();
+      RosterBuilder._renderBrowser();
+      RosterBuilder._updateHeader();
+    },
+
+    _moveOperative(instanceId, dir) {
+      const ops = RosterBuilder.state.operatives;
+      const idx = ops.findIndex(op => op.instanceId === instanceId);
+      if (dir === 'up'   && idx > 0)              [ops[idx-1], ops[idx]] = [ops[idx], ops[idx-1]];
+      if (dir === 'down' && idx < ops.length - 1) [ops[idx], ops[idx+1]] = [ops[idx+1], ops[idx]];
+      RosterBuilder._renderOperatives();
+    },
+
+    _renderOperatives() {
+      const list = document.getElementById('rb-op-list');
+      const ops  = RosterBuilder.state.operatives;
+      if (!ops.length) {
+        list.innerHTML = '<div class="rb-op-empty">No operatives added yet.</div>';
+        return;
+      }
+      list.innerHTML = ops.map((op, i) => `
+        <div class="rb-op-row">
+          <div class="rb-op-info">
+            <div class="rb-op-name">${op.unitName}</div>
+            ${op.role ? `<div class="rb-op-role">${op.role}</div>` : ''}
+          </div>
+          ${op.points != null ? `<div class="rb-op-pts">${op.points} pts</div>` : ''}
+          <div class="rb-op-controls">
+            <button class="arrow-btn" data-iid="${op.instanceId}" data-dir="up"
+                    ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button class="arrow-btn" data-iid="${op.instanceId}" data-dir="down"
+                    ${i === ops.length - 1 ? 'disabled' : ''}>↓</button>
+            <button class="remove-btn" data-iid="${op.instanceId}">×</button>
+          </div>
+        </div>
+      `).join('');
+    },
+
+    _renderBrowser() {
+      const browser = document.getElementById('rb-browser');
+      const units   = RosterBuilder.state.unitLibrary;
+      if (!units.length) {
+        browser.innerHTML = '<div class="rb-op-empty">No units in library for this faction yet.</div>';
+        return;
+      }
+      browser.innerHTML = units.map(u => {
+        const chk = RosterBuilder._checkMaxed(u);
+        return `
+          <div class="rb-unit-row${chk.maxed ? ' maxed' : ''}">
+            <div class="rb-unit-info">
+              <div class="rb-unit-name">${u.name}</div>
+              ${u.role ? `<div class="rb-unit-role">${u.role}</div>` : ''}
+            </div>
+            ${u.points != null ? `<div class="rb-unit-pts">${u.points} pts</div>` : ''}
+            <button class="rb-add-btn" data-uid="${u.id}"
+                    ${chk.maxed ? `disabled title="${chk.reason}"` : ''}>+ Add</button>
+          </div>
+        `;
+      }).join('');
+    },
+
+    _updateHeader() {
+      const ops   = RosterBuilder.state.operatives;
+      const rules = RosterBuilder.state.compositionRules;
+      const total = ops.reduce((s, op) => s + (op.countsAs || 1), 0);
+      const max   = rules?.totalOperatives?.max;
+      const pts   = ops.reduce((s, op) => s + (op.points || 0), 0);
+      const el    = document.getElementById('rb-counter');
+      if (!el) return;
+      const label = max != null ? `${total} / ${max} ops` : `${total} ops`;
+      el.textContent = pts > 0 ? `${label} · ${pts} pts` : label;
+      el.className   = 'rb-counter' +
+        (max && total > max ? ' over' : max && total === max ? ' full' : '');
+    },
+
+    _checkMaxed(unit) {
+      const rules = RosterBuilder.state.compositionRules;
+      if (!rules) return { maxed: false };
+      const ops  = RosterBuilder.state.operatives;
+
+      const used = ops.reduce((s, op) => s + (op.countsAs || 1), 0);
+      const left = rules.totalOperatives.max - used;
+      if ((unit.countsAs || 1) > left) {
+        return { maxed: true, reason: `Only ${left} slot${left === 1 ? '' : 's'} remaining` };
+      }
+
+      const unitCount = ops.filter(op => op.unitId === unit.id).length;
+
+      const maxRule = (rules.rules || []).find(r => r.type === 'max' && r.unitRole === unit.role);
+      if (maxRule && unitCount >= maxRule.count) {
+        return { maxed: true, reason: maxRule.description };
+      }
+
+      const uniqueRule = (rules.rules || []).find(r => r.type === 'unique');
+      if (uniqueRule) {
+        const excluded = uniqueRule.excludeRoles || [];
+        if (!excluded.includes(unit.role) && unitCount >= 1) {
+          return { maxed: true, reason: `Only one ${unit.role || unit.name} allowed` };
+        }
+      }
+
+      return { maxed: false };
+    },
+
+    _arr(v) {
+      if (!v) return [];
+      return Array.isArray(v) ? v : Object.values(v);
+    },
+
+    _bind() {
+      document.getElementById('rb-name').addEventListener('input', e => {
+        RosterBuilder.state.name = e.target.value;
+      });
+      document.getElementById('rb-op-list').addEventListener('click', e => {
+        const btn = e.target;
+        if (btn.classList.contains('arrow-btn')) {
+          RosterBuilder._moveOperative(btn.dataset.iid, btn.dataset.dir);
+        }
+        if (btn.classList.contains('remove-btn')) {
+          RosterBuilder._removeOperative(btn.dataset.iid);
+        }
+      });
+      document.getElementById('rb-browser').addEventListener('click', e => {
+        const btn = e.target.closest('.rb-add-btn');
+        if (!btn || btn.disabled) return;
+        const unit = RosterBuilder.state.unitLibrary.find(u => u.id === btn.dataset.uid);
+        if (unit) RosterBuilder._addOperative(unit);
+      });
+      document.getElementById('rb-save').addEventListener('click', () =>
+        alert('Save Draft — coming in Step 4.')
+      );
+      document.getElementById('rb-publish').addEventListener('click', () =>
+        alert('Publish — coming in Step 6.')
+      );
+    },
+  };
+
   // ── ROUTER ───────────────────────────────────────────────────────────────────
 
   const Router = {
@@ -2075,8 +2485,14 @@
         case 'roster':
           document.getElementById('screen-roster').classList.add('active');
           back.classList.add('visible');
-          title.textContent = 'Roster Builder';
+          title.textContent = sub === 'new' ? 'Roster Builder' : 'Roster';
           if (param && App.schemas[param]) crumb.textContent = App.schemas[param].name;
+          if (sub === 'new') {
+            RosterBuilder.render(param, parts[3]);
+          } else {
+            document.getElementById('screen-roster').innerHTML =
+              '<div class="placeholder"><h2>Roster View</h2><p>Coming in Step 5.</p></div>';
+          }
           break;
 
         default:
