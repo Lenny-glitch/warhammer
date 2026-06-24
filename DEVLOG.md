@@ -253,4 +253,27 @@ All other operatives unique except Kommando Boy (role: Boy) and Bomb Squig
 
 Note: Slasha Boy and Comms Boy have the BOY-related compound keywords (SLASHA BOY, COMMS BOY) but NOT the standalone BOY keyword — only Kommando Boy is repeatable.
 
+### Step 2: Loadout configurator — COMPLETE (2026-06-24)
+Operative rows expand inline on click. Choice operatives show radio groups per slot + live-updating weapon profile table. Fixed-loadout operatives show "Fixed Loadout" label + read-only profile table. Collapsed rows show weapon summary `Boss Nob — Big Choppa · Slugga`. Expansion state survives reorder; radio change updates table and summary in place without full re-render.
+
+### Step 3: Legality checker — COMPLETE (2026-06-24)
+Checks in order: (1) total slot count vs min/max using `countsAs`, (2) required roles present, (3) role max caps, (4) unique constraint by unitId for non-repeatable roles. Green banner "Roster is legal" or red banner listing plain-English violations. Publish gated on legal. Save Draft always enabled. `_checkSpecialRules()` stub present for Void-dancer Troupe weapon uniqueness check (Step 7).
+
+### Step 4: Save Draft → Firebase — COMPLETE (2026-06-24)
+First save generates rosterId via push key, stores in state + localStorage as `roster_owner_{rosterId}`. Subsequent saves reuse same ID (preserves `created` timestamp). Saves to `rosters/{rosterId}/meta` + `rosters/{rosterId}/units`. `meta.isLegal` written at save time. URL bar shows "Draft saved — [link] [Copy]" after save; clears on any roster edit.
+
+### Step 5: Roster View — COMPLETE (code), UNVERIFIED (2026-06-24)
+Route `#roster/{rosterId}`. Reads `rosters/{rosterId}`, loads unit templates to resolve weapon names, renders read-only view: header (name, Legal/Draft/Published badge, faction·system, operative count), operative list with weapon summary per row. "Edit this roster" button visible only for owner (localStorage token check). Navigates to blank builder — full edit-resume from Firebase is a future step.
+
+**Known limitation:** Step 5 was not tested in-browser before proceeding to Step 6. Must be verified before Phase 2 is considered complete.
+
+### Step 6: Publish flow — COMPLETE (2026-06-24)
+Publish loads unit templates and writes fully denormalized export to `exports/{system}/{rosterId}/operatives[]`. Each operative contains: name, role, stats, full weapons array, `chosenLoadout` resolved to full weapon objects, abilities, keywords, equipment, notes. Also marks `rosters/{rosterId}/meta.status = 'published'`. After publish: `state.rosterId` cleared — subsequent edits force a new Save Draft with a new ID. URL bar changes label to "Published". Roster View badge shows purple "Published" for published rosters.
+
+**Outstanding for Phase 2:**
+- Step 5 verification in-browser
+- Step 7: Void-dancer Troupe weapon uniqueness check (`_checkSpecialRules`)
+- Void-dancer Troupe data seed (weapon profiles still needed)
+- "Edit this roster" full resume from Firebase (currently opens blank builder)
+
 ---
