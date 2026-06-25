@@ -68,7 +68,7 @@ window.Shooting = (() => {
     const sy = shooterModels.reduce((s,u) => s+u.y, 0) / shooterModels.length;
     let hasCover = false;
     for (const tm of targetModels) {
-      const br = ((window.UNIT_STATS||{})[tm.type]||{}).baseRadius || 0.5;
+      const br = getTargetProfile(tm).baseRadius;
       const r  = losToModel(sx,sy, tm.x,tm.y, br, terrain);
       if (r === 'clear')  return { visible: true,  cover: false };
       if (r === 'cover')  hasCover = true;
@@ -92,9 +92,7 @@ window.Shooting = (() => {
 
     const shooterFaction = shooterModels[0].faction;
     // Use the longest range in the group — models with shorter range are filtered per-model in resolveAttacks
-    const weaponRange = Math.max(...shooterModels.map(sm =>
-      ((window.UNIT_STATS||{})[sm.type]?.weapon?.range || 0)
-    ));
+    const weaponRange = Math.max(...shooterModels.map(sm => getRangedWeapon(sm).range || 0));
 
     const enemyGroups = {};
     all.forEach(u => {
@@ -114,6 +112,68 @@ window.Shooting = (() => {
   // ---- Dice & resolution ----
 
   function d6() { return Math.floor(Math.random() * 6) + 1; }
+
+  // ---- GameData helpers (Phase 15) ----
+
+  function parseStat(val) { return parseInt(String(val == null ? 0 : val)) || 0; }
+
+  // Roll variable notation: "D6" → 1-6, "D3" → 1-3, "2D6" → 2-12, number → itself
+  function resolveCount(val) {
+    if (typeof val === 'number') return val;
+    const s = String(val).trim();
+    if (/^2D6$/i.test(s)) return d6() + d6();
+    if (/^D6$/i.test(s))  return d6();
+    if (/^D3$/i.test(s))  return Math.ceil(d6() / 2);
+    return parseInt(s) || 1;
+  }
+
+  // Expected value — used in estimate functions instead of rolling
+  function avgCount(val) {
+    if (typeof val === 'number') return val;
+    const s = String(val).trim();
+    if (/^2D6$/i.test(s)) return 7;
+    if (/^D6$/i.test(s))  return 3.5;
+    if (/^D3$/i.test(s))  return 2;
+    return parseFloat(s) || 1;
+  }
+
+  // First ranged weapon from gameData for this unit, normalised to pipeline field names.
+  // Falls back to UNIT_STATS[type].weapon if unit has no factionId (legacy units).
+  function getRangedWeapon(unit) {
+    const def = (unit.factionId && window.getRosterUnitDef)
+      ? window.getRosterUnitDef(unit.factionId, unit.unitId) : null;
+    if (def && def.weapons) {
+      const w = Object.values(def.weapons).find(w => w.type === 'ranged');
+      if (w) return { name: w.name, range: w.range, attacks: w.attacks, bs: w.skill, strength: w.S, ap: w.AP, damage: w.D };
+    }
+    return ((window.UNIT_STATS || {})[unit.type] || {}).weapon || {};
+  }
+
+  // First melee weapon from gameData, falling back to UNIT_STATS[type].meleeWeapon
+  function getMeleeWeapon(unit) {
+    const def = (unit.factionId && window.getRosterUnitDef)
+      ? window.getRosterUnitDef(unit.factionId, unit.unitId) : null;
+    if (def && def.weapons) {
+      const w = Object.values(def.weapons).find(w => w.type === 'melee');
+      if (w) return { name: w.name, range: 0, attacks: w.attacks, ws: w.skill, strength: w.S, ap: w.AP, damage: w.D };
+    }
+    return ((window.UNIT_STATS || {})[unit.type] || {}).meleeWeapon || {};
+  }
+
+  // Target toughness, save, baseRadius — from gameData or UNIT_STATS fallback
+  function getTargetProfile(unit) {
+    const def = (unit.factionId && window.getRosterUnitDef)
+      ? window.getRosterUnitDef(unit.factionId, unit.unitId) : null;
+    if (def && def.stats) {
+      return {
+        toughness:  parseStat(def.stats.T),
+        save:       parseStat(def.stats.SV),
+        baseRadius: def.baseRadius || 0.5,
+      };
+    }
+    const s = (window.UNIT_STATS || {})[unit.type] || {};
+    return { toughness: s.toughness || 3, save: s.save || 6, baseRadius: s.baseRadius || 0.5 };
+  }
 
   function woundThreshold(str, t) {
     if (str >= t * 2) return 2;
@@ -145,21 +205,21 @@ window.Shooting = (() => {
     const targetModels  = all.filter(u => u.unitGroup === targetGroupId && u.alive);
     if (!shooterModels.length || !targetModels.length) return { attacks:0, hits:0, wounds:0, unsaved:0, models:0, hasCover };
 
-    const tgtStats  = (window.UNIT_STATS || {})[targetModels[0].type] || {};
-    const toughness = tgtStats.toughness || 3;
-    const baseSave  = tgtStats.save || 6;
+    const tgtProfile = getTargetProfile(targetModels[0]);
+    const toughness  = tgtProfile.toughness;
+    const baseSave   = tgtProfile.save;
 
     let totalAttacks = 0, expHits = 0, expWounds = 0, expUnsaved = 0, expModels = 0;
 
     shooterModels.forEach(sm => {
-      const w           = ((window.UNIT_STATS || {})[sm.type] || {}).weapon || {};
+      const w           = getRangedWeapon(sm);
       const weaponRange = w.range    || 0;
       if (modelCanContribute(sm, targetModels, weaponRange, terrain) === 'blocked') return;
-      const attacks  = w.attacks  || 1;
+      const attacks  = avgCount(w.attacks  || 1);
       const bs       = w.bs       || 4;
       const strength = w.strength || 3;
       const ap       = w.ap       || 0;
-      const damage   = w.damage   || 1;
+      const damage   = avgCount(w.damage   || 1);
       const wndThr   = woundThreshold(strength, toughness);
       const modSave  = Math.max(2, Math.min(7, baseSave - ap - (hasCover ? 1 : 0)));
 
@@ -195,9 +255,9 @@ window.Shooting = (() => {
       return { casualties: {}, summary: ['No models to shoot or no targets.'], rolls: [] };
     }
 
-    const tgtStats  = (window.UNIT_STATS||{})[targetModels[0].type] || {};
-    const toughness = tgtStats.toughness || 3;
-    const baseSave  = tgtStats.save || 6;
+    const tgtProfile = getTargetProfile(targetModels[0]);
+    const toughness  = tgtProfile.toughness;
+    const baseSave   = tgtProfile.save;
 
     let totalAttacks = 0, totalHits = 0, totalWounds = 0, totalFailed = 0;
     const casualties = {};
@@ -205,14 +265,13 @@ window.Shooting = (() => {
     let tIdx = 0;
 
     shooterModels.forEach(sm => {
-      const w           = ((window.UNIT_STATS||{})[sm.type]||{}).weapon || {};
+      const w           = getRangedWeapon(sm);
       const weaponRange = w.range    || 0;
       if (modelCanContribute(sm, targetModels, weaponRange, terrain) === 'blocked') return;
-      const attacks  = w.attacks  || 1;
+      const attacks  = resolveCount(w.attacks  || 1);
       const bs       = w.bs       || 4;
       const strength = w.strength || 3;
       const ap       = w.ap       || 0;
-      const damage   = w.damage   || 1;
       const wndThr   = woundThreshold(strength, toughness);
       const modSave  = Math.max(2, Math.min(7, baseSave - ap - (hasCover ? 1 : 0)));
 
@@ -233,8 +292,9 @@ window.Shooting = (() => {
         if (roll.saved) { rolls.push(roll); continue; }
 
         totalFailed++;
-        roll.damage = damage;
-        let dmg = damage;
+        const dmgRoll = resolveCount(w.damage || 1);
+        roll.damage = dmgRoll;
+        let dmg = dmgRoll;
         while (dmg > 0 && tIdx < targetModels.length) {
           const tm    = targetModels[tIdx];
           const taken = Math.min(dmg, tm.wounds);
@@ -292,18 +352,18 @@ window.Shooting = (() => {
     const targets  = all.filter(u => u.unitGroup === targetGroupId  && u.alive);
     if (!fighters.length || !targets.length) return { attacks:0, hits:0, wounds:0, unsaved:0, models:0 };
 
-    const tgtStats  = (window.UNIT_STATS||{})[targets[0].type] || {};
-    const toughness = tgtStats.toughness || 3;
-    const baseSave  = tgtStats.save || 6;
+    const tgtProfile = getTargetProfile(targets[0]);
+    const toughness  = tgtProfile.toughness;
+    const baseSave   = tgtProfile.save;
 
     let totalAttacks=0, expHits=0, expWounds=0, expUnsaved=0, expModels=0;
     fighters.forEach(f => {
-      const mw      = ((window.UNIT_STATS||{})[f.type]||{}).meleeWeapon || {};
-      const attacks  = mw.attacks  || 1;
+      const mw       = getMeleeWeapon(f);
+      const attacks  = avgCount(mw.attacks  || 1);
       const ws       = mw.ws       || 4;
       const strength = mw.strength || 3;
       const ap       = mw.ap       || 0;
-      const damage   = mw.damage   || 1;
+      const damage   = avgCount(mw.damage   || 1);
       const wndThr   = woundThreshold(strength, toughness);
       const modSave  = Math.max(2, Math.min(7, baseSave - ap));
       const pHit      = Math.max(0, Math.min(1, (7 - ws)    / 6));
@@ -332,9 +392,9 @@ window.Shooting = (() => {
       return { casualties: {}, summary: ['No fighters or no targets.'], rolls: [] };
     }
 
-    const tgtStats  = (window.UNIT_STATS||{})[targets[0].type] || {};
-    const toughness = tgtStats.toughness || 3;
-    const baseSave  = tgtStats.save || 6;
+    const tgtProfile = getTargetProfile(targets[0]);
+    const toughness  = tgtProfile.toughness;
+    const baseSave   = tgtProfile.save;
 
     let totalAttacks=0, totalHits=0, totalWounds=0, totalFailed=0;
     const casualties = {};
@@ -342,12 +402,11 @@ window.Shooting = (() => {
     let tIdx = 0;
 
     fighters.forEach(f => {
-      const mw      = ((window.UNIT_STATS||{})[f.type]||{}).meleeWeapon || {};
-      const attacks  = mw.attacks  || 1;
+      const mw       = getMeleeWeapon(f);
+      const attacks  = resolveCount(mw.attacks  || 1);
       const ws       = mw.ws       || 4;
       const strength = mw.strength || 3;
       const ap       = mw.ap       || 0;
-      const damage   = mw.damage   || 1;
       const wndThr   = woundThreshold(strength, toughness);
       const modSave  = Math.max(2, Math.min(7, baseSave - ap));
 
@@ -367,8 +426,9 @@ window.Shooting = (() => {
         if (roll.saved) { rolls.push(roll); continue; }
 
         totalFailed++;
-        roll.damage = damage;
-        let dmg = damage;
+        const mDmgRoll = resolveCount(mw.damage || 1);
+        roll.damage = mDmgRoll;
+        let dmg = mDmgRoll;
         while (dmg > 0 && tIdx < targets.length) {
           const tm   = targets[tIdx];
           const taken = Math.min(dmg, tm.wounds);

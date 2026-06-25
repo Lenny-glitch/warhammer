@@ -1,18 +1,41 @@
 window.Lobby = (() => {
   let selectedFaction = 'guard';
-  let unsubscribe = null;
+  let unsubscribe     = null;
+  let previewDebounce = null;
 
   function init(gameIdParam) {
+    const params    = new URLSearchParams(location.search);
+    const rosterParam = params.get('roster') || '';
     if (gameIdParam) {
       initJoinFlow(gameIdParam);
     } else {
-      renderCreateForm();
+      renderCreateForm(rosterParam);
     }
   }
 
   // ---- Create flow ----
 
-  function renderCreateForm() {
+  function rosterPreviewHTML(roster, faction) {
+    if (!roster) return '';
+    const FACTION_MAP = window.RosterLoader.FACTION_MAP;
+    const mismatch    = FACTION_MAP[faction] && roster.meta.factionId !== FACTION_MAP[faction];
+    if (mismatch) {
+      return `<div class="notice notice-error" style="margin-top:0.5rem;font-size:0.78rem;">
+        Roster is <strong>${escHtml(roster.meta.factionName)}</strong> — select matching faction above.
+      </div>`;
+    }
+    const units = (roster.units || []).map(u =>
+      `<div style="font-size:0.77rem;color:var(--text-dim);padding:0.1rem 0;">
+        · ${escHtml(u.unitName)}${u.modelCount > 1 ? ` ×${u.modelCount}` : ''}</div>`
+    ).join('');
+    return `<div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.6rem;margin-top:0.5rem;">
+      <div style="font-size:0.82rem;color:var(--text);font-weight:600;margin-bottom:0.2rem;">${escHtml(roster.meta.name)}</div>
+      <div style="font-size:0.72rem;color:var(--gold-dim);margin-bottom:0.35rem;">${escHtml(roster.meta.factionName)} · ${roster.meta.pointsTotal}pts</div>
+      ${units}
+    </div>`;
+  }
+
+  function renderCreateForm(prefillRosterId) {
     setContent(`
       <div class="form-group">
         <label class="form-label" for="player-name">Your Name</label>
@@ -26,20 +49,34 @@ window.Lobby = (() => {
             <div class="faction-icon">⚙</div>
             <div class="faction-name">Astra Militarum</div>
             <div class="faction-title">Infantry Squad</div>
-            <div class="faction-detail">10 Guardsmen + Sergeant<br>Lasgun · 5+ Save</div>
+            <div class="faction-detail">Cadian 8th — Combat Patrol</div>
           </div>
           <div class="faction-card faction-eldar" data-faction="eldar" tabindex="0">
             <div class="faction-icon">✦</div>
             <div class="faction-name">Craftworld Eldar</div>
             <div class="faction-title">Guardian Defenders</div>
-            <div class="faction-detail">10 Guardians<br>Shuriken Catapult · 4+ Save</div>
+            <div class="faction-detail">Biel-Tan — Combat Patrol</div>
           </div>
         </div>
       </div>
 
       <div class="form-group">
+        <label class="form-label" for="roster-id">Roster ID</label>
+        <input class="form-input" id="roster-id" type="text" placeholder="Paste your Firebase roster ID..."
+          value="${escHtml(prefillRosterId || '')}" autocomplete="off" spellcheck="false" style="font-family:monospace;">
+        <div id="roster-preview"></div>
+      </div>
+
+      <div id="dev-roster-group" class="form-group" style="display:none;">
+        <label class="form-label" for="roster-id-dev">Opponent Roster ID (Dev)</label>
+        <input class="form-input" id="roster-id-dev" type="text" placeholder="Opponent faction roster ID..."
+          autocomplete="off" spellcheck="false" style="font-family:monospace;">
+        <div id="roster-preview-dev"></div>
+      </div>
+
+      <div class="form-group">
         <label class="form-label">Game Size</label>
-        <input type="range" id="game-size" min="0" max="2" step="1" value="1"
+        <input type="range" id="game-size" min="0" max="2" step="1" value="0"
           style="width:100%;accent-color:var(--gold,#c9a84c);cursor:pointer;margin-bottom:0.3rem;">
         <div style="display:flex;justify-content:space-between;font-size:0.72rem;color:var(--text-dim);margin-bottom:0.5rem;">
           <span>Combat Patrol</span><span>Incursion</span><span>Strike Force</span>
@@ -60,12 +97,31 @@ window.Lobby = (() => {
         document.querySelectorAll('.faction-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         selectedFaction = card.dataset.faction;
+        // Re-validate roster preview on faction change
+        triggerRosterPreview('roster-id', 'roster-preview', () => selectedFaction);
       });
       card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') card.click(); });
     });
 
     document.getElementById('btn-create').addEventListener('click', handleCreate);
     document.getElementById('player-name').addEventListener('keydown', e => { if (e.key === 'Enter') handleCreate(); });
+
+    // Roster ID live preview
+    const rosterInput = document.getElementById('roster-id');
+    rosterInput.addEventListener('input', () =>
+      triggerRosterPreview('roster-id', 'roster-preview', () => selectedFaction)
+    );
+    if (rosterInput.value) triggerRosterPreview('roster-id', 'roster-preview', () => selectedFaction);
+
+    const devCheck = document.getElementById('dev-mode-check');
+    devCheck.addEventListener('change', () => {
+      const devGroup = document.getElementById('dev-roster-group');
+      if (devGroup) devGroup.style.display = devCheck.checked ? '' : 'none';
+    });
+    document.getElementById('roster-id-dev').addEventListener('input', () => {
+      const otherFaction = selectedFaction === 'guard' ? 'eldar' : 'guard';
+      triggerRosterPreview('roster-id-dev', 'roster-preview-dev', () => otherFaction);
+    });
 
     const SIZE_KEYS = ['combat-patrol', 'incursion', 'strike-force'];
     function updateSizeInfo(idx) {
@@ -83,18 +139,23 @@ window.Lobby = (() => {
   }
 
   async function handleCreate() {
-    const name = document.getElementById('player-name').value.trim();
-    if (!name) { document.getElementById('player-name').focus(); return; }
+    const name     = document.getElementById('player-name').value.trim();
+    const rosterId = document.getElementById('roster-id').value.trim();
+    if (!name)     { document.getElementById('player-name').focus(); return; }
+    if (!rosterId) { showError('Paste your Roster ID to continue.'); return; }
 
-    const devMode  = document.getElementById('dev-mode-check').checked;
+    const devMode    = document.getElementById('dev-mode-check').checked;
+    const devRosterId = devMode ? (document.getElementById('roster-id-dev').value.trim()) : null;
+    if (devMode && !devRosterId) { showError('Dev Mode requires an Opponent Roster ID.'); return; }
+
     const SIZE_KEYS = ['combat-patrol', 'incursion', 'strike-force'];
-    const gameSize  = SIZE_KEYS[+(document.getElementById('game-size').value)] || 'incursion';
+    const gameSize  = SIZE_KEYS[+(document.getElementById('game-size').value)] || 'combat-patrol';
     const btn = document.getElementById('btn-create');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Creating...';
 
     try {
-      const { gameId, faction } = await window.GameState.createGame(name, selectedFaction, devMode, gameSize);
+      const { gameId, faction } = await window.GameState.createGame(name, selectedFaction, devMode, gameSize, rosterId, devRosterId);
       history.pushState(null, '', '?game=' + gameId);
 
       if (devMode) {
@@ -256,23 +317,35 @@ window.Lobby = (() => {
         </div>
       </div>
 
+      <div class="form-group">
+        <label class="form-label" for="roster-id-join">Your Roster ID</label>
+        <input class="form-input" id="roster-id-join" type="text" placeholder="Paste your Firebase roster ID..."
+          autocomplete="off" spellcheck="false" style="font-family:monospace;">
+        <div id="roster-preview-join"></div>
+      </div>
+
       <button class="btn btn-primary btn-full" id="btn-join">Join Game</button>
     `);
 
+    document.getElementById('roster-id-join').addEventListener('input', () =>
+      triggerRosterPreview('roster-id-join', 'roster-preview-join', () => openFaction)
+    );
     document.getElementById('btn-join').addEventListener('click', () => handleJoin(gameId));
     document.getElementById('player-name').addEventListener('keydown', e => { if (e.key === 'Enter') handleJoin(gameId); });
   }
 
   async function handleJoin(gameId) {
-    const name = document.getElementById('player-name').value.trim();
-    if (!name) { document.getElementById('player-name').focus(); return; }
+    const name     = document.getElementById('player-name').value.trim();
+    const rosterId = document.getElementById('roster-id-join').value.trim();
+    if (!name)     { document.getElementById('player-name').focus(); return; }
+    if (!rosterId) { showError('Paste your Roster ID to continue.'); return; }
 
     const btn = document.getElementById('btn-join');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Joining...';
 
     try {
-      const { faction } = await window.GameState.joinGame(gameId, name);
+      const { faction } = await window.GameState.joinGame(gameId, name, rosterId);
       window.App.startGame(gameId, faction);
     } catch (err) {
       btn.disabled = false;
@@ -282,6 +355,30 @@ window.Lobby = (() => {
   }
 
   // ---- Helpers ----
+
+  function triggerRosterPreview(inputId, previewId, getFaction) {
+    clearTimeout(previewDebounce);
+    const val = (document.getElementById(inputId) || {}).value || '';
+    const previewEl = document.getElementById(previewId);
+    if (!previewEl) return;
+    if (!val.trim()) { previewEl.innerHTML = ''; return; }
+    previewEl.innerHTML = '<div style="font-size:0.75rem;color:var(--text-dim);padding:0.3rem 0;">Loading roster…</div>';
+    previewDebounce = setTimeout(async () => {
+      const id = (document.getElementById(inputId) || {}).value.trim();
+      if (!id) { previewEl.innerHTML = ''; return; }
+      try {
+        const roster = await window.RosterLoader.fetchRoster(id);
+        if (document.getElementById(previewId)) {
+          document.getElementById(previewId).innerHTML = rosterPreviewHTML(roster, getFaction());
+        }
+      } catch (err) {
+        if (document.getElementById(previewId)) {
+          document.getElementById(previewId).innerHTML =
+            `<div class="notice notice-error" style="margin-top:0.5rem;font-size:0.78rem;">${escHtml(err.message)}</div>`;
+        }
+      }
+    }, 500);
+  }
 
   function setContent(html) {
     document.getElementById('lobby-content').innerHTML = html;

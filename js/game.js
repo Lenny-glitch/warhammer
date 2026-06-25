@@ -32,6 +32,9 @@ window.Game = (() => {
   // Deployment phase client state
   let deployPlacing = false;  // debounce: prevents double-fire while Firebase write is in flight
 
+  // Cache of unitGroup → human label, populated from u.label during render()
+  let groupLabelCache = {};
+
   // Charge phase client state
   // null | { mode: 'queue' }
   //      | { mode: 'targeting', groupId, chargeTargets: [{groupId, minGap}] }
@@ -167,7 +170,7 @@ window.Game = (() => {
     morale:   'Units that lost models this turn take a Morale test: roll d6, add losses, compare to Ld.'
   };
 
-  function init(gameId, faction) {
+  async function init(gameId, faction) {
     currentGameId = gameId;
     localFaction  = faction;
     moveState         = null;
@@ -181,7 +184,20 @@ window.Game = (() => {
     deployPlacing     = false;
     chargeState       = null;
     fightState        = null;
+    groupLabelCache   = {};
     showScreen('game');
+
+    // Pre-load faction gameData so unit cards and attack pipeline have stats immediately
+    try {
+      const snap    = await window.db.ref('games/' + gameId + '/players').once('value');
+      const players = snap.val() || {};
+      await Promise.all(
+        Object.keys(players).map(fac => {
+          const factionId = window.RosterLoader.FACTION_MAP[fac];
+          return factionId ? window.RosterLoader.loadFactionData(factionId) : Promise.resolve();
+        })
+      );
+    } catch (_) {}
 
     if (unsubscribe) unsubscribe();
     unsubscribe = window.GameState.subscribeToGame(gameId, game => {
@@ -207,8 +223,9 @@ window.Game = (() => {
 
   // Human-readable label for a unit group
   function groupLabel(groupId) {
-    if (groupId === 'guard_squad')  return 'Infantry Squad';
-    if (groupId === 'eldar_squad')  return 'Guardian Defenders';
+    if (groupLabelCache[groupId]) return groupLabelCache[groupId];
+    if (groupId === 'guard_squad') return 'Infantry Squad';
+    if (groupId === 'eldar_squad') return 'Guardian Defenders';
     return groupId;
   }
 
@@ -363,15 +380,36 @@ window.Game = (() => {
     Object.values(units).forEach(u => {
       if (u.faction !== faction) return;
       if (!groups[u.unitGroup]) {
-        groups[u.unitGroup] = { type: u.type, alive: 0, total: 0 };
+        groups[u.unitGroup] = { type: u.type, factionId: u.factionId, unitId: u.unitId, alive: 0, total: 0 };
       }
       groups[u.unitGroup].total++;
       if (u.alive) groups[u.unitGroup].alive++;
     });
 
     return Object.entries(groups).map(([gId, info]) => {
-      const s        = (window.UNIT_STATS || {})[info.type] || {};
-      const w        = s.weapon || {};
+      const def  = (info.factionId && window.getRosterUnitDef)
+        ? window.getRosterUnitDef(info.factionId, info.unitId) : null;
+      const leg  = (window.UNIT_STATS || {})[info.type] || {};
+      const dst  = def && def.stats ? def.stats : null;
+      const rw   = def && def.weapons
+        ? Object.values(def.weapons).find(w => w.type === 'ranged') : null;
+      const lw   = leg.weapon || {};
+
+      const M  = dst ? dst.M  : (leg.move      ? leg.move + '"'  : '?');
+      const T  = dst ? dst.T  : (leg.toughness || '?');
+      const SV = dst ? dst.SV : (leg.save      ? leg.save + '+'  : '?');
+      const W  = dst ? dst.W  : (leg.w         || '?');
+      const LD = dst ? dst.LD : (leg.ld        ? leg.ld + '+'    : '?');
+      const OC = dst ? (dst.OC || '2') : '2';
+
+      const wName  = rw ? rw.name                             : (lw.name     || '?');
+      const wRange = rw ? rw.range + '"'                      : (lw.range    ? lw.range + '"' : '?');
+      const wAtk   = rw ? String(rw.attacks)                  : String(lw.attacks || '?');
+      const wBS    = rw ? rw.skill + '+'                      : (lw.bs       ? lw.bs + '+'   : '?');
+      const wS     = rw ? rw.S                                : (lw.strength || '?');
+      const wAP    = rw ? (rw.AP === 0 ? '0' : '-' + rw.AP)  : (lw.ap      !== undefined ? lw.ap : '0');
+      const wD     = rw ? String(rw.D)                        : String(lw.damage || '?');
+
       const isExp    = cardState.expanded === gId;
       const isHl     = cardState.highlighted === gId;
       const cardCls  = `unit-card ${faction}-card${isHl ? ' highlighted' : ''}`;
@@ -379,27 +417,26 @@ window.Game = (() => {
 
       const compactStats = `
         <div class="stat-row">
-          <span class="stat-cell">M<span>${s.move || '?'}"</span></span>
-          <span class="stat-cell">T<span>${s.toughness || '?'}</span></span>
-          <span class="stat-cell">Sv<span>${s.save || '?'}+</span></span>
-          <span class="stat-cell">W<span>${s.w || '?'}</span></span>
+          <span class="stat-cell">M<span>${escHtml(String(M))}</span></span>
+          <span class="stat-cell">T<span>${escHtml(String(T))}</span></span>
+          <span class="stat-cell">Sv<span>${escHtml(String(SV))}</span></span>
+          <span class="stat-cell">W<span>${escHtml(String(W))}</span></span>
         </div>`;
 
       const expandedSection = isExp ? `
         <div class="unit-card-expanded">
-          <div class="expand-label">Weapon — ${escHtml(w.name || '?')}</div>
+          <div class="expand-label">Weapon — ${escHtml(wName)}</div>
           <div class="stat-row">
-            <span class="stat-cell">Rng<span>${w.range || '?'}"</span></span>
-            <span class="stat-cell">A<span>${w.attacks || '?'}</span></span>
-            <span class="stat-cell">BS<span>${w.bs || '?'}+</span></span>
-            <span class="stat-cell">S<span>${w.strength || '?'}</span></span>
-            <span class="stat-cell">AP<span>${w.ap || '0'}</span></span>
-            <span class="stat-cell">D<span>${w.damage || '?'}</span></span>
+            <span class="stat-cell">Rng<span>${escHtml(wRange)}</span></span>
+            <span class="stat-cell">A<span>${escHtml(wAtk)}</span></span>
+            <span class="stat-cell">BS<span>${escHtml(wBS)}</span></span>
+            <span class="stat-cell">S<span>${escHtml(String(wS))}</span></span>
+            <span class="stat-cell">AP<span>${escHtml(String(wAP))}</span></span>
+            <span class="stat-cell">D<span>${escHtml(wD)}</span></span>
           </div>
           <div class="stat-row" style="margin-top:0.3rem;">
-            <span class="stat-cell">Ld<span>${s.ld || '?'}+</span></span>
-            <span class="stat-cell">OC<span>2</span></span>
-            <span class="stat-cell">Base<span>${s.baseRadius ? s.baseRadius*2+'"' : '?'}</span></span>
+            <span class="stat-cell">Ld<span>${escHtml(String(LD))}</span></span>
+            <span class="stat-cell">OC<span>${escHtml(String(OC))}</span></span>
           </div>
         </div>` : '';
 
@@ -1235,6 +1272,11 @@ window.Game = (() => {
   }
 
   function render(game) {
+    // Populate groupLabel cache from unit labels (roster-backed games)
+    Object.values(game.units || {}).forEach(u => {
+      if (u.label && u.unitGroup) groupLabelCache[u.unitGroup] = u.label;
+    });
+
     if (game.gameOver) { renderGameOver(game); return; }
     if (game.turn.phase === 'terrain')    { renderTerrain(game);     return; }
     if (game.turn.phase === 'deployment') { renderDeployment(game);  return; }
@@ -2103,6 +2145,7 @@ window.Game = (() => {
     terrainState     = null;
     terrainPlacing   = false;
     deployPlacing    = false;
+    groupLabelCache  = {};
   }
 
   return { init, destroy };

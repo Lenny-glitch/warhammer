@@ -63,38 +63,58 @@ window.GameState = (() => {
     return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
   }
 
-  async function createGame(playerName, faction, devMode, gameSize) {
+  async function createGame(playerName, faction, devMode, gameSize, rosterId, devRosterId) {
     const gameId = generateGameId();
-    const token = generateToken();
-    const other = faction === 'guard' ? 'eldar' : 'guard';
+    const token  = generateToken();
+    const other  = faction === 'guard' ? 'eldar' : 'guard';
     const preset = window.GAME_PRESETS[gameSize] || window.GAME_PRESETS['incursion'];
     const resolvedSize = window.GAME_PRESETS[gameSize] ? gameSize : 'incursion';
 
+    // Load roster + faction data for the creating player
+    const factionId = window.RosterLoader.FACTION_MAP[faction];
+    const [roster] = await Promise.all([
+      window.RosterLoader.fetchRoster(rosterId),
+      window.RosterLoader.loadFactionData(factionId),
+    ]);
+    const myUnits = window.RosterLoader.buildUnitsFromRoster(roster, faction, preset.boardHeight);
+
     const players = {
-      guard: { name: '', token: '', cp: 0, joined: false },
-      eldar: { name: '', token: '', cp: 0, joined: false }
+      guard: { name: '', token: '', cp: 0, joined: false, rosterId: '' },
+      eldar: { name: '', token: '', cp: 0, joined: false, rosterId: '' },
     };
-    players[faction] = { name: playerName, token, cp: 0, joined: true };
+    players[faction] = { name: playerName, token, cp: 0, joined: true, rosterId };
 
-    if (devMode) {
-      players[other] = { name: 'Player 2 (Dev)', token: generateToken(), cp: 0, joined: true };
-    }
-
-    const initialUnits = window.buildInitialUnits();
-    const undeployedGroups = { guard: [], eldar: [] };
-    Object.values(initialUnits).forEach(u => {
-      if (!undeployedGroups[u.faction].includes(u.unitGroup))
-        undeployedGroups[u.faction].push(u.unitGroup);
-    });
-
-    // Starting strength per group — used for Battle-shock below-half-strength check.
-    // Single-model units use wounds instead of model count (both recorded here for future use).
+    let allUnits = { ...myUnits };
+    const undeployedGroups = { guard: null, eldar: null };
     const startingStrength = {};
-    Object.values(initialUnits).forEach(u => {
+
+    const myGroups = [];
+    Object.values(myUnits).forEach(u => {
+      if (!myGroups.includes(u.unitGroup)) myGroups.push(u.unitGroup);
       if (!startingStrength[u.unitGroup]) startingStrength[u.unitGroup] = { models: 0, wounds: 0 };
       startingStrength[u.unitGroup].models += 1;
-      startingStrength[u.unitGroup].wounds += (window.UNIT_STATS[u.type]?.w || 1);
+      startingStrength[u.unitGroup].wounds += u.maxWounds;
     });
+    undeployedGroups[faction] = myGroups.length > 0 ? myGroups : null;
+
+    if (devMode && devRosterId) {
+      const otherFactionId = window.RosterLoader.FACTION_MAP[other];
+      const [otherRoster] = await Promise.all([
+        window.RosterLoader.fetchRoster(devRosterId),
+        window.RosterLoader.loadFactionData(otherFactionId),
+      ]);
+      const otherUnits = window.RosterLoader.buildUnitsFromRoster(otherRoster, other, preset.boardHeight);
+      Object.assign(allUnits, otherUnits);
+      players[other] = { name: 'Player 2 (Dev)', token: generateToken(), cp: 0, joined: true, rosterId: devRosterId };
+      const otherGroups = [];
+      Object.values(otherUnits).forEach(u => {
+        if (!otherGroups.includes(u.unitGroup)) otherGroups.push(u.unitGroup);
+        if (!startingStrength[u.unitGroup]) startingStrength[u.unitGroup] = { models: 0, wounds: 0 };
+        startingStrength[u.unitGroup].models += 1;
+        startingStrength[u.unitGroup].wounds += u.maxWounds;
+      });
+      undeployedGroups[other] = otherGroups.length > 0 ? otherGroups : null;
+    }
 
     const doc = {
       id: gameId,
@@ -107,12 +127,12 @@ window.GameState = (() => {
       boardHeight:   preset.boardHeight,
       terrainBudget: preset.terrainBudget,
       pointsLimit:   preset.pointsLimit,
-      units: initialUnits,
+      units: allUnits,
       terrain: resolvedSize === 'incursion' ? window.buildDefaultTerrain() : {},
       terrainOwner: {},
       undeployedGroups,
       startingStrength,
-      lastTurnReplay: null
+      lastTurnReplay: null,
     };
 
     await window.db.ref('games/' + gameId).set(doc);
@@ -124,7 +144,7 @@ window.GameState = (() => {
     return { gameId, faction, token };
   }
 
-  async function joinGame(gameId, playerName) {
+  async function joinGame(gameId, playerName, rosterId) {
     const ref = window.db.ref('games/' + gameId);
     const snap = await ref.once('value');
 
@@ -132,14 +152,40 @@ window.GameState = (() => {
     const game = snap.val();
     if (game.status !== 'waiting') throw new Error('This game has already started.');
 
-    const faction = game.players.guard.joined ? 'eldar' : 'guard';
-    const token = generateToken();
+    const faction   = game.players.guard.joined ? 'eldar' : 'guard';
+    const factionId = window.RosterLoader.FACTION_MAP[faction];
+    const token     = generateToken();
+
+    const [roster] = await Promise.all([
+      window.RosterLoader.fetchRoster(rosterId),
+      window.RosterLoader.loadFactionData(factionId),
+    ]);
+    const myUnits = window.RosterLoader.buildUnitsFromRoster(roster, faction, game.boardHeight || 60);
+
+    const unitsUpdate   = {};
+    const groupIds      = [];
+    const ssUpdate      = {};
+
+    Object.entries(myUnits).forEach(([id, u]) => {
+      unitsUpdate[`units/${id}`] = u;
+      if (!groupIds.includes(u.unitGroup)) groupIds.push(u.unitGroup);
+      if (!ssUpdate[u.unitGroup]) ssUpdate[u.unitGroup] = { models: 0, wounds: 0 };
+      ssUpdate[u.unitGroup].models += 1;
+      ssUpdate[u.unitGroup].wounds += u.maxWounds;
+    });
+
+    const existingSS = game.startingStrength || {};
+    const mergedSS   = { ...existingSS, ...ssUpdate };
 
     await ref.update({
       status: 'active',
-      [`players/${faction}/name`]: playerName,
-      [`players/${faction}/token`]: token,
-      [`players/${faction}/joined`]: true
+      [`players/${faction}/name`]:     playerName,
+      [`players/${faction}/token`]:    token,
+      [`players/${faction}/joined`]:   true,
+      [`players/${faction}/rosterId`]: rosterId,
+      [`undeployedGroups/${faction}`]: groupIds.length > 0 ? groupIds : null,
+      startingStrength: mergedSS,
+      ...unitsUpdate,
     });
 
     localStorage.setItem(`w40k_faction_${gameId}`, faction);
@@ -222,7 +268,12 @@ window.GameState = (() => {
         // Strictly less than half — at exactly half a unit is NOT below half-strength
         if (groupUnits.length < startModels / 2) {
           // Use highest Ld in the group (10th ed: unit uses its own Ld characteristic; sergeant leads)
-          const maxLd = Math.max(...groupUnits.map(u => (window.UNIT_STATS[u.type]?.ld || 7)));
+          const maxLd = Math.max(...groupUnits.map(u => {
+            const def = (window.getRosterUnitDef && u.factionId)
+              ? window.getRosterUnitDef(u.factionId, u.unitId) : null;
+            if (def && def.stats && def.stats.LD) return parseInt(def.stats.LD) || 7;
+            return (window.UNIT_STATS || {})[u.type]?.ld || 7;
+          }));
           const d1    = Math.floor(Math.random() * 6) + 1;
           const d2    = Math.floor(Math.random() * 6) + 1;
           const total = d1 + d2;
