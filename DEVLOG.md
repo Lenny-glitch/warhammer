@@ -277,3 +277,17 @@ Publish loads unit templates and writes fully denormalized export to `exports/{s
 - "Edit this roster" full resume from Firebase (currently opens blank builder)
 
 ---
+
+## Session close — 2026-06-25
+
+No new code this session. Committed three MHT source files as reference material:
+
+| File | Contents |
+|---|---|
+| `Kommandos.mht` | Wahapedia page used to seed Ork Kommandos — 11 operatives, weapon profiles, composition rules |
+| `Pathfinders.mht` | Wahapedia page for Tau Pathfinders — source for operative stats and composition rules |
+| `Void-dancer Troupe.mht` | Wahapedia page for Void-dancer Troupe — weapon profiles still need extraction before data seed |
+
+**Next session:** Verify Step 5 (Roster View) in-browser, then seed Void-dancer Troupe weapon profiles and wire the `_checkSpecialRules` stub (Step 7).
+
+---
