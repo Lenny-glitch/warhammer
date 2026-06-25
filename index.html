@@ -1355,7 +1355,7 @@
   const SCHEMA_SEED = {
     'kill-team': {
       name: 'Kill Team',
-      statBlock: ['APL', 'MOVE', 'SAVE', 'WOUNDS'],
+      statBlock: ['APL', 'MOVE', 'DF', 'SAVE', 'WOUNDS'],
       weaponProfiles: ['ATK', 'HIT', 'DMG', 'WR'],
       hasWeaponType: true
     },
@@ -2901,7 +2901,7 @@
 
         const arr = v => !v ? [] : Array.isArray(v) ? v : Object.values(v);
 
-        const operatives = s.operatives.map(op => {
+        const units = s.operatives.map(op => {
           const tmpl    = templates[op.unitId] || {};
           const weapons = arr(tmpl.weapons);
           // Resolve chosenLoadout IDs → full weapon objects
@@ -2923,7 +2923,7 @@
             weapons:      weapons.map(w => ({ ...w })),
             chosenLoadout,
             abilities:    arr(tmpl.abilities).map(a => ({ ...a })),
-            keywords:     arr(tmpl.keywords),
+            keywords:     arr(tmpl.keywords || tmpl.tags),
             equipment:    arr(tmpl.equipment),
             notes:        op.notes      || '',
           };
@@ -2939,7 +2939,7 @@
             publishedAt: Date.now(),
             rosterId:    s.rosterId,
           },
-          operatives,
+          units,
         };
 
         // Write export and mark draft published in parallel

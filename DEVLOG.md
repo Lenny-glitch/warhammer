@@ -288,6 +288,72 @@ No new code this session. Committed three MHT source files as reference material
 | `Pathfinders.mht` | Wahapedia page for Tau Pathfinders — source for operative stats and composition rules |
 | `Void-dancer Troupe.mht` | Wahapedia page for Void-dancer Troupe — weapon profiles still need extraction before data seed |
 
-**Next session:** Verify Step 5 (Roster View) in-browser, then seed Void-dancer Troupe weapon profiles and wire the `_checkSpecialRules` stub (Step 7).
+---
+
+## Session — 2026-06-25 (continued)
+
+### What was done
+
+Seeded all remaining unit data and published two rosters via Node.js REST API script (`seed-and-publish.js`, scratchpad only — not committed).
+
+**Firebase seeded:**
+
+| Path | Content |
+|---|---|
+| `gameData/kill-team/factions/void-dancer-troupe/info` | Faction info + composition rules (8 ops, Leader required, max 1 Death Jester, max 1 Shadowseer, special rule note) |
+| `gameData/kill-team/factions/void-dancer-troupe/units/lead-player-001` | Lead Player — APL 3, MOVE 7", SAVE 4+, W9, 3 pistol options + 5 melee options |
+| `gameData/kill-team/factions/void-dancer-troupe/units/death-jester-001` | Death Jester — same stats, same weapon pools (unique) |
+| `gameData/kill-team/factions/void-dancer-troupe/units/player-001` | Player — APL 3, MOVE 7", SAVE 4+, W8, same weapon pools (repeatable) |
+| `gameData/kill-team/factions/void-dancer-troupe/units/shadowseer-001` | Shadowseer — APL 3, MOVE 7", SAVE 4+, W9, hallucinogen grenade (default) + ranged option (neuro/shuriken) + miststave (default) |
+| `gameData/kill-team/factions/tau-pathfinders/units/blooded-pathfinder-001` | Blooded Pathfinder — APL 2, MOVE 6", SAVE 5+, W7, suppressed pulse carbine + bionic arm |
+| `gameData/kill-team/factions/tau-pathfinders/units/assault-grenadier-001` | Assault Grenadier — APL 2, MOVE 6", SAVE 5+, W7, pulse carbine + fusion grenade + fists |
+| `gameData/kill-team/factions/tau-pathfinders/units/mv7-marker-drone-001` | MV7 Marker Drone — APL 1, MOVE 8", SAVE 4+, W7, countsAs 1 |
+| `gameData/kill-team/factions/tau-pathfinders/units/mv1-gun-drone-001` | MV1 Gun Drone — APL 1, MOVE 8", SAVE 4+, W7, twin pulse carbine + ram |
+| `gameData/kill-team/factions/tau-pathfinders/units/mb3-recon-drone-001` | MB3 Recon Drone — APL 1, MOVE 8", SAVE 4+, W7, **countsAs 2**, burst cannon (focused + sweeping) + ram |
+| `gameData/kill-team/factions/tau-pathfinders/units/weapons-expert-pathfinder-001` | PATCH: added `role: "Weapons Expert"` to existing record |
+
+**Rosters published:**
+
+| Roster | Firebase ID | Export path |
+|---|---|---|
+| Tau Pathfinders — Roster 1 | `-OvzZzqDWpwSVAwZx3kO` | `exports/kill-team/-OvzZzqDWpwSVAwZx3kO` |
+| Void-dancer Troupe — Roster 2 | `-OvzZzrLgyu9iYFRbFrb` | `exports/kill-team/-OvzZzrLgyu9iYFRbFrb` |
+
+**Roster 1 — Tau Pathfinders (12 operatives):**
+Shas'ui (Leader), 6× Shas'la, Blooded Pathfinder, Assault Grenadier, Weapons Expert (Ion rifle), Weapons Expert (Rail rifle), MV7 Marker Drone.
+
+**Roster 2 — Void-dancer Troupe (8 operatives):**
+Lead Player (Fusion pistol + Blade), Death Jester (Neuro disruptor + Kiss), Shadowseer (Shuriken pistol + Miststave), 5× Player (Shuriken pistol + Caress / Embrace / Kiss / Blade / Blade).
+
+### Bug fix — export key + keywords (2026-06-25, same session)
+
+**Bug 1 — `_doPublish()` export key was `operatives`, should be `units`.**
+`_doPublish()` was writing the denormalized data under `exportData.operatives`. Game apps are designed to read `exports/{system}/{rosterId}/units`. Fixed: renamed key to `units` in both `_doPublish()` and the re-publish script.
+
+**Bug 2 — Keywords empty for old unit templates.**
+Old units (Shas'ui, Shas'la, Weapons Expert seeded in Phase 1) store keywords as `tags` not `keywords`. `_doPublish()` was reading `tmpl.keywords` which returned undefined. Fixed: `tmpl.keywords || tmpl.tags`.
+
+Both rosters republished after the fix. All 12 Tau and 8 Void-dancer operatives confirmed to have `stats`, `weapons`, `keywords`, `abilities` in the export.
+
+**Export schema (game apps read this):**
+```
+exports/kill-team/{rosterId}/
+  meta/  { name, gameSystem, factionId, factionName, pointsTotal, publishedAt, rosterId }
+  units/ [ { instanceId, unitId, name, role, points, countsAs, stats, weapons,
+              chosenLoadout (resolved to full weapon objects), abilities, keywords,
+              equipment, notes } ]
+```
+
+### Phase 2 sign-off
+
+Both rosters are live and confirmed at `exports/kill-team/{rosterId}/units`. Phase 2 is complete pending browser verification of Step 5 (Roster View).
+
+### Outstanding items
+
+- **Step 5 verification** — Roster View in-browser (was unverified before Phase 2 closed)
+- **`_checkSpecialRules`** — Void-dancer Troupe: max 1 fusion pistol + max 1 neuro disruptor across kill team (current stub returns `[]`)
+- **Roster 3 (Kommandos)** — Build via the app using existing seeded data
+- **Kill Team Game App** — Faction alignment: replace hardcoded Drukhari Wyches with Void-dancer Troupe; build board/game loop
+- **Integration** — Wire Kill Team game app to read from `exports/kill-team/{rosterId}`
 
 ---
