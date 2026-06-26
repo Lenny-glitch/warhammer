@@ -357,3 +357,55 @@ Both rosters are live and confirmed at `exports/kill-team/{rosterId}/units`. Pha
 - **Integration** — Wire Kill Team game app to read from `exports/kill-team/{rosterId}`
 
 ---
+
+## Phase 3a — 2026-06-25
+
+### Fixes shipped (commit a220403)
+
+**Fix 1 — RosterView router bug**
+Router was assigning `document.getElementById('screen-roster').innerHTML = RosterView.render(sub)`. `render()` sets `innerHTML` itself and returns nothing, so this clobbered the element with `"undefined"`. Fixed: call `RosterView.render(sub)` directly, no assignment.
+
+**Fix 2 — "Edit this roster" opens blank builder**
+Three parts:
+- `RosterBuilder.render()` now accepts optional third argument `rosterId`. When present: loads `rosters/{rosterId}/meta+units`, restores operatives into `state` (preserving `created` timestamp and roster name), then renders normally so the builder opens pre-populated.
+- `_load()` now guards `if (!RosterBuilder.state.name)` before applying the faction-default name — prevents overwriting a loaded roster name.
+- Edit button in RosterView now routes to `#roster/edit/{rosterId}`; Router dispatches that case to `RosterBuilder.render(null, null, rosterId)`.
+
+**Fix 3 — Void-dancer special rule enforcement**
+`_checkSpecialRules()` stub replaced with real check: max 1 `w-fusion-pistol` and max 1 `w-neuro-disruptor` across all operatives' `chosenLoadout` values. Weapon IDs confirmed from Firebase before hardcoding. Comment flags the function for conversion to a dispatch table when more factions need cross-team weapon limits.
+
+### Known data gap — Kommandos missing Defence stat
+
+All 11 Ork Kommandos operatives are missing the `DF` (Defence) stat in Firebase. The Kill Team schema expects `APL / MOVE / DF / SAVE / WOUNDS`; Kommandos units only have `APL / MOVE / SAVE / WOUNDS`. Displays as `—` in any stat block view. Non-blocking for roster builder or game logic. Fix when doing a Kommandos data cleanup pass: update all 11 unit records with correct DF values (standard Ork DF is 3).
+
+### Fix 4 — Kommandos end-to-end validation
+
+Full create → configure → legality check → save → publish flow exercised via Firebase REST API, mirroring the exact operations `RosterBuilder` performs in the browser.
+
+**Roster built:** 1 Boss Nob (Leader) + 7 unique specialists (Slasha, Dakka, Breacha, Snipa, Burna, Comms, Rokkit) + 2 Kommando Boys (repeatable) = 10 operatives / 10 slots.
+
+**Legality check:** Passed. All constraints met: total 10/10, 1 Leader present, no Bomb Squig overflow, all non-repeatable specialists appear once, Boys correctly excluded from unique constraint.
+
+**Results:**
+
+| | |
+|---|---|
+| Roster ID | `-Ow0T5UGlT8q7ryTPnck` |
+| Draft path | `rosters/-Ow0T5UGlT8q7ryTPnck` |
+| Export path | `exports/kill-team/-Ow0T5UGlT8q7ryTPnck` |
+| Roster View URL | `#roster/-Ow0T5UGlT8q7ryTPnck` |
+| Edit URL | `#roster/edit/-Ow0T5UGlT8q7ryTPnck` |
+
+**Export verified:** All 10 operatives have `stats` and `weapons` arrays. Boss Nob melee loadout resolved correctly to full weapon object (Big choppa, the first slot option).
+
+**Nothing broke.** No issues found during the flow. The data gap (missing `DF` stat) shows as `—` in stats as expected — confirmed non-blocking.
+
+### Outstanding items carried forward to Phase 3b
+
+- **Roster View browser verification** — Fix 1 corrects the router bug; Roster View for all three factions should now be verified in-browser
+- **Fix 2 browser verification** — Load `#roster/edit/-Ow0T5UGlT8q7ryTPnck`, confirm 10 operatives pre-populate, make a change, Save Draft, confirm update (not duplicate)
+- **Kommandos DF data gap** — Update all 11 unit records with `DF: "3"` in Firebase
+- **Kill Team Game App** — Wire to roster exports
+
+---
+
