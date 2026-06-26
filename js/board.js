@@ -39,11 +39,26 @@ window.Board = (() => {
     };
   }
 
+  // Movement allowance from gameData stats, falling back to UNIT_STATS
+  function getUnitMove(unit) {
+    if (!unit) return 6;
+    const def = (unit.factionId && window.getRosterUnitDef)
+      ? window.getRosterUnitDef(unit.factionId, unit.unitId) : null;
+    if (def && def.stats && def.stats.M) return parseInt(String(def.stats.M)) || 6;
+    return ((window.UNIT_STATS || {})[unit.type] || {}).move || 6;
+  }
+
   // ---- Coherency ----
 
   // Returns set of unit IDs that satisfy coherency within their group.
   // Rule: each model needs ≥1 neighbour within 2" (≥2 if group size ≥7).
+  // Single-model units are always in coherency — rule does not apply.
   function calcCoherency(groupModels, positions) {
+    if (groupModels.length <= 1) {
+      const ok = new Set();
+      groupModels.forEach(u => ok.add(u.id));
+      return ok;
+    }
     const required = groupModels.length >= 7 ? 2 : 1;
     const ok = new Set();
     groupModels.forEach(a => {
@@ -695,7 +710,10 @@ window.Board = (() => {
 
       e.preventDefault();
 
-      const weaponRange = ((window.UNIT_STATS || {})[unit.type] || {}).weapon?.range || 0;
+      const _rangedWs   = window.Shooting ? window.Shooting.getAllRangedWeapons(unit) : [];
+      const weaponRange = _rangedWs.length
+        ? Math.max(..._rangedWs.map(w => w.range || 0))
+        : (((window.UNIT_STATS || {})[unit.type] || {}).weapon || {}).range || 0;
       const overlay     = svg.querySelector('#drag-overlay');
 
       // Clamp origin is ALWAYS the snapshot (start-of-activation) position
@@ -722,11 +740,8 @@ window.Board = (() => {
       const moveMax = opts.moveMaxOverride !== undefined
         ? opts.moveMaxOverride
         : syncGroup
-          ? Math.min(...groupMembers.map(m => {
-              const ut = units[m.id];
-              return ((window.UNIT_STATS || {})[ut ? ut.type : ''] || {}).move || 6;
-            }))
-          : ((window.UNIT_STATS || {})[unit.type] || {}).move || 6;
+          ? Math.min(...groupMembers.map(m => getUnitMove(units[m.id])))
+          : getUnitMove(unit);
 
       tokenG.style.cursor = 'grabbing';
       const tokenCircle = tokenG.querySelector('.token-circle');
@@ -896,12 +911,14 @@ window.Board = (() => {
     if (opts.activeGroup) {
       const allUnits  = Object.values(game.units || {}).filter(u => u.alive);
       const groupMdls = allUnits.filter(u => u.unitGroup === opts.activeGroup);
-      const positions = {};
-      groupMdls.forEach(u => {
-        positions[u.id] = (opts.pending && opts.pending[u.id]) ? opts.pending[u.id] : { x: u.x, y: u.y };
-      });
-      coherencyOk = calcCoherency(groupMdls, positions);
-      drawCoherencyZones(svg, groupMdls, positions, coherencyOk);
+      if (groupMdls.length > 1) {
+        const positions = {};
+        groupMdls.forEach(u => {
+          positions[u.id] = (opts.pending && opts.pending[u.id]) ? opts.pending[u.id] : { x: u.x, y: u.y };
+        });
+        coherencyOk = calcCoherency(groupMdls, positions);
+        drawCoherencyZones(svg, groupMdls, positions, coherencyOk);
+      }
     }
 
     if (opts.shooterGroup) {

@@ -193,14 +193,69 @@ Scraped data written to Firebase via `write_firebase.js` (HTTPS PUT, no auth nee
 
 ---
 
-## Current Status (as of Phase 15, Part 2)
+### Phase 15 — Roster key collision bug (fixed in Phase 16)
+
+Root cause: both rosters used `instanceId` values `unit-001` through `unit-005/006`. When the Eldar player joined, `joinGame` wrote units at Firebase paths like `units/unit-001_0` etc., silently overwriting the AM models at identical paths. Only the Commissar (`unit-006_0`) survived because Eldar only goes up to `unit-005`.
+
+**Fix (roster.js):** Model IDs and `unitGroup` are now faction-namespaced: `guard_unit-001_0`, `eldar_unit-001_0`, etc. No collision possible across factions. Existing games created before this fix must be recreated.
+
+---
+
+### Phase 16 — Post-playtest bug fixes
+
+Five bugs fixed based on real cross-machine playtest findings:
+
+1. **Single-model coherency** — `calcCoherency` required ≥1 neighbour, which no lone model can satisfy → permanent red rings on Castellan, Commissar, Farseer, Leman Russ, Chimera, Wraithlord. Fixed: early-return full OK set when `groupModels.length ≤ 1`; coherency zones never drawn for single-model groups.
+
+2. **Movement M stat** — board.js drag clamp read `UNIT_STATS[unit.type].move` exclusively, never gameData. Added `getUnitMove(unit)` helper that reads `def.stats.M` via `getRosterUnitDef` first (handles `"6\""` strings correctly), falls back to UNIT_STATS. Guards get 6", Eldar 7", Wraithlord 8", vehicles 10".
+
+3. **Melee Attacks (A)** — resolved correctly from gameData when cache is populated. Added `getMeleeWeaponForFighter(unit, fighterIndex)`: fighter index 0 gets the first melee weapon (sergeant's chainsword, A3), all others get the last/basic weapon (close-combat-weapon, A1). This is an index-based approximation — see Known Limitations below.
+
+4. **Dice log overflow** — added `.dice-log-scroll` wrapper with `flex: 1; min-height: 0; overflow-y: auto` inside the right panel. The `min-height: 0` is necessary to allow the flex child to shrink below content height and activate scroll.
+
+5. **Multi-weapon units** — `resolveAttacks` and `estimateAttacks` now iterate `getAllRangedWeapons(unit)` per model (all ranged weapons fire at the chosen target). Shot log entries include `weaponResults` array for per-weapon breakdown in the dice log. Unit card expanded view shows all ranged weapon profiles. See Known Limitations below.
+
+---
+
+## Known Limitations (Phase 17 work)
+
+### KL-1: Melee weapon assignment uses fighter index, not model role
+
+**Symptom:** In a 10-model Cadian Shock Troops squad, the first model in the Firebase array gets the chainsword (A3) and the rest get close-combat-weapon (A1). This approximates the correct sergeant/trooper split but is fragile — it depends on array order, not actual model role.
+
+**Root cause:** The scraper produces one unit definition per unit type. It does not capture squad composition (how many models of each role, which weapons each role carries). All 10 model instances are created with the same `unitId: 'cadian-shock-troops'`; there is no `role: 'sergeant'` field.
+
+**Correct fix (Phase 17):** Add a `composition` field to gameData unit definitions, scraped from the Wahapedia unit composition section:
+```json
+"composition": [
+  { "count": 1, "role": "sergeant", "weapons": ["chainsword", "bolt-pistol"] },
+  { "count": 9, "role": "trooper",  "weapons": ["lasgun", "close-combat-weapon"] }
+]
+```
+`buildUnitsFromRoster` would then create model instances with a `role` field. `getMeleeWeaponForFighter` would look up `role` instead of using array index.
+
+### KL-2: Multi-weapon units fire every weapon on the datasheet, not their equipped loadout
+
+**Symptom:** A Leman Russ fires all 10 ranged weapons simultaneously (battle cannon, heavy bolter, heavy flamer, lascannon, multi-melta, plasma cannon ×2, storm bolter, etc.). In reality a specific Leman Russ has ONE turret weapon and one or two sponson/hull choices — the others were never equipped.
+
+**Root cause:** The gameData unit definition lists all weapons available to that unit type across all valid loadout configurations. The roster currently stores only `{ instanceId, unitId, unitName, modelCount }` — there is no `weaponLoadout` field recording which options the player actually chose.
+
+**Correct fix (Phase 17):** Add weapon loadout selection to the roster builder. When adding a vehicle or multi-option unit, the player picks which weapons to equip. Stored as `weaponLoadout: ['leman-russ-battle-cannon', 'heavy-bolter']` on the roster unit entry. `buildUnitsFromRoster` reads this and sets `equippedWeapons` on each model instance. `getAllRangedWeapons` filters by equipped weapons when present.
+
+**Note:** "Fire all equipped weapons" is RAW-correct for 10th edition — every model fires all its weapons at the chosen target. The issue is solely that we don't yet know which weapons are equipped.
+
+---
+
+## Current Status (as of Phase 16)
 
 The game is playable end-to-end with real roster data:
 1. Creator pastes AM roster ID → creates game → shares link
 2. Joiner pastes Eldar roster ID → joins → game goes active
 3. Terrain placement → Deployment → Initiative roll → 5-turn game loop
-4. Unit cards show real stats from Wahapedia-scraped data
-5. Attack pipeline rolls against real T/SV/W values
+4. Unit cards show all weapon profiles from Wahapedia-scraped data
+5. Attack pipeline rolls against real T/SV/W/M values from gameData
+6. Multi-model squads maintain coherency rules; single models exempt
+7. Dice log scrolls without affecting board layout; per-weapon breakdown shown for vehicles
 
 **What still uses hardcoded data:** Dev presets (Jump to T1/T2/T3 states) use legacy `guard_0`/`eldar_0` unit IDs from `buildInitialUnits()`. These exist for testing only and are independent of the roster flow.
 

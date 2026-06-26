@@ -434,6 +434,21 @@ body {
 }
 
 /* ---- Dice log ---- */
+.dice-log-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.dice-weapon-line {
+  font-size: 0.63rem;
+  color: var(--text-dim);
+  padding: 0.1rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.dice-weapon-line:last-child { border-bottom: none; }
 .dice-log-empty {
   font-size: 0.72rem;
   color: var(--text-muted);

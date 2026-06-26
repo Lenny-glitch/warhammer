@@ -33,15 +33,20 @@ window.RosterLoader = (() => {
     const isGuard  = playerFaction === 'guard';
     const SPACING  = 2;
 
-    for (const rosterUnit of (roster.units || [])) {
+    const rosterUnitList = Array.isArray(roster.units)
+      ? roster.units
+      : Object.values(roster.units || {});
+
+    for (const rosterUnit of rosterUnitList) {
       const { instanceId, unitId, unitName, modelCount } = rosterUnit;
+      if (!instanceId || !unitId) continue;
       const def   = getUnitDef(factionId, unitId);
       const count = modelCount || 1;
       const cols  = Math.min(count, 5);
       const w     = def && def.stats ? Math.max(1, parseStat(def.stats.W)) : 1;
 
       for (let i = 0; i < count; i++) {
-        const id  = `${instanceId}_${i}`;
+        const id  = `${playerFaction}_${instanceId}_${i}`;
         const col = i % cols;
         const row = Math.floor(i / cols);
         const x   = 6 + col * SPACING;
@@ -52,7 +57,7 @@ window.RosterLoader = (() => {
           faction:   playerFaction,
           factionId,
           unitId,
-          unitGroup: instanceId,
+          unitGroup: `${playerFaction}_${instanceId}`,
           label:     unitName || (def ? def.name : unitId),
           type:      unitId,   // kept for legacy UNIT_STATS fallbacks
           x, y,

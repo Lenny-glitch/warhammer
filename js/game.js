@@ -391,8 +391,9 @@ window.Game = (() => {
         ? window.getRosterUnitDef(info.factionId, info.unitId) : null;
       const leg  = (window.UNIT_STATS || {})[info.type] || {};
       const dst  = def && def.stats ? def.stats : null;
-      const rw   = def && def.weapons
-        ? Object.values(def.weapons).find(w => w.type === 'ranged') : null;
+      const allRangedWeapons = def && def.weapons
+        ? Object.values(def.weapons).filter(w => w.type === 'ranged') : [];
+      const rw   = allRangedWeapons[0] || null;
       const lw   = leg.weapon || {};
 
       const M  = dst ? dst.M  : (leg.move      ? leg.move + '"'  : '?');
@@ -401,14 +402,6 @@ window.Game = (() => {
       const W  = dst ? dst.W  : (leg.w         || '?');
       const LD = dst ? dst.LD : (leg.ld        ? leg.ld + '+'    : '?');
       const OC = dst ? (dst.OC || '2') : '2';
-
-      const wName  = rw ? rw.name                             : (lw.name     || '?');
-      const wRange = rw ? rw.range + '"'                      : (lw.range    ? lw.range + '"' : '?');
-      const wAtk   = rw ? String(rw.attacks)                  : String(lw.attacks || '?');
-      const wBS    = rw ? rw.skill + '+'                      : (lw.bs       ? lw.bs + '+'   : '?');
-      const wS     = rw ? rw.S                                : (lw.strength || '?');
-      const wAP    = rw ? (rw.AP === 0 ? '0' : '-' + rw.AP)  : (lw.ap      !== undefined ? lw.ap : '0');
-      const wD     = rw ? String(rw.D)                        : String(lw.damage || '?');
 
       const isExp    = cardState.expanded === gId;
       const isHl     = cardState.highlighted === gId;
@@ -423,17 +416,33 @@ window.Game = (() => {
           <span class="stat-cell">W<span>${escHtml(String(W))}</span></span>
         </div>`;
 
-      const expandedSection = isExp ? `
-        <div class="unit-card-expanded">
-          <div class="expand-label">Weapon — ${escHtml(wName)}</div>
+      function weaponRow(w) {
+        const wName  = w ? w.name                            : (lw.name     || '?');
+        const wRange = w ? w.range + '"'                     : (lw.range    ? lw.range + '"' : '?');
+        const wAtk   = w ? String(w.attacks)                 : String(lw.attacks || '?');
+        const wBS    = w ? w.skill + '+'                     : (lw.bs       ? lw.bs + '+'   : '?');
+        const wS     = w ? w.S                               : (lw.strength || '?');
+        const wAP    = w ? (w.AP === 0 ? '0' : '-' + w.AP)  : (lw.ap      !== undefined ? lw.ap : '0');
+        const wD     = w ? String(w.D)                       : String(lw.damage || '?');
+        return `
+          <div class="expand-label">${escHtml(wName)}</div>
           <div class="stat-row">
-            <span class="stat-cell">Rng<span>${escHtml(wRange)}</span></span>
+            <span class="stat-cell">Rng<span>${escHtml(String(wRange))}</span></span>
             <span class="stat-cell">A<span>${escHtml(wAtk)}</span></span>
-            <span class="stat-cell">BS<span>${escHtml(wBS)}</span></span>
+            <span class="stat-cell">BS<span>${escHtml(String(wBS))}</span></span>
             <span class="stat-cell">S<span>${escHtml(String(wS))}</span></span>
             <span class="stat-cell">AP<span>${escHtml(String(wAP))}</span></span>
             <span class="stat-cell">D<span>${escHtml(wD)}</span></span>
-          </div>
+          </div>`;
+      }
+
+      const weaponsHTML = allRangedWeapons.length
+        ? allRangedWeapons.map(w => weaponRow(w)).join('')
+        : weaponRow(null);
+
+      const expandedSection = isExp ? `
+        <div class="unit-card-expanded">
+          ${weaponsHTML}
           <div class="stat-row" style="margin-top:0.3rem;">
             <span class="stat-cell">Ld<span>${escHtml(String(LD))}</span></span>
             <span class="stat-cell">OC<span>${escHtml(String(OC))}</span></span>
@@ -494,12 +503,22 @@ window.Game = (() => {
         `<div>${escHtml(l)}</div>`
       ).join('');
 
+      const weaponBreakdown = (entry.weaponResults && entry.weaponResults.length > 1)
+        ? entry.weaponResults.map(wr =>
+            `<div class="dice-weapon-line">${escHtml(wr.name)}: `+
+            `${wr.attacks}A → ${wr.hits} hit${wr.hits!==1?'s':''}, `+
+            `${wr.wounds} wound${wr.wounds!==1?'s':''}, `+
+            `${wr.unsaved} unsaved</div>`
+          ).join('')
+        : '';
+
       return `
         <div class="dice-entry">
           <div class="dice-entry-header">
             ${isMelee ? '<span style="color:rgba(220,110,0,0.9);font-size:0.65rem;">⚔ MELEE</span> ' : ''}<strong>${shooterLabel}</strong> → <strong>${targetLabel}</strong>
           </div>
-          ${rollLines}
+          ${weaponBreakdown}
+          ${weaponBreakdown ? '' : rollLines}
           <div class="dice-entry-summary">${summaryLines}</div>
         </div>`;
     }).join('');
@@ -1529,7 +1548,9 @@ window.Game = (() => {
         <div id="board-wrap" class="board-wrap"></div>
         <div class="side-panel side-panel-right" id="panel-dice">
           <div class="side-panel-title">Dice Log — Turn ${turn.number}</div>
-          ${diceLogHTML(turn.shotLog)}
+          <div class="dice-log-scroll">
+            ${diceLogHTML(turn.shotLog)}
+          </div>
         </div>
       </div>
       <div class="phase-bar">
@@ -1795,7 +1816,7 @@ window.Game = (() => {
             });
 
             const coherencyOk = window.Board.calcCoherency(groupModels, positions);
-            const hasRed = groupModels.some(u => !coherencyOk.has(u.id));
+            const hasRed = groupModels.length > 1 && groupModels.some(u => !coherencyOk.has(u.id));
 
             if (hasRed) {
               // Swap buttons for inline confirmation prompt
