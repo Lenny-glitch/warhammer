@@ -3,27 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kill Team — T'au vs Drukhari</title>
+  <title>Kill Team</title>
   <style>
-    /* ─── Reset & Variables ──────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --tau:           #4a9eff;
-      --tau-glow:      rgba(74, 158, 255, 0.25);
-      --drukhari:      #e83c55;
-      --drukhari-glow: rgba(232, 60, 85, 0.25);
-      --bg:            #0e0e1a;
-      --surface:       #181828;
-      --surface2:      #22223a;
-      --border:        #2e2e50;
-      --text:          #dcdcf0;
-      --text-dim:      #6a6a90;
-      --green:         #4caf74;
-      --green-dim:     rgba(76, 175, 116, 0.15);
-      --red-dim:       rgba(200, 60, 60, 0.15);
-      --red-text:      #cc6060;
-      --orange:        #ff8c00;
+      --p1:        #4a9eff;
+      --p1-glow:   rgba(74,158,255,0.22);
+      --p1-dim:    rgba(74,158,255,0.12);
+      --p2:        #c97af7;
+      --p2-glow:   rgba(201,122,247,0.22);
+      --p2-dim:    rgba(201,122,247,0.12);
+      --bg:        #0e0e1a;
+      --surface:   #181828;
+      --surface2:  #22223a;
+      --border:    #2e2e50;
+      --border-hi: #5050a0;
+      --text:      #dcdcf0;
+      --text-dim:  #6a6a90;
+      --green:     #4caf74;
+      --green-dim: rgba(76,175,116,0.15);
+      --red:       #cc6060;
+      --red-dim:   rgba(200,60,60,0.15);
+      --gold:      #c9a84c;
+      --orange:    #ff8c00;
     }
 
     body {
@@ -33,907 +36,1799 @@
       min-height: 100vh;
     }
 
-    /* ─── Dev Banner ─────────────────────────────────────────────────────── */
+    /* ── DEV BANNER ── */
     #dev-banner {
       display: none;
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 9999;
-      background: var(--orange);
-      color: #000;
-      text-align: center;
-      padding: 5px 12px;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      background: var(--orange); color: #000;
+      text-align: center; padding: 5px 12px;
+      font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
     }
-
-    body.dev-mode #dev-banner  { display: block; }
+    body.dev-mode #dev-banner { display: block; }
     body.dev-mode              { padding-top: 29px; }
 
-    /* ─── Normal Mode App Container ─────────────────────────────────────── */
+    /* ── SCREEN SYSTEM (normal mode) ── */
     #app {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      padding: 2rem;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; padding: 2rem;
     }
-
     body.dev-mode #app { display: none; }
 
-    /* ─── Screen System (normal mode) ───────────────────────────────────── */
-    .screen {
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      width: 100%;
-      max-width: 580px;
-    }
-
+    .screen { display: none; flex-direction: column; align-items: center; width: 100%; }
     .screen.active { display: flex; }
 
-    /* ─── Dev Split Container ────────────────────────────────────────────── */
-    #dev-container {
-      display: none;
-      min-height: calc(100vh - 29px);
+    /* ── DEV CONTAINER ── */
+    #dev-container { display: none; min-height: calc(100vh - 29px); }
+    body.dev-mode #dev-container { display: flex; }
+    .dev-col { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); min-width: 0; }
+    .dev-col:last-child { border-right: none; }
+    .dev-col-label {
+      padding: 5px 12px; font-size: 10px; font-weight: 700;
+      letter-spacing: 2px; text-transform: uppercase;
+      background: var(--surface); border-bottom: 1px solid var(--border);
     }
+    #dev-col-p1 .dev-col-label { color: var(--p1); }
+    #dev-col-p2 .dev-col-label { color: var(--p2); }
+    .dev-col-body { flex: 1; overflow: auto; }
 
-    body.dev-mode #dev-container {
-      display: flex;
+    /* ── LOBBY ── */
+    .lobby-wrap { width: 100%; max-width: 440px; }
+    .lobby-title {
+      font-size: 2.2rem; font-weight: 900; letter-spacing: 5px;
+      text-transform: uppercase; text-align: center; margin-bottom: 4px;
     }
-
-    .dev-panel {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      border-right: 1px solid var(--border);
-      min-width: 0;
+    .lobby-sub {
+      font-size: 11px; color: var(--text-dim); letter-spacing: 2px;
+      text-transform: uppercase; text-align: center; margin-bottom: 2rem;
     }
-
-    .dev-panel:last-child { border-right: none; }
-
-    .dev-panel-label {
-      padding: 6px 14px;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
+    .field-label {
+      font-size: 11px; color: var(--text-dim); letter-spacing: 1px;
+      text-transform: uppercase; margin-bottom: 5px;
     }
-
-    #dev-panel-tau      .dev-panel-label { color: var(--tau); }
-    #dev-panel-drukhari .dev-panel-label { color: var(--drukhari); }
-
-    .dev-panel-body {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
+    .field-wrap { margin-bottom: 1rem; }
+    .text-input {
+      width: 100%; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 5px; padding: 9px 12px; color: var(--text);
+      font: inherit; font-size: 14px;
     }
-
-    /* ─── Panel Content (used in both normal and dev) ───────────────────── */
-    .panel {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      width: 100%;
-      max-width: 480px;
-      gap: 0;
+    .text-input:focus { outline: none; border-color: var(--border-hi); }
+    .roster-preview {
+      margin-top: 5px; font-size: 12px; color: var(--text-dim);
+      min-height: 1.4em;
     }
-
-    /* compact variant for dev panels */
-    .panel.compact { max-width: 340px; }
-
-    /* ─── Typography ─────────────────────────────────────────────────────── */
-    .game-title {
-      font-size: 2.4rem;
-      font-weight: 900;
-      letter-spacing: 5px;
-      text-transform: uppercase;
-      line-height: 1;
-      margin-bottom: 4px;
-    }
-
-    .panel.compact .game-title { font-size: 1.6rem; letter-spacing: 3px; }
-
-    .game-subtitle {
-      font-size: 11px;
-      color: var(--text-dim);
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      margin-bottom: 2rem;
-    }
-
-    .panel.compact .game-subtitle { margin-bottom: 1.25rem; }
-
-    /* ─── Faction Selection ──────────────────────────────────────────────── */
-    .choose-label {
-      font-size: 12px;
-      color: var(--text-dim);
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      margin-bottom: 1rem;
-      align-self: flex-start;
-    }
-
-    .faction-row {
-      display: flex;
-      gap: 1rem;
-      width: 100%;
-      margin-bottom: 2rem;
-    }
-
-    .panel.compact .faction-row { gap: 0.75rem; margin-bottom: 1.25rem; }
-
-    .faction-card {
-      flex: 1;
-      background: var(--surface);
-      border: 2px solid var(--border);
-      border-radius: 8px;
-      padding: 1.25rem 1rem;
-      cursor: pointer;
-      transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s, opacity 0.15s;
-      text-align: center;
-      color: var(--text);
-      font: inherit;
-    }
-
-    .faction-card:not(:disabled):hover {
-      transform: translateY(-2px);
-    }
-
-    .faction-card.tau:not(:disabled):hover,
-    .faction-card.tau:not(:disabled):focus {
-      border-color: var(--tau);
-      box-shadow: 0 0 0 1px var(--tau), 0 6px 24px var(--tau-glow);
-      outline: none;
-    }
-
-    .faction-card.drukhari:not(:disabled):hover,
-    .faction-card.drukhari:not(:disabled):focus {
-      border-color: var(--drukhari);
-      box-shadow: 0 0 0 1px var(--drukhari), 0 6px 24px var(--drukhari-glow);
-      outline: none;
-    }
-
-    .faction-card:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .faction-card-icon {
-      font-size: 2rem;
-      margin-bottom: 0.5rem;
-      line-height: 1;
-    }
-
-    .panel.compact .faction-card-icon { display: none; }
-
-    .faction-card-name {
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      margin-bottom: 4px;
-    }
-
-    .faction-card.tau      .faction-card-name { color: var(--tau); }
-    .faction-card.drukhari .faction-card-name { color: var(--drukhari); }
-
-    .faction-card-detail {
-      font-size: 11px;
-      color: var(--text-dim);
-      margin-bottom: 10px;
-    }
-
-    .faction-badge {
-      display: inline-block;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      padding: 3px 8px;
-      border-radius: 3px;
-    }
-
-    .faction-badge.available {
-      background: var(--green-dim);
-      color: var(--green);
-      border: 1px solid rgba(76, 175, 116, 0.3);
-    }
-
-    .faction-badge.taken {
-      background: var(--red-dim);
-      color: var(--red-text);
-      border: 1px solid rgba(200, 60, 60, 0.3);
-    }
-
-    /* ─── Link Row ───────────────────────────────────────────────────────── */
-    .link-section {
-      width: 100%;
-      margin-top: 0.5rem;
-    }
-
-    .link-label {
-      font-size: 11px;
-      color: var(--text-dim);
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      margin-bottom: 6px;
-    }
-
-    .link-row {
-      display: flex;
-      gap: 8px;
-    }
-
+    .roster-preview.ok  { color: var(--green); }
+    .roster-preview.err { color: var(--red); }
+    .link-row { display: flex; gap: 8px; margin-top: 0.5rem; }
     .link-input {
-      flex: 1;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: 7px 10px;
-      color: var(--text-dim);
-      font-size: 12px;
-      font-family: 'Consolas', 'Courier New', monospace;
-      min-width: 0;
+      flex: 1; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 5px; padding: 7px 10px; color: var(--text-dim);
+      font-size: 12px; font-family: monospace; min-width: 0;
     }
 
-    /* ─── Buttons ────────────────────────────────────────────────────────── */
+    /* ── WAITING ── */
+    .waiting-wrap { text-align: center; max-width: 440px; width: 100%; }
+    .waiting-name { font-size: 1.3rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+    .waiting-sub  { font-size: 13px; color: var(--text-dim); margin-bottom: 2rem; }
+
+    /* ── BUTTONS ── */
     .btn {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: 7px 14px;
-      color: var(--text);
-      font: inherit;
-      font-size: 13px;
-      cursor: pointer;
-      white-space: nowrap;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 5px; padding: 8px 16px; color: var(--text);
+      font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
       transition: background 0.1s, border-color 0.1s;
     }
-
-    .btn:hover { background: #2a2a48; border-color: #444466; }
-
-    /* ─── Waiting Screen ─────────────────────────────────────────────────── */
-    .waiting-faction-name {
-      font-size: 1.2rem;
-      font-weight: 700;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      margin-bottom: 0.5rem;
+    .btn:hover:not(:disabled) { background: #2a2a48; border-color: #444466; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--border-hi); border-color: #7070c0;
+      font-weight: 600;
     }
+    .btn-primary:hover:not(:disabled) { background: #6060b0; }
+    .btn-ghost { background: none; border-color: transparent; color: var(--text-dim); font-size: 11px; }
+    .btn-ghost:hover { background: var(--surface); border-color: var(--border); color: var(--text); }
+    .btn-p1 { border-color: var(--p1); color: var(--p1); }
+    .btn-p2 { border-color: var(--p2); color: var(--p2); }
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
-    .waiting-faction-name.tau      { color: var(--tau); }
-    .waiting-faction-name.drukhari { color: var(--drukhari); }
-
-    .waiting-sub {
-      font-size: 13px;
-      color: var(--text-dim);
-      margin-bottom: 2rem;
-    }
-
-    .panel.compact .waiting-sub { margin-bottom: 1rem; font-size: 12px; }
-
-    /* ─── Loading Spinner ────────────────────────────────────────────────── */
+    /* ── SPINNER ── */
     .spinner {
-      width: 36px;
-      height: 36px;
-      border: 3px solid var(--surface2);
-      border-top-color: var(--tau);
-      border-radius: 50%;
-      animation: spin 0.75s linear infinite;
-      margin-bottom: 1rem;
+      width: 32px; height: 32px; border: 3px solid var(--surface2);
+      border-top-color: var(--p1); border-radius: 50%;
+      animation: spin 0.75s linear infinite; margin-bottom: 1rem;
     }
-
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ─── Error Screen ───────────────────────────────────────────────────── */
+    /* ── GAME LAYOUT ── */
+    #screen-game {
+      flex-direction: column; min-height: 100vh;
+      padding: 0; align-items: stretch; max-width: none;
+    }
+    .game-topbar {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 7px 14px; background: var(--surface);
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+      font-size: 12px; flex-wrap: wrap;
+    }
+    .topbar-tp   { font-weight: 700; color: var(--gold); letter-spacing: 1px; }
+    .topbar-sep  { color: var(--border-hi); }
+    .topbar-phase { font-size: 11px; background: var(--border); padding: 2px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    .topbar-cp-p1 { color: var(--p1); font-size: 12px; }
+    .topbar-cp-p2 { color: var(--p2); font-size: 12px; }
+    .topbar-spacer { flex: 1; }
+
+    .game-main {
+      flex: 1; display: flex; min-height: 0; overflow: hidden;
+    }
+
+    /* ── SIDEBARS ── */
+    .sidebar {
+      width: 200px; flex-shrink: 0; overflow-y: auto;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+    }
+    .sidebar-right { border-right: none; border-left: 1px solid var(--border); }
+    .sidebar-header {
+      padding: 8px 10px; font-size: 10px; font-weight: 700;
+      letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid var(--border);
+    }
+    .sidebar-p1 .sidebar-header { color: var(--p1); }
+    .sidebar-p2 .sidebar-header { color: var(--p2); }
+
+    .op-row {
+      padding: 7px 10px; border-bottom: 1px solid var(--border);
+      cursor: default; transition: background 0.1s;
+    }
+    .op-row.clickable { cursor: pointer; }
+    .op-row.clickable:hover { background: var(--surface2); }
+    .op-row.active-op { background: rgba(201,168,76,0.08); }
+    .op-row.expended  { opacity: 0.42; }
+    .op-row.dead      { opacity: 0.25; }
+    .op-name    { font-size: 12px; font-weight: 600; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .op-role    { font-size: 10px; color: var(--text-dim); margin-bottom: 3px; }
+    .op-status-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+    .op-wounds  { font-size: 10px; }
+    .op-tag {
+      font-size: 9px; padding: 1px 5px; border-radius: 3px;
+      font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .tag-engage  { background: var(--green-dim); color: var(--green); border: 1px solid rgba(76,175,116,0.3); }
+    .tag-conceal { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); }
+    .tag-ready   { background: rgba(201,168,76,0.12); color: var(--gold); border: 1px solid rgba(201,168,76,0.3); }
+    .tag-expended { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); }
+    .tag-wounded  { background: rgba(255,140,0,0.12); color: var(--orange); border: 1px solid rgba(255,140,0,0.3); }
+    .tag-injured  { background: var(--red-dim); color: var(--red); border: 1px solid rgba(200,60,60,0.3); }
+    .tag-deploy   { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); font-size: 9px; }
+    .op-row.deploy-selected { background: rgba(201,168,76,0.12); border-left: 2px solid var(--gold); }
+
+    /* ── BOARD WRAP ── */
+    .board-wrap { flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 12px; }
+    .board-svg  { display: block; max-height: 100%; }
+
+    /* ── PHASE BAR ── */
+    .phase-bar {
+      flex-shrink: 0; background: var(--surface); border-top: 1px solid var(--border);
+      padding: 10px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .phase-bar-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; flex-shrink: 0; }
+    .phase-bar-body  { flex: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    /* ── ACTIVATION PANEL ── */
+    .activation-wrap {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%;
+    }
+    .activation-name { font-size: 13px; font-weight: 700; }
+    .activation-ap   { font-size: 12px; color: var(--gold); font-weight: 700; white-space: nowrap; }
+    .activation-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .action-btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 5px 10px; color: var(--text);
+      font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap;
+      transition: background 0.1s;
+    }
+    .action-btn:hover:not(:disabled) { background: #2a2a48; border-color: var(--border-hi); }
+    .action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .action-btn.stub { border-style: dashed; color: var(--text-dim); }
+    .order-btn {
+      padding: 5px 10px; border-radius: 4px; border: 1px solid; font: inherit;
+      font-size: 11px; cursor: pointer; font-weight: 600;
+    }
+    .order-btn.engage  { background: var(--green-dim); color: var(--green); border-color: rgba(76,175,116,0.5); }
+    .order-btn.conceal { background: var(--surface2); color: var(--text-dim); border-color: var(--border); }
+
+    /* ── TERRAIN PHASE ── */
+    .terrain-tier-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tier-btn {
+      display: flex; flex-direction: column; align-items: flex-start;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 5px; padding: 5px 10px; cursor: pointer; font: inherit;
+      transition: border-color 0.1s;
+    }
+    .tier-btn.selected { border-color: var(--gold); }
+    .tier-btn:hover:not(.selected) { border-color: var(--border-hi); }
+    .tier-btn-name { font-size: 12px; font-weight: 600; }
+    .tier-btn-cost { font-size: 10px; color: var(--text-dim); }
+    .tier-swatch { width: 10px; height: 10px; border-radius: 2px; margin-bottom: 3px; }
+    .budget-row  { display: flex; gap: 4px; align-items: center; font-size: 12px; }
+    .budget-bar  { flex: 1; height: 4px; background: var(--surface2); border-radius: 2px; }
+    .budget-fill { height: 100%; border-radius: 2px; transition: width 0.2s; }
+    .budget-fill.p1 { background: var(--p1); }
+    .budget-fill.p2 { background: var(--p2); }
+
+    /* ── INITIATIVE PHASE ── */
+    .init-wrap { text-align: center; }
+    .init-roll-box {
+      display: inline-flex; gap: 3rem; margin: 1rem 0;
+    }
+    .init-player { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+    .init-player-name { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+    .init-dice { font-size: 2.5rem; font-weight: 900; min-width: 3rem; text-align: center; }
+    .init-result { font-size: 12px; color: var(--text-dim); min-height: 1.2em; }
+
+    /* ── STRATEGY PHASE ── */
+    .strategy-wrap { display: flex; flex-direction: column; gap: 8px; }
+    .cp-row { display: flex; gap: 1rem; align-items: center; font-size: 13px; }
+    .cp-p1  { color: var(--p1); font-weight: 700; }
+    .cp-p2  { color: var(--p2); font-weight: 700; }
+
+    /* ── ERROR ── */
     .error-box {
-      background: var(--red-dim);
-      border: 1px solid rgba(200, 60, 60, 0.3);
-      border-radius: 6px;
-      padding: 1rem 1.25rem;
-      color: var(--red-text);
-      font-size: 14px;
-      line-height: 1.5;
-      margin-bottom: 1.5rem;
-      width: 100%;
-      text-align: center;
+      background: var(--red-dim); border: 1px solid rgba(200,60,60,0.3);
+      border-radius: 6px; padding: 1rem 1.25rem; color: var(--red);
+      font-size: 14px; margin-bottom: 1.5rem; width: 100%; text-align: center; max-width: 440px;
     }
-
-    /* ─── Game Screen Placeholder ────────────────────────────────────────── */
-    .game-placeholder {
-      color: var(--text-dim);
-      font-size: 14px;
-      text-align: center;
+    .info-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.75rem 1rem; font-size: 13px;
+      color: var(--text-dim); margin-bottom: 0.75rem;
     }
-
-    /* ─── Status Flash ───────────────────────────────────────────────────── */
-    .status-flash {
-      font-size: 12px;
-      color: var(--text-dim);
-      min-height: 1.4em;
-      text-align: center;
-      margin-top: 6px;
-    }
+    .divider { width: 100%; border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
   </style>
 </head>
 <body>
 
-  <!-- Dev mode indicator: always in DOM, shown only when ?dev=true -->
-  <div id="dev-banner">
-    ⚠ TEST MODE — Both player perspectives shown side by side
+<div id="dev-banner">⚠ DEV MODE — Both player perspectives shown side by side</div>
+
+<!-- Normal mode: one screen at a time -->
+<div id="app">
+  <div id="screen-loading" class="screen active">
+    <div class="spinner"></div>
+    <p style="color:var(--text-dim);font-size:14px;">Loading…</p>
   </div>
-
-  <!-- Normal mode: one screen visible at a time -->
-  <div id="app">
-    <div id="screen-loading" class="screen active">
-      <div class="spinner"></div>
-      <p style="color:var(--text-dim); font-size:14px;">Loading game…</p>
-    </div>
-
-    <div id="screen-error" class="screen">
-      <h1 class="game-title" style="margin-bottom:1.5rem;">Error</h1>
-      <div class="error-box" id="error-msg">Something went wrong.</div>
-      <button class="btn" onclick="createGame()">Start New Game</button>
-    </div>
-
-    <!-- Content is injected by JS for these three screens -->
-    <div id="screen-faction" class="screen"></div>
-    <div id="screen-waiting" class="screen"></div>
-
-    <div id="screen-game" class="screen">
-      <p class="game-placeholder">Board rendering coming in Step 2.</p>
-    </div>
+  <div id="screen-error" class="screen">
+    <div class="error-box" id="error-msg">Something went wrong.</div>
+    <button class="btn" onclick="location.reload()">Reload</button>
   </div>
+  <div id="screen-lobby"   class="screen"></div>
+  <div id="screen-waiting" class="screen"></div>
+  <div id="screen-game"    class="screen"></div>
+</div>
 
-  <!-- Dev mode: two panels side by side -->
-  <div id="dev-container">
-    <div class="dev-panel" id="dev-panel-tau">
-      <div class="dev-panel-label">Tau Player Perspective</div>
-      <div class="dev-panel-body" id="dev-body-tau"></div>
-    </div>
-    <div class="dev-panel" id="dev-panel-drukhari">
-      <div class="dev-panel-label">Drukhari Player Perspective</div>
-      <div class="dev-panel-body" id="dev-body-drukhari"></div>
-    </div>
+<!-- Dev mode: two columns side by side -->
+<div id="dev-container">
+  <div class="dev-col" id="dev-col-p1">
+    <div class="dev-col-label">Player 1</div>
+    <div class="dev-col-body" id="dev-body-p1"></div>
   </div>
+  <div class="dev-col" id="dev-col-p2">
+    <div class="dev-col-label">Player 2</div>
+    <div class="dev-col-body" id="dev-body-p2"></div>
+  </div>
+</div>
 
-  <!-- Firebase compat SDK (v9) -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-  <!-- Project credentials — must exist before this script runs -->
-  <script src="firebase-config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
 
-  <script>
-  'use strict';
+<script>
+'use strict';
 
-  // ─── Board constants (used here only for data definitions) ─────────────────
-  const BOARD_W = 22;  // inches
-  const BOARD_H = 30;  // inches
+// ═══════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════
 
-  // ─── Unit factory helpers ────────────────────────────────────────────────────
-  // Canonical coordinate origin: top-left corner.
-  // Tau deploys at the BOTTOM (y ∈ [27, 30]), Drukhari at the TOP (y ∈ [0, 3]).
-  // Unit positions are in inches.
+const BOARD_W         = 22;
+const BOARD_H         = 30;
+const DEPLOY_DEPTH    = 10;   // inches from each end — 1/3 of 30"
+const TERRAIN_BUDGET  = 10;   // pts per player
+const TOKEN_R         = 0.5;  // operative token radius
+const TERRAIN_COSTS   = { rough: 1, chestHigh: 2, tall: 3 };
+const TERRAIN_LABELS  = { rough: 'Rough', chestHigh: 'Chest-High', tall: 'Tall' };
+const TERRAIN_FX      = { rough: 'Difficult ground', chestHigh: 'Cover, passable', tall: 'Blocks LOS' };
 
-  function makeTauUnits() {
-    // Two rows in the Tau deployment zone
-    const R1Y = 28.0;
-    const R2Y = 29.5;
-    // Row 1 x-positions (5 slots): ION, PF, PF, PF, PF
-    const r1x = [2.5, 6.0, 9.5, 13.0, 17.0];
-    // Row 2 x-positions (5 slots): SU, PF, PF, PF, RR
-    const r2x = [2.5, 6.0, 10.0, 14.0, 19.0];
+// Hardcoded dev rosters — Tau Pathfinders + Void-dancer Troupe
+const DEV_ROSTER_P1 = '-OvzZzqDWpwSVAwZx3kO';
+const DEV_ROSTER_P2 = '-OvzZzrLgyu9iYFRbFrb';
 
-    const units = [];
+// ═══════════════════════════════════════════════════════════
+//  SVG HELPERS
+//  Source: warhammer40k/js/board.js — copied, not reimplemented
+// ═══════════════════════════════════════════════════════════
 
-    // Shas'ui (leader) — row 2, slot 0
-    units.push({
-      id: 'tau-0', abbr: 'SU', name: "Shas'ui",
-      faction: 'tau', leader: true,
-      wounds: 7, maxWounds: 7,
-      move: 6, bs: 4,
-      weapon: { name: 'Pulse Rifle', range: 30, ap: 0, damage: 1 },
-      x: r2x[0], y: R2Y,
-      activated: false, dead: false,
-    });
+const NS = 'http://www.w3.org/2000/svg';
 
-    // 7 standard Pathfinders
-    const pfPositions = [
-      { x: r1x[1], y: R1Y },
-      { x: r1x[2], y: R1Y },
-      { x: r1x[3], y: R1Y },
-      { x: r1x[4], y: R1Y },
-      { x: r2x[1], y: R2Y },
-      { x: r2x[2], y: R2Y },
-      { x: r2x[3], y: R2Y },
-    ];
-    pfPositions.forEach((pos, i) => {
-      units.push({
-        id: `tau-${i + 1}`, abbr: 'PF', name: 'Pathfinder',
-        faction: 'tau', leader: false,
-        wounds: 7, maxWounds: 7,
-        move: 6, bs: 4,
-        weapon: { name: 'Pulse Carbine', range: 18, ap: 0, damage: 1 },
-        x: pos.x, y: pos.y,
-        activated: false, dead: false,
-      });
-    });
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(NS, tag);
+  Object.entries(attrs || {}).forEach(([k, v]) => e.setAttribute(k, String(v)));
+  return e;
+}
 
-    // Ion Rifle — row 1, slot 0
-    units.push({
-      id: 'tau-8', abbr: 'IR', name: 'Ion Pathfinder',
-      faction: 'tau', leader: false,
-      wounds: 7, maxWounds: 7,
-      move: 6, bs: 4,
-      weapon: { name: 'Ion Rifle', range: 30, ap: -1, damage: 2 },
-      x: r1x[0], y: R1Y,
-      activated: false, dead: false,
-    });
+function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
-    // Rail Rifle — row 2, slot 4
-    units.push({
-      id: 'tau-9', abbr: 'RR', name: 'Rail Pathfinder',
-      faction: 'tau', leader: false,
-      wounds: 7, maxWounds: 7,
-      move: 6, bs: 4,
-      weapon: { name: 'Rail Rifle', range: 30, ap: -2, damage: 2 },
-      x: r2x[4], y: R2Y,
-      activated: false, dead: false,
-    });
+function toSVG(svg, cx, cy) {
+  const pt = svg.createSVGPoint();
+  pt.x = cx; pt.y = cy;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
 
-    return units;
+// Clamp destination to within `max` inches along the same vector from origin
+function clampVec(fx, fy, tx, ty, max) {
+  const dx = tx - fx, dy = ty - fy;
+  const d  = Math.hypot(dx, dy);
+  if (d === 0 || d <= max) return { x: tx, y: ty };
+  return { x: fx + (dx / d) * max, y: fy + (dy / d) * max };
+}
+
+// 1" snap for Kill Team (not 2" like 40k)
+function snapToGrid(x, y) {
+  return {
+    x: Math.max(0.5, Math.min(BOARD_W - 0.5, Math.round(x))),
+    y: Math.max(0.5, Math.min(BOARD_H - 0.5, Math.round(y))),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TERRAIN RENDERING
+//  Source: warhammer40k/js/board.js — copied, adapted for 1" grid
+// ═══════════════════════════════════════════════════════════
+
+const TERRAIN_FILL   = { rough: '#1e1a10', chestHigh: '#141e12', tall: '#0e1018' };
+const TERRAIN_STROKE = { rough: '#5a4830', chestHigh: '#3a5028', tall: '#30384a' };
+
+function drawGrid(parent) {
+  const g = svgEl('g');
+  // 1" grid (minor)
+  for (let x = 0; x <= BOARD_W; x++) {
+    g.appendChild(svgEl('line', { x1: x, y1: 0, x2: x, y2: BOARD_H, stroke: 'rgba(255,255,255,0.03)', 'stroke-width': 0.06 }));
+  }
+  for (let y = 0; y <= BOARD_H; y++) {
+    g.appendChild(svgEl('line', { x1: 0, y1: y, x2: BOARD_W, y2: y, stroke: 'rgba(255,255,255,0.03)', 'stroke-width': 0.06 }));
+  }
+  // 5" major grid lines
+  for (let x = 0; x <= BOARD_W; x += 5) {
+    g.appendChild(svgEl('line', { x1: x, y1: 0, x2: x, y2: BOARD_H, stroke: 'rgba(255,255,255,0.08)', 'stroke-width': 0.1 }));
+  }
+  for (let y = 0; y <= BOARD_H; y += 5) {
+    g.appendChild(svgEl('line', { x1: 0, y1: y, x2: BOARD_W, y2: y, stroke: 'rgba(255,255,255,0.08)', 'stroke-width': 0.1 }));
+  }
+  // Midline
+  g.appendChild(svgEl('line', {
+    x1: 0, y1: BOARD_H / 2, x2: BOARD_W, y2: BOARD_H / 2,
+    stroke: 'rgba(255,255,255,0.12)', 'stroke-width': 0.14, 'stroke-dasharray': '0.8 0.5',
+  }));
+  parent.appendChild(g);
+}
+
+function drawTerrain(parent, terrain) {
+  Object.entries(terrain || {}).forEach(([key, tier]) => {
+    const [gx, gy] = key.split(',').map(Number);
+    parent.appendChild(svgEl('rect', {
+      x: gx, y: gy, width: 1, height: 1,
+      fill:   TERRAIN_FILL[tier]   || '#1e1a10',
+      stroke: TERRAIN_STROKE[tier] || '#4a3820',
+      'stroke-width': 0.04,
+    }));
+  });
+}
+
+function drawDeployZones(parent) {
+  // P1 deploys bottom (y: BOARD_H - DEPLOY_DEPTH to BOARD_H)
+  parent.appendChild(svgEl('rect', {
+    x: 0, y: BOARD_H - DEPLOY_DEPTH, width: BOARD_W, height: DEPLOY_DEPTH,
+    fill: 'rgba(74,158,255,0.06)', stroke: 'rgba(74,158,255,0.25)',
+    'stroke-width': 0.12, 'stroke-dasharray': '0.8 0.4',
+  }));
+  // P2 deploys top (y: 0 to DEPLOY_DEPTH)
+  parent.appendChild(svgEl('rect', {
+    x: 0, y: 0, width: BOARD_W, height: DEPLOY_DEPTH,
+    fill: 'rgba(201,122,247,0.06)', stroke: 'rgba(201,122,247,0.25)',
+    'stroke-width': 0.12, 'stroke-dasharray': '0.8 0.4',
+  }));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  APP STATE
+// ═══════════════════════════════════════════════════════════
+
+let db;
+let gameId;
+let devMode;
+
+let myPlayer  = null;    // 'player1' | 'player2' (normal mode)
+let gameData  = null;    // live Firebase snapshot
+
+// Local-only state (not in Firebase)
+let activation    = null;  // { opId, apRemaining } — active operative during firefight
+let terrainTier   = 'rough';
+let terrainActive = false; // debounce for terrain writes
+let deploySelId   = null;  // selected operative ID during deployment
+let dragState     = null;  // { opId, startX, startY, maxMove, svg, moveOverlay, arrowOverlay }
+let rosterPreviewTimers = {};
+
+// ═══════════════════════════════════════════════════════════
+//  BOOTSTRAP
+// ═══════════════════════════════════════════════════════════
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (typeof firebaseConfig === 'undefined') {
+    showError('firebase-config.js not found. Copy firebase-config.example.js → firebase-config.js and fill in credentials.');
+    return;
+  }
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+  } catch (e) {
+    showError(`Firebase init failed: ${e.message}`);
+    return;
   }
 
-  function makeDrukhariUnits() {
-    // Two rows in the Drukhari deployment zone
-    const R1Y = 1.0;
-    const R2Y = 2.5;
-    // Row 1 x-positions (6 slots): HX, WY, WY, WY, WY, WY
-    const r1x = [2.0, 5.5, 9.0, 12.5, 16.0, 19.5];
-    // Row 2 x-positions (6 slots): WY, WY, WY, WY, RF, SN
-    const r2x = [2.0, 5.5, 9.0, 12.5, 16.0, 19.5];
+  const rawSearch = window.location.search.slice(1).replace(/\?/g, '&');
+  const params    = new URLSearchParams(rawSearch);
+  devMode         = params.get('dev') === 'true';
+  gameId          = params.get('game') || null;
 
-    const units = [];
-
-    // Hekatrix (leader) — row 1, slot 0
-    units.push({
-      id: 'dru-0', abbr: 'HX', name: 'Hekatrix',
-      faction: 'drukhari', leader: true,
-      wounds: 8, maxWounds: 8,
-      move: 8, ws: 3,
-      weapon: { name: 'Hekatarii Blade', range: 0, ap: -1, damage: 1 },
-      x: r1x[0], y: R1Y,
-      activated: false, dead: false,
-    });
-
-    // 9 standard Wyches
-    const wyPositions = [
-      { x: r1x[1], y: R1Y },
-      { x: r1x[2], y: R1Y },
-      { x: r1x[3], y: R1Y },
-      { x: r1x[4], y: R1Y },
-      { x: r1x[5], y: R1Y },
-      { x: r2x[0], y: R2Y },
-      { x: r2x[1], y: R2Y },
-      { x: r2x[2], y: R2Y },
-      { x: r2x[3], y: R2Y },
-    ];
-    wyPositions.forEach((pos, i) => {
-      units.push({
-        id: `dru-${i + 1}`, abbr: 'WY', name: 'Wych',
-        faction: 'drukhari', leader: false,
-        wounds: 8, maxWounds: 8,
-        move: 8, ws: 3,
-        weapon: { name: 'Hekatarii Blade', range: 0, ap: -1, damage: 1 },
-        x: pos.x, y: pos.y,
-        activated: false, dead: false,
-      });
-    });
-
-    // Razorflail — row 2, slot 4
-    units.push({
-      id: 'dru-10', abbr: 'RF', name: 'Razorflail Wych',
-      faction: 'drukhari', leader: false,
-      wounds: 8, maxWounds: 8,
-      move: 8, ws: 3,
-      weapon: { name: 'Razorflail', range: 0, ap: 0, damage: 1, specialRule: 'rerollWounds' },
-      x: r2x[4], y: R2Y,
-      activated: false, dead: false,
-    });
-
-    // Shardnet — row 2, slot 5
-    units.push({
-      id: 'dru-11', abbr: 'SN', name: 'Shardnet Wych',
-      faction: 'drukhari', leader: false,
-      wounds: 8, maxWounds: 8,
-      move: 8, ws: 3,
-      weapon: { name: 'Shardnet', range: 0, ap: 0, damage: 1, specialRule: 'minusOneAttack' },
-      x: r2x[5], y: R2Y,
-      activated: false, dead: false,
-    });
-
-    return units;
+  if (devMode) {
+    document.body.classList.add('dev-mode');
+    bootDev();
+  } else if (gameId) {
+    // Restore player slot from localStorage
+    const stored = localStorage.getItem(`kt_player_${gameId}`);
+    if (stored) myPlayer = stored;
+    loadGame(gameId);
+  } else {
+    renderLobby('create');
   }
+});
 
-  function makeDefaultTerrain() {
-    // All coords in inches. Terrain must stay clear of deployment zones (y < 3, y > 27).
-    return [
-      { id: 't1', x: 8.0, y: 12.0, width: 6.0, height: 5.0 }, // central large building
-      { id: 't2', x: 1.0, y:  5.0, width: 5.0, height: 3.0 }, // top-left ruin
-      { id: 't3', x: 16.0, y: 5.0, width: 5.0, height: 3.0 }, // top-right ruin
-      { id: 't4', x: 1.0, y: 22.0, width: 5.0, height: 3.0 }, // bottom-left ruin
-      { id: 't5', x: 16.0, y: 22.0, width: 5.0, height: 3.0 },// bottom-right ruin
-      { id: 't6', x: 9.0, y:  3.5, width: 3.0, height: 2.0 }, // top-center scatter
-      { id: 't7', x: 9.0, y: 24.5, width: 3.0, height: 2.0 }, // bottom-center scatter
-    ];
+// ═══════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════
+
+function generateToken() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function parseStat(v) {
+  return parseInt(String(v || '0').replace(/[^\d-]/g, '')) || 0;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ROSTER EXPORT LOADING
+// ═══════════════════════════════════════════════════════════
+
+async function fetchRosterExport(rosterId) {
+  const snap = await db.ref(`exports/kill-team/${rosterId}`).once('value');
+  return snap.val();
+}
+
+function buildOperatives(exportData, playerSlot) {
+  const raw  = exportData.units;
+  const arr  = Array.isArray(raw) ? raw : Object.values(raw);
+  const ops  = {};
+
+  arr.forEach(u => {
+    const id      = `${playerSlot}_${u.instanceId}`;
+    const maxW    = parseStat(u.stats.WOUNDS);
+    const apl     = parseStat(u.stats.APL) || 2;
+    const move    = parseStat(u.stats.MOVE) || 6;
+
+    ops[id] = {
+      id,
+      player:      playerSlot,
+      faction:     exportData.meta.factionId,
+      factionName: exportData.meta.factionName,
+      unitId:      u.unitId,
+      name:        u.name,
+      role:        u.role || '',
+      order:       'conceal',
+      ready:       true,
+      apl,
+      move,
+      wounds:      maxW,
+      maxWounds:   maxW,
+      x:           -1,
+      y:           -1,
+      activatedThisTurn: false,
+    };
+  });
+
+  return ops;
+}
+
+// Debounced roster ID preview (used in lobby form)
+function previewRoster(inputId, previewId, delay = 600) {
+  clearTimeout(rosterPreviewTimers[inputId]);
+  const el = document.getElementById(previewId);
+  if (!el) return;
+  el.className = 'roster-preview';
+  el.textContent = '…';
+  rosterPreviewTimers[inputId] = setTimeout(async () => {
+    const val = (document.getElementById(inputId)?.value || '').trim();
+    if (!val) { el.textContent = ''; return; }
+    try {
+      const data = await fetchRosterExport(val);
+      if (!data || !data.meta) {
+        el.className = 'roster-preview err';
+        el.textContent = 'Roster not found';
+        return;
+      }
+      const units  = Array.isArray(data.units) ? data.units : Object.values(data.units || {});
+      el.className = 'roster-preview ok';
+      el.textContent = `${data.meta.factionName} — ${units.length} operatives`;
+    } catch(e) {
+      el.className = 'roster-preview err';
+      el.textContent = 'Error fetching roster';
+    }
+  }, delay);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GAME CREATION / JOINING
+// ═══════════════════════════════════════════════════════════
+
+async function createGame(playerName, rosterId) {
+  showScreen('loading');
+  try {
+    const exportData = await fetchRosterExport(rosterId);
+    if (!exportData?.meta) throw new Error('Roster not found. Check the roster ID.');
+
+    const ops   = buildOperatives(exportData, 'player1');
+    const token = generateToken();
+    const ref   = db.ref('games-kt').push();
+    gameId      = ref.key;
+
+    await ref.set({
+      meta:   { status: 'waiting', createdAt: Date.now() },
+      players: {
+        player1: {
+          name:        playerName,
+          faction:     exportData.meta.factionId,
+          factionName: exportData.meta.factionName,
+          rosterId,
+          token,
+        },
+      },
+      operatives:   ops,
+      terrain:      {},
+      terrainOwner: {},
+      turn: {
+        turningPoint:      1,
+        phase:             'strategy',
+        activePlayer:      'player1',
+        activatingPlayer:  'player1',
+        cp: { player1: 0, player2: 0 },
+      },
+      initiative: null,
+      gameOver:   null,
+    });
+
+    myPlayer = 'player1';
+    localStorage.setItem(`kt_player_${gameId}`, 'player1');
+    localStorage.setItem(`kt_token_${gameId}`,  token);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('game', gameId);
+    window.history.replaceState({}, '', url.toString());
+
+    subscribeToGame();
+  } catch(e) {
+    showError(e.message);
   }
+}
 
-  // ─── App state ──────────────────────────────────────────────────────────────
-  let db;
-  let gameId;
-  let devMode;
-  let gameData  = null;                          // live snapshot from Firebase
-  let myFaction = null;                          // 'tau' | 'drukhari' | null (normal mode)
-  const devFactions = { tau: null, drukhari: null }; // per-panel claimed faction (dev mode)
+async function joinGame(playerName, rosterId) {
+  if (!gameId) { showError('No game ID in URL.'); return; }
+  showScreen('loading');
+  try {
+    // Check game exists and has a slot
+    const snap = await db.ref(`games-kt/${gameId}`).once('value');
+    const data = snap.val();
+    if (!data) throw new Error('Game not found.');
+    if (data.players?.player2) throw new Error('Game is already full.');
 
-  // ─── Bootstrap ──────────────────────────────────────────────────────────────
-  window.addEventListener('DOMContentLoaded', () => {
-    if (typeof firebaseConfig === 'undefined') {
-      showError(
-        'firebase-config.js not found.<br>' +
-        'Copy <code>firebase-config.example.js</code> → <code>firebase-config.js</code>' +
-        ' and fill in your Firebase project credentials.'
-      );
+    const exportData = await fetchRosterExport(rosterId);
+    if (!exportData?.meta) throw new Error('Roster not found. Check the roster ID.');
+
+    const ops   = buildOperatives(exportData, 'player2');
+    const token = generateToken();
+
+    const updates = {
+      'players/player2': {
+        name:        playerName,
+        faction:     exportData.meta.factionId,
+        factionName: exportData.meta.factionName,
+        rosterId,
+        token,
+      },
+      'meta/status': 'terrain',
+    };
+    Object.entries(ops).forEach(([id, op]) => { updates[`operatives/${id}`] = op; });
+    await db.ref(`games-kt/${gameId}`).update(updates);
+
+    myPlayer = 'player2';
+    localStorage.setItem(`kt_player_${gameId}`, 'player2');
+    localStorage.setItem(`kt_token_${gameId}`,  token);
+
+    subscribeToGame();
+  } catch(e) {
+    showError(e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DEV MODE
+// ═══════════════════════════════════════════════════════════
+
+async function bootDev() {
+  document.getElementById('dev-body-p1').innerHTML = '<div style="padding:1rem;color:var(--text-dim);font-size:12px;">Creating game…</div>';
+  document.getElementById('dev-body-p2').innerHTML = '<div style="padding:1rem;color:var(--text-dim);font-size:12px;">Joining…</div>';
+  try {
+    const [exp1, exp2] = await Promise.all([
+      fetchRosterExport(DEV_ROSTER_P1),
+      fetchRosterExport(DEV_ROSTER_P2),
+    ]);
+    if (!exp1?.meta || !exp2?.meta) throw new Error('Dev rosters not found in Firebase.');
+
+    const ops1  = buildOperatives(exp1, 'player1');
+    const ops2  = buildOperatives(exp2, 'player2');
+    const allOps = { ...ops1, ...ops2 };
+
+    const ref = db.ref('games-kt').push();
+    gameId    = ref.key;
+
+    await ref.set({
+      meta:   { status: 'terrain', createdAt: Date.now(), dev: true },
+      players: {
+        player1: { name: 'P1 Dev', faction: exp1.meta.factionId, factionName: exp1.meta.factionName, rosterId: DEV_ROSTER_P1, token: 'dev1' },
+        player2: { name: 'P2 Dev', faction: exp2.meta.factionId, factionName: exp2.meta.factionName, rosterId: DEV_ROSTER_P2, token: 'dev2' },
+      },
+      operatives:   allOps,
+      terrain:      {},
+      terrainOwner: {},
+      turn: {
+        turningPoint:     1,
+        phase:            'strategy',
+        activePlayer:     'player1',
+        activatingPlayer: 'player1',
+        cp: { player1: 0, player2: 0 },
+      },
+      initiative: null,
+      gameOver:   null,
+    });
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('game', gameId);
+    window.history.replaceState({}, '', url.toString());
+
+    subscribeToGame();
+  } catch(e) {
+    document.getElementById('dev-body-p1').innerHTML = `<div style="padding:1rem;color:var(--red);font-size:12px;">${escHtml(e.message)}</div>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FIREBASE SUBSCRIPTION
+// ═══════════════════════════════════════════════════════════
+
+function loadGame(id) {
+  showScreen('loading');
+  db.ref(`games-kt/${id}`).once('value', snap => {
+    if (!snap.exists()) {
+      showError(`Game not found: ${id}`);
       return;
     }
+    subscribeToGame();
+  }, err => showError(`Could not load game: ${err.message}`));
+}
+
+function subscribeToGame() {
+  db.ref(`games-kt/${gameId}`).on('value', snap => {
+    gameData = snap.val();
+    if (gameData) render();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER DISPATCH
+// ═══════════════════════════════════════════════════════════
+
+function render() {
+  if (devMode) { renderDev(); return; }
+
+  const status = gameData.meta?.status;
+
+  if (status === 'waiting') {
+    if (!myPlayer) {
+      renderLobby('join');
+    } else {
+      renderWaiting();
+    }
+    return;
+  }
+
+  if (!myPlayer) {
+    renderLobby('join');
+    return;
+  }
+
+  showScreen('game');
+  renderGame(myPlayer);
+}
+
+function renderDev() {
+  renderDevCol('p1', 'player1');
+  renderDevCol('p2', 'player2');
+}
+
+function renderDevCol(colId, playerSlot) {
+  const body = document.getElementById(`dev-body-${colId}`);
+  if (!body) return;
+
+  const old = body.querySelector('.game-wrap-dev');
+  const wrap = document.createElement('div');
+  wrap.className = 'game-wrap-dev';
+  wrap.style.cssText = 'height:100%;display:flex;flex-direction:column;';
+  body.innerHTML = '';
+  body.appendChild(wrap);
+  renderGame(playerSlot, wrap);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LOBBY
+// ═══════════════════════════════════════════════════════════
+
+function renderLobby(mode) {
+  showScreen('lobby');
+  const el    = document.getElementById('screen-lobby');
+  const isNew = mode === 'create';
+
+  el.innerHTML = `
+    <div class="lobby-wrap">
+      <h1 class="lobby-title">KILL TEAM</h1>
+      <p class="lobby-sub">${isNew ? 'New Game' : 'Join Game'}</p>
+
+      <div class="field-wrap">
+        <div class="field-label">Your name</div>
+        <input id="lobby-name" class="text-input" type="text" placeholder="Commander" maxlength="32" />
+      </div>
+
+      <div class="field-wrap">
+        <div class="field-label">Roster ID</div>
+        <input id="lobby-roster" class="text-input" type="text" placeholder="Firebase roster ID"
+          oninput="previewRoster('lobby-roster','lobby-preview')" />
+        <div id="lobby-preview" class="roster-preview"></div>
+      </div>
+
+      <div class="btn-row" style="margin-bottom:1.5rem;">
+        <button class="btn btn-primary" onclick="handleLobbySubmit('${mode}')">
+          ${isNew ? 'Create Game' : 'Join Game'}
+        </button>
+        ${!isNew ? `<button class="btn btn-ghost" onclick="renderLobby('create')">New game instead</button>` : ''}
+      </div>
+
+      ${isNew ? `
+        <div class="info-box">
+          After creating, share the link with your opponent.
+          They paste their own Roster ID to join.
+        </div>
+      ` : `
+        <div class="info-box">
+          Your opponent created this game. Enter your name and roster ID to join.
+        </div>
+      `}
+    </div>
+  `;
+
+  document.getElementById('lobby-name')?.focus();
+}
+
+function handleLobbySubmit(mode) {
+  const name    = (document.getElementById('lobby-name')?.value || '').trim();
+  const rosterId = (document.getElementById('lobby-roster')?.value || '').trim();
+  if (!name)     { alert('Enter your name.'); return; }
+  if (!rosterId) { alert('Enter a Roster ID.'); return; }
+  if (mode === 'create') createGame(name, rosterId);
+  else                   joinGame(name, rosterId);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  WAITING SCREEN
+// ═══════════════════════════════════════════════════════════
+
+function renderWaiting() {
+  showScreen('waiting');
+  const p1      = gameData.players?.player1;
+  const gameUrl = buildGameUrl();
+  const el      = document.getElementById('screen-waiting');
+
+  el.innerHTML = `
+    <div class="waiting-wrap">
+      <h1 class="lobby-title">KILL TEAM</h1>
+      <p class="waiting-name" style="color:var(--p1)">${escHtml(p1?.factionName || 'Player 1')}</p>
+      <p class="waiting-sub">Waiting for opponent to join…</p>
+      <div class="field-label" style="margin-bottom:5px;">Share this link</div>
+      <div class="link-row">
+        <input class="link-input" type="text" value="${escHtml(gameUrl)}" readonly />
+        <button class="btn" onclick="copyLink(this, ${JSON.stringify(gameUrl)})">Copy</button>
+      </div>
+    </div>
+  `;
+}
+
+function copyLink(btn, url) {
+  navigator.clipboard.writeText(url).catch(() => {});
+  btn.textContent = 'Copied!';
+  setTimeout(() => { btn.textContent = 'Copy'; }, 1800);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GAME SCREEN
+// ═══════════════════════════════════════════════════════════
+
+function renderGame(playerSlot, devContainer) {
+  const container = devContainer || document.getElementById('screen-game');
+  const status    = gameData.meta?.status;
+
+  // Board + sidebar layout (reused for all active phases)
+  const ops    = gameData.operatives || {};
+  const p1ops  = Object.values(ops).filter(o => o.player === 'player1' && o.wounds > 0);
+  const p2ops  = Object.values(ops).filter(o => o.player === 'player2' && o.wounds > 0);
+  const p1dead = Object.values(ops).filter(o => o.player === 'player1' && o.wounds <= 0);
+  const p2dead = Object.values(ops).filter(o => o.player === 'player2' && o.wounds <= 0);
+  const turn   = gameData.turn || {};
+  const tp     = turn.turningPoint || 1;
+  const phase  = status === 'active' ? (turn.phase || 'strategy') : status;
+  const p1info = gameData.players?.player1 || {};
+  const p2info = gameData.players?.player2 || {};
+
+  const topbar = `
+    <div class="game-topbar">
+      <span class="topbar-tp">TP ${tp}</span>
+      <span class="topbar-sep">·</span>
+      <span class="topbar-phase">${phaseLabel(status, phase)}</span>
+      <span class="topbar-sep">·</span>
+      <span class="topbar-cp-p1">${escHtml(p1info.factionName || 'P1')} ${turn.cp?.player1 ?? 0}CP</span>
+      <span class="topbar-sep">·</span>
+      <span class="topbar-cp-p2">${escHtml(p2info.factionName || 'P2')} ${turn.cp?.player2 ?? 0}CP</span>
+      <span class="topbar-spacer"></span>
+      ${devMode ? `<button class="btn btn-ghost" onclick="devNewGame()" style="font-size:10px;padding:3px 8px;">New Dev Game</button>` : ''}
+    </div>
+  `;
+
+  container.innerHTML = topbar + `
+    <div class="game-main">
+      <div class="sidebar sidebar-p1" id="sidebar-p1-${playerSlot}">
+        <div class="sidebar-header">${escHtml(p1info.factionName || 'Player 1')}</div>
+        ${renderOpList(p1ops, 'player1', playerSlot, status, phase, turn)}
+        ${p1dead.length ? `<div style="padding:6px 10px;font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;">Incapacitated</div>` + p1dead.map(o => renderOpRow(o, 'player1', playerSlot, status, phase, turn, true)).join('') : ''}
+      </div>
+
+      <div class="board-wrap" id="board-wrap-${playerSlot}"></div>
+
+      <div class="sidebar sidebar-right sidebar-p2" id="sidebar-p2-${playerSlot}">
+        <div class="sidebar-header">${escHtml(p2info.factionName || 'Player 2')}</div>
+        ${renderOpList(p2ops, 'player2', playerSlot, status, phase, turn)}
+        ${p2dead.length ? `<div style="padding:6px 10px;font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;">Incapacitated</div>` + p2dead.map(o => renderOpRow(o, 'player2', playerSlot, status, phase, turn, true)).join('') : ''}
+      </div>
+    </div>
+
+    <div class="phase-bar" id="phase-bar-${playerSlot}">
+      ${renderPhaseBar(status, phase, playerSlot, turn)}
+    </div>
+  `;
+
+  // Build the SVG board
+  const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
+  if (boardWrap) buildBoardSVG(boardWrap, playerSlot, status, phase);
+}
+
+function phaseLabel(status, phase) {
+  if (status === 'waiting')    return 'Waiting';
+  if (status === 'terrain')    return 'Terrain Placement';
+  if (status === 'deployment') return 'Deployment';
+  if (status === 'initiative') return 'Initiative Roll';
+  if (phase === 'strategy')    return 'Strategy Phase';
+  if (phase === 'firefight')   return 'Firefight Phase';
+  return status || phase;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  OPERATIVE SIDEBAR ROWS
+// ═══════════════════════════════════════════════════════════
+
+function renderOpList(opArr, opPlayer, viewerSlot, status, phase, turn) {
+  if (!opArr.length) return '<div style="padding:8px 10px;font-size:11px;color:var(--text-dim);">—</div>';
+  return opArr.map(o => renderOpRow(o, opPlayer, viewerSlot, status, phase, turn, false)).join('');
+}
+
+function renderOpRow(op, opPlayer, viewerSlot, status, phase, turn, isDead) {
+  const isMe       = opPlayer === viewerSlot;
+  const isDeployed = op.x >= 0 && op.y >= 0;
+  const isActive   = activation?.opId === op.id;
+  const isExpended = !op.ready;
+
+  // Clickable during firefight if it's my op, it's ready, it's deployed, and it's my turn to activate
+  const myTurn  = turn.activatingPlayer === viewerSlot;
+  const canAct  = isMe && op.ready && isDeployed && myTurn && phase === 'firefight' && status === 'active' && !activation;
+  // Clickable during deployment: my undeployed ops
+  const canDeploy = isMe && !isDeployed && status === 'deployment' && turn.activePlayer === viewerSlot;
+
+  const woundsPct  = op.maxWounds > 0 ? op.wounds / op.maxWounds : 1;
+  const isWounded  = op.wounds < op.maxWounds && op.wounds > op.maxWounds / 2;
+  const isInjured  = op.wounds <= op.maxWounds / 2 && op.wounds > 0;
+  const isSelected = deploySelId === op.id;
+
+  let rowClass = 'op-row';
+  if (isDead)       rowClass += ' dead';
+  else if (isExpended) rowClass += ' expended';
+  if (isActive)     rowClass += ' active-op';
+  if (isSelected)   rowClass += ' deploy-selected';
+  if (canAct || canDeploy) rowClass += ' clickable';
+
+  const clickHandler = canAct    ? `onclick="activateOperative('${op.id}','${viewerSlot}')"` :
+                       canDeploy ? `onclick="selectForDeploy('${op.id}')"` : '';
+
+  const woundsColor = isInjured ? 'var(--red)' : isWounded ? 'var(--orange)' : 'var(--green)';
+
+  return `
+    <div class="${rowClass}" ${clickHandler} data-op-id="${op.id}">
+      <div class="op-name">${escHtml(op.name)}</div>
+      ${op.role ? `<div class="op-role">${escHtml(op.role)}</div>` : ''}
+      <div class="op-status-row">
+        <span class="op-wounds" style="color:${woundsColor}">${op.wounds}/${op.maxWounds}W</span>
+        ${!isDead && isDeployed && !isExpended ? `<span class="op-tag tag-ready">Ready</span>` : ''}
+        ${!isDead && isDeployed && isExpended  ? `<span class="op-tag tag-expended">Expended</span>` : ''}
+        ${!isDead && !isDeployed               ? `<span class="op-tag tag-deploy">Undeployed</span>` : ''}
+        ${!isDead ? `<span class="op-tag ${op.order === 'engage' ? 'tag-engage' : 'tag-conceal'}">${op.order === 'engage' ? 'Engage' : 'Conceal'}</span>` : ''}
+        ${isInjured ? `<span class="op-tag tag-injured">Injured</span>` : ''}
+        ${isSelected ? `<span class="op-tag" style="background:rgba(201,168,76,0.15);color:var(--gold);border:1px solid rgba(201,168,76,0.4);">Selected</span>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PHASE BAR
+// ═══════════════════════════════════════════════════════════
+
+function renderPhaseBar(status, phase, playerSlot, turn) {
+  const iAmActive = turn.activePlayer === playerSlot;
+  const myTurn    = turn.activatingPlayer === playerSlot;
+
+  if (status === 'terrain') return renderTerrainBar(playerSlot, iAmActive);
+  if (status === 'deployment') return renderDeployBar(playerSlot, iAmActive);
+  if (status === 'initiative') return renderInitiativeBar(playerSlot);
+  if (phase === 'strategy')    return renderStrategyBar(playerSlot, turn);
+  if (phase === 'firefight')   return renderFirefightBar(playerSlot, turn, myTurn);
+  return `<span class="phase-bar-label">${phaseLabel(status, phase)}</span>`;
+}
+
+// ── Terrain Phase ──
+
+function renderTerrainBar(playerSlot, iAmActive) {
+  const terrain      = gameData.terrain || {};
+  const terrainOwner = gameData.terrainOwner || {};
+
+  const mySpent    = Object.entries(terrainOwner).filter(([,v]) => v === playerSlot)
+                       .reduce((s, [k]) => s + (TERRAIN_COSTS[terrain[k]] || 0), 0);
+  const otherSlot  = playerSlot === 'player1' ? 'player2' : 'player1';
+  const otherSpent = Object.entries(terrainOwner).filter(([,v]) => v === otherSlot)
+                       .reduce((s, [k]) => s + (TERRAIN_COSTS[terrain[k]] || 0), 0);
+  const myRemain   = TERRAIN_BUDGET - mySpent;
+  const tiers      = ['rough', 'chestHigh', 'tall'];
+
+  const tierBtns = tiers.map(t => {
+    const cost      = TERRAIN_COSTS[t];
+    const disabled  = !iAmActive || myRemain < cost;
+    const isSel     = terrainTier === t;
+    const swatchCol = t === 'rough' ? '#5a4830' : t === 'chestHigh' ? '#3a5028' : '#30384a';
+    return `
+      <button class="tier-btn${isSel ? ' selected' : ''}" onclick="setTerrainTier('${t}')" ${disabled ? 'disabled' : ''}>
+        <div class="tier-swatch" style="background:${swatchCol};"></div>
+        <div class="tier-btn-name">${TERRAIN_LABELS[t]}</div>
+        <div class="tier-btn-cost">${cost} pt/sq</div>
+      </button>
+    `;
+  }).join('');
+
+  const budgetBar = (slot, spent, color) => `
+    <div class="budget-row">
+      <span style="width:20px;font-size:10px;color:var(--${color});">${slot === 'player1' ? 'P1' : 'P2'}</span>
+      <div class="budget-bar"><div class="budget-fill ${slot === 'player1' ? 'p1' : 'p2'}" style="width:${Math.min(100, (spent/TERRAIN_BUDGET)*100).toFixed(0)}%"></div></div>
+      <span style="width:36px;font-size:10px;color:var(--text-dim);text-align:right;">${spent}/${TERRAIN_BUDGET}</span>
+    </div>
+  `;
+
+  return `
+    <span class="phase-bar-label">Terrain</span>
+    <div class="phase-bar-body">
+      ${iAmActive
+        ? `<div class="terrain-tier-row">${tierBtns}</div>
+           <button class="btn" onclick="passTerrainTurn('${playerSlot}')" style="flex-shrink:0;">Pass Turn</button>`
+        : `<span style="font-size:12px;color:var(--text-dim);">Waiting for opponent to place terrain…</span>`
+      }
+      <div style="margin-left:auto;display:flex;flex-direction:column;gap:3px;min-width:120px;">
+        ${budgetBar('player1', playerSlot === 'player1' ? mySpent : otherSpent, 'p1')}
+        ${budgetBar('player2', playerSlot === 'player2' ? mySpent : otherSpent, 'p2')}
+      </div>
+    </div>
+  `;
+}
+
+// ── Deployment Phase ──
+
+function renderDeployBar(playerSlot, iAmActive) {
+  const ops         = Object.values(gameData.operatives || {});
+  const myUndeployed = ops.filter(o => o.player === playerSlot && o.x < 0);
+  const allDeployed  = ops.every(o => o.x >= 0);
+
+  if (allDeployed) return `<span class="phase-bar-label">Deployment complete</span><div class="phase-bar-body"><span style="font-size:12px;color:var(--text-dim);">Advancing to initiative…</span></div>`;
+
+  return `
+    <span class="phase-bar-label">Deploy</span>
+    <div class="phase-bar-body">
+      ${iAmActive && myUndeployed.length > 0
+        ? `${deploySelId
+            ? `<span style="font-size:12px;">Click your deployment zone to place the selected operative.</span>
+               <button class="btn btn-ghost" onclick="cancelDeploy()">Cancel</button>`
+            : `<span style="font-size:12px;">Select an operative from your sidebar, then click your drop zone to place it.</span>`
+          }`
+        : myUndeployed.length === 0
+          ? `<span style="font-size:12px;color:var(--text-dim);">All your operatives deployed. Waiting for opponent…</span>`
+          : `<span style="font-size:12px;color:var(--text-dim);">Waiting for opponent to deploy…</span>`
+      }
+    </div>
+  `;
+}
+
+// ── Initiative Phase ──
+
+function renderInitiativeBar(playerSlot) {
+  const init = gameData.initiative || {};
+  const myRoll    = init[playerSlot];
+  const otherSlot = playerSlot === 'player1' ? 'player2' : 'player1';
+  const otherRoll = init[otherSlot];
+  const bothRolled = myRoll != null && otherRoll != null;
+
+  let result = '';
+  if (bothRolled) {
+    if (myRoll > otherRoll)       result = `You win initiative! You go first.`;
+    else if (otherRoll > myRoll)  result = `Opponent wins initiative. They go first.`;
+    else                          result = `Tie! Rolling again…`;
+  }
+
+  return `
+    <span class="phase-bar-label">Initiative</span>
+    <div class="phase-bar-body">
+      ${myRoll == null
+        ? `<button class="btn btn-primary" onclick="rollInitiative('${playerSlot}')">Roll 2D6</button>`
+        : bothRolled
+          ? `<span style="font-size:13px;">${escHtml(result)}</span>`
+          : `<span style="font-size:12px;color:var(--gold);">You rolled ${myRoll}. Waiting for opponent…</span>`
+      }
+    </div>
+  `;
+}
+
+// ── Strategy Phase ──
+
+function renderStrategyBar(playerSlot, turn) {
+  const iAmActive = turn.activePlayer === playerSlot;
+  const tp        = turn.turningPoint || 1;
+  const myCP      = turn.cp?.[playerSlot] ?? 0;
+  return `
+    <span class="phase-bar-label">Strategy</span>
+    <div class="phase-bar-body">
+      <div class="strategy-wrap">
+        <span style="font-size:12px;color:var(--text-dim);">TP ${tp} Strategy Phase — CP awarded, operatives readied.</span>
+        <span style="font-size:12px;">Your CP: <strong>${myCP}</strong></span>
+      </div>
+      ${iAmActive
+        ? `<button class="btn btn-primary" onclick="endStrategyPhase('${playerSlot}')">End Strategy Phase</button>`
+        : `<span style="font-size:12px;color:var(--text-dim);">Waiting for opponent…</span>`
+      }
+    </div>
+  `;
+}
+
+// ── Firefight Phase ──
+
+function renderFirefightBar(playerSlot, turn, myTurn) {
+  if (activation && activation.playerSlot === playerSlot) {
+    return renderActivationBar(playerSlot, turn);
+  }
+
+  const ops    = Object.values(gameData.operatives || {});
+  const myReady = ops.filter(o => o.player === playerSlot && o.ready && o.wounds > 0 && o.x >= 0).length;
+
+  return `
+    <span class="phase-bar-label">Firefight</span>
+    <div class="phase-bar-body">
+      ${myTurn
+        ? myReady > 0
+          ? `<span style="font-size:12px;">Your turn to activate — select an operative.</span>
+             <span style="font-size:11px;color:var(--text-dim);">${myReady} ready</span>`
+          : `<span style="font-size:12px;color:var(--text-dim);">No ready operatives. Waiting for opponent to finish…</span>`
+        : `<span style="font-size:12px;color:var(--text-dim);">Opponent is activating.</span>`
+      }
+    </div>
+  `;
+}
+
+function renderActivationBar(playerSlot, turn) {
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op) return '';
+  const ap = activation.apRemaining;
+
+  return `
+    <div class="activation-wrap">
+      <span class="activation-name">${escHtml(op.name)}</span>
+      <span class="activation-ap">${ap} AP</span>
+      <button class="order-btn ${op.order}" onclick="toggleOrder('${activation.opId}','${playerSlot}')">
+        ${op.order === 'engage' ? 'Engage' : 'Conceal'}
+      </button>
+      <div class="activation-actions">
+        <button class="action-btn" onclick="startMove('${playerSlot}',false)" ${ap < 1 ? 'disabled' : ''}>Move (1AP)</button>
+        <button class="action-btn" onclick="startMove('${playerSlot}',true)"  ${ap < 1 ? 'disabled' : ''}>Dash (1AP)</button>
+        <button class="action-btn stub" title="Coming in KT-2" disabled>Shoot (1AP)</button>
+        <button class="action-btn stub" title="Coming in KT-2" disabled>Fight (1AP)</button>
+        <button class="action-btn stub" title="Coming in KT-2" disabled>Charge (1AP)</button>
+      </div>
+      <button class="btn" onclick="endActivation('${playerSlot}')" style="margin-left:auto;">End Activation</button>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  BOARD SVG
+// ═══════════════════════════════════════════════════════════
+
+function buildBoardSVG(wrap, playerSlot, status, phase) {
+  const svg = svgEl('svg', {
+    viewBox:         `0 0 ${BOARD_W} ${BOARD_H}`,
+    class:           'board-svg',
+    'pointer-events': 'all',
+  });
+
+  // Size: fill the wrap, preserve aspect ratio
+  svg.style.cssText = 'width:100%;height:100%;max-height:100%;';
+
+  // Background
+  svg.appendChild(svgEl('rect', { x: 0, y: 0, width: BOARD_W, height: BOARD_H, fill: '#0a0a14' }));
+
+  // Layers
+  const gridG    = svgEl('g'); drawGrid(gridG); svg.appendChild(gridG);
+  const deployG  = svgEl('g'); svg.appendChild(deployG);
+  const terrainG = svgEl('g'); svg.appendChild(terrainG);
+  const unitG    = svgEl('g'); svg.appendChild(unitG);
+  const overlay  = svgEl('g', { id: `overlay-${playerSlot}`, 'pointer-events': 'none' }); svg.appendChild(overlay);
+
+  // Draw deploy zones during deployment phase
+  if (status === 'deployment') drawDeployZones(deployG);
+
+  // Terrain
+  drawTerrain(terrainG, gameData.terrain);
+
+  // Operatives
+  const ops = gameData.operatives || {};
+  Object.values(ops).forEach(op => {
+    if (op.x < 0 || op.y < 0) return; // undeployed
+    drawOperativeToken(unitG, op, playerSlot, status, phase);
+  });
+
+  wrap.innerHTML = '';
+  wrap.appendChild(svg);
+
+  // Wire interactions
+  if (status === 'terrain') {
+    setupTerrainPaint(svg, playerSlot);
+  } else if (status === 'deployment') {
+    setupDeployClick(svg, playerSlot);
+  } else if (status === 'active' && phase === 'firefight') {
+    setupDragMove(svg, playerSlot, unitG, overlay);
+  }
+}
+
+// ── Operative token ──
+
+function drawOperativeToken(parent, op, viewerSlot, status, phase) {
+  const isP1    = op.player === 'player1';
+  const baseColor = isP1 ? '#2a5a99' : '#6a2a99';
+  const rimColor  = isP1 ? '#4a9eff' : '#c97af7';
+  const isExpended = !op.ready;
+  const isInjured  = op.wounds <= op.maxWounds / 2;
+  const isActive   = activation?.opId === op.id;
+
+  const g = svgEl('g', { 'data-op-id': op.id, class: 'op-token' });
+  if (isExpended) g.style.opacity = '0.45';
+
+  // Token body
+  g.appendChild(svgEl('circle', { cx: op.x, cy: op.y, r: TOKEN_R, fill: baseColor + '60', stroke: rimColor, 'stroke-width': isActive ? 0.18 : 0.12 }));
+
+  // Wounded sector (red pie slice for missing wounds)
+  if (op.wounds < op.maxWounds) {
+    const missing = (op.maxWounds - op.wounds) / op.maxWounds;
+    const ri = TOKEN_R * 0.75;
+    const sa = -Math.PI / 2;
+    const ea = sa + (2 * Math.PI * missing);
+    const x1 = (op.x + ri * Math.cos(sa)).toFixed(3);
+    const y1 = (op.y + ri * Math.sin(sa)).toFixed(3);
+    const x2 = (op.x + ri * Math.cos(ea)).toFixed(3);
+    const y2 = (op.y + ri * Math.sin(ea)).toFixed(3);
+    const la = missing > 0.5 ? 1 : 0;
+    g.appendChild(svgEl('path', {
+      d: `M ${op.x} ${op.y} L ${x1} ${y1} A ${ri} ${ri} 0 ${la} 1 ${x2} ${y2} Z`,
+      fill: isInjured ? 'rgba(200,60,60,0.7)' : 'rgba(200,120,0,0.55)',
+    }));
+  }
+
+  // Abbreviation label
+  const abbr = svgEl('text', {
+    x: op.x, y: op.y + TOKEN_R * 0.38,
+    'text-anchor': 'middle', fill: rimColor,
+    'font-size': TOKEN_R * 0.85, 'font-family': 'sans-serif', 'font-weight': 700,
+    'pointer-events': 'none',
+  });
+  abbr.textContent = (op.name || '?')[0].toUpperCase();
+  g.appendChild(abbr);
+
+  // Conceal indicator: dashed outer ring
+  if (op.order === 'conceal') {
+    g.appendChild(svgEl('circle', {
+      cx: op.x, cy: op.y, r: TOKEN_R * 1.35,
+      fill: 'none', stroke: rimColor + '55', 'stroke-width': 0.1, 'stroke-dasharray': '0.3 0.2',
+    }));
+  }
+
+  // Active activation glow
+  if (isActive) {
+    g.insertBefore(svgEl('circle', {
+      cx: op.x, cy: op.y, r: TOKEN_R * 1.5,
+      fill: 'none', stroke: 'rgba(201,168,76,0.6)', 'stroke-width': 0.18,
+    }), g.firstChild);
+  }
+
+  parent.appendChild(g);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TERRAIN PAINTING INTERACTION
+// ═══════════════════════════════════════════════════════════
+
+function setTerrainTier(tier) {
+  terrainTier = tier;
+  // Re-render phase bar only
+  reRenderPhaseBar();
+}
+
+function setupTerrainPaint(svg, playerSlot) {
+  const iAmActive = gameData.turn?.activePlayer === playerSlot;
+  if (!iAmActive) return;
+
+  const terrain      = gameData.terrain || {};
+  const terrainOwner = gameData.terrainOwner || {};
+
+  let painting  = false;
+  let paintMode = true;
+  let strokes   = new Map(); // key → tier (this drag stroke)
+  let erases    = new Set();
+  let lastKey   = null;
+
+  function inBounds(gx, gy) {
+    return gx >= 0 && gy >= 0 && gx < BOARD_W && gy < BOARD_H;
+  }
+
+  function getMySpent() {
+    return Object.entries(terrainOwner)
+      .filter(([,v]) => v === playerSlot)
+      .reduce((s, [k]) => s + (TERRAIN_COSTS[terrain[k]] || 0), 0);
+  }
+
+  function netCostFor(gx, gy) {
+    const key     = `${gx},${gy}`;
+    const oldTier = terrain[key];
+    const ownedByMe = terrainOwner[key] === playerSlot;
+    const oldCost = oldTier && ownedByMe ? (TERRAIN_COSTS[oldTier] || 0) : 0;
+    return (TERRAIN_COSTS[terrainTier] || 0) - oldCost;
+  }
+
+  function tryPaint(gx, gy) {
+    if (!inBounds(gx, gy)) return;
+    const key = `${gx},${gy}`;
+    if (key === lastKey) return;
+    lastKey = key;
+
+    const existingOwner = terrainOwner[key];
+    if (existingOwner && existingOwner !== playerSlot) return; // can't paint opponent's squares
+
+    if (paintMode) {
+      const mySpent  = getMySpent();
+      const net      = netCostFor(gx, gy);
+      const projSpent = mySpent
+        + [...strokes.entries()].reduce((s, [k, t]) => s + (TERRAIN_COSTS[t] || 0) - (TERRAIN_COSTS[terrain[k]] || 0) * (terrainOwner[k] === playerSlot ? 1 : 0), 0)
+        - [...erases].reduce((s, k) => s + (terrainOwner[k] === playerSlot ? (TERRAIN_COSTS[terrain[k]] || 0) : 0), 0);
+      if (projSpent + net > TERRAIN_BUDGET) return;
+      strokes.set(key, terrainTier);
+      erases.delete(key);
+    } else {
+      // Erase mode: only own squares
+      if (terrainOwner[key] !== playerSlot) return;
+      erases.add(key);
+      strokes.delete(key);
+    }
+  }
+
+  function getSVGPos(e) {
+    const pt = svg.createSVGPoint();
+    const touch = e.touches ? e.touches[0] : e;
+    pt.x = touch.clientX; pt.y = touch.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+
+  function getSq(e) {
+    const p = getSVGPos(e);
+    return { gx: Math.floor(p.x), gy: Math.floor(p.y) };
+  }
+
+  async function commitStroke() {
+    if (!strokes.size && !erases.size) return;
+    if (terrainActive) return;
+    terrainActive = true;
+
+    const updates = {};
+    strokes.forEach((tier, key) => {
+      updates[`terrain/${key}`]      = tier;
+      updates[`terrainOwner/${key}`] = playerSlot;
+    });
+    erases.forEach(key => {
+      updates[`terrain/${key}`]      = null;
+      updates[`terrainOwner/${key}`] = null;
+    });
 
     try {
-      firebase.initializeApp(firebaseConfig);
-      db = firebase.database();
-    } catch (e) {
-      showError(`Firebase initialisation failed: ${e.message}`);
+      await db.ref(`games-kt/${gameId}`).update(updates);
+    } finally {
+      terrainActive = false;
+    }
+  }
+
+  svg.addEventListener('mousedown', e => {
+    const { gx, gy } = getSq(e);
+    const key = `${gx},${gy}`;
+    // Erase mode if clicking own existing square with same tier
+    paintMode = !(terrainOwner[key] === playerSlot && terrain[key] === terrainTier);
+    painting  = true;
+    strokes   = new Map();
+    erases    = new Set();
+    lastKey   = null;
+    tryPaint(gx, gy);
+    e.preventDefault();
+  });
+
+  svg.addEventListener('mousemove', e => {
+    if (!painting) return;
+    const { gx, gy } = getSq(e);
+    tryPaint(gx, gy);
+  });
+
+  const finish = () => { if (painting) { painting = false; commitStroke(); } };
+  svg.addEventListener('mouseup',    finish);
+  svg.addEventListener('mouseleave', finish);
+}
+
+function passTerrainTurn(playerSlot) {
+  // Switch activePlayer; if both have passed, advance to deployment
+  const other = playerSlot === 'player1' ? 'player2' : 'player1';
+  // Simple: just switch. Deployment starts after terrain owner manually finishes.
+  // We detect "both done" when budget is exhausted or they press pass twice.
+  const ops = gameData.operatives || {};
+  // Move to deployment phase
+  db.ref(`games-kt/${gameId}`).update({ 'meta/status': 'deployment', 'turn/activePlayer': 'player1' });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DEPLOYMENT PHASE
+// ═══════════════════════════════════════════════════════════
+
+function selectForDeploy(opId) {
+  deploySelId = (deploySelId === opId) ? null : opId;
+  reRender();
+}
+
+function cancelDeploy() {
+  deploySelId = null;
+  reRenderPhaseBar();
+}
+
+function setupDeployClick(svg, playerSlot) {
+  const iAmActive = gameData.turn?.activePlayer === playerSlot;
+  if (!iAmActive || !deploySelId) return;
+
+  const isP1 = playerSlot === 'player1';
+  const minY  = isP1 ? BOARD_H - DEPLOY_DEPTH : 0;
+  const maxY  = isP1 ? BOARD_H : DEPLOY_DEPTH;
+
+  svg.style.cursor = 'crosshair';
+  svg.addEventListener('click', async e => {
+    if (!deploySelId) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p  = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const sp = snapToGrid(p.x, p.y);
+
+    if (sp.y < minY || sp.y > maxY) {
+      // Clicked outside deploy zone — ignore
       return;
     }
 
-    // Normalize the query string in case the user appended ?dev=true to a URL
-    // that already had ?game=ID, producing the malformed ?game=ID?dev=true form.
-    const rawSearch = window.location.search.slice(1).replace(/\?/g, '&');
-    const params = new URLSearchParams(rawSearch);
-    devMode = params.get('dev') === 'true';
-    gameId  = params.get('game') || null;
+    // Check not on top of another operative
+    const ops = Object.values(gameData.operatives || {});
+    const blocked = ops.some(o => o.x >= 0 && Math.hypot(o.x - sp.x, o.y - sp.y) < TOKEN_R * 2);
+    if (blocked) return;
 
-    if (devMode) {
-      document.body.classList.add('dev-mode');
-    }
+    const opId = deploySelId;
+    deploySelId = null;
 
-    if (!gameId) {
-      createGame();
+    await db.ref(`games-kt/${gameId}/operatives/${opId}`).update({ x: sp.x, y: sp.y });
+
+    // Check if we should pass to other player or advance
+    const updated = (await db.ref(`games-kt/${gameId}/operatives`).once('value')).val() || {};
+    const myRemaining   = Object.values(updated).filter(o => o.player === playerSlot && o.x < 0);
+    const otherSlot     = playerSlot === 'player1' ? 'player2' : 'player1';
+    const otherRemaining = Object.values(updated).filter(o => o.player === otherSlot && o.x < 0);
+    const allDone       = myRemaining.length === 0 && otherRemaining.length === 0;
+
+    if (allDone) {
+      await db.ref(`games-kt/${gameId}`).update({ 'meta/status': 'initiative' });
+    } else if (myRemaining.length === 0) {
+      // I'm done, wait — opponent still placing
     } else {
-      loadGame(gameId);
+      // Pass to other player for alternating placement
+      await db.ref(`games-kt/${gameId}/turn/activePlayer`).set(otherSlot);
+    }
+  }, { once: true });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INITIATIVE PHASE
+// ═══════════════════════════════════════════════════════════
+
+async function rollInitiative(playerSlot) {
+  const roll = Math.ceil(Math.random() * 6) + Math.ceil(Math.random() * 6);
+  await db.ref(`games-kt/${gameId}/initiative/${playerSlot}`).set(roll);
+
+  // Check if both have rolled
+  const snap = await db.ref(`games-kt/${gameId}/initiative`).once('value');
+  const init = snap.val() || {};
+  if (init.player1 != null && init.player2 != null) {
+    if (init.player1 === init.player2) {
+      // Tie — reset and re-roll
+      await db.ref(`games-kt/${gameId}/initiative`).set(null);
+      return;
+    }
+    const winner = init.player1 > init.player2 ? 'player1' : 'player2';
+    // Small delay so both players see the rolls
+    setTimeout(async () => {
+      await startStrategyPhase(winner);
+    }, 1800);
+  }
+}
+
+async function startStrategyPhase(initiativeWinner) {
+  const ops     = (await db.ref(`games-kt/${gameId}/operatives`).once('value')).val() || {};
+  const cpSnap  = (await db.ref(`games-kt/${gameId}/turn/cp`).once('value')).val() || { player1: 0, player2: 0 };
+  const tp      = ((await db.ref(`games-kt/${gameId}/turn/turningPoint`).once('value')).val()) || 1;
+
+  // CP award: both get 1 in TP1; non-initiative player gets 2 in TP2+
+  const isFirstTP = tp === 1;
+  const newCP = {
+    player1: (cpSnap.player1 || 0) + (isFirstTP ? 1 : (initiativeWinner === 'player1' ? 1 : 2)),
+    player2: (cpSnap.player2 || 0) + (isFirstTP ? 1 : (initiativeWinner === 'player2' ? 1 : 2)),
+  };
+
+  // Ready all operatives + reset activatedThisTurn
+  const opUpdates = {};
+  Object.values(ops).forEach(op => {
+    if (op.wounds > 0) {
+      opUpdates[`operatives/${op.id}/ready`]              = true;
+      opUpdates[`operatives/${op.id}/activatedThisTurn`]  = false;
     }
   });
 
-  // ─── Game creation ───────────────────────────────────────────────────────────
-  async function createGame() {
-    showScreen('loading');
-    try {
-      const ref  = db.ref('games').push();
-      gameId     = ref.key;
+  await db.ref(`games-kt/${gameId}`).update({
+    'meta/status':             'active',
+    'turn/phase':              'strategy',
+    'turn/activePlayer':       initiativeWinner,
+    'turn/activatingPlayer':   initiativeWinner,
+    'turn/cp/player1':         newCP.player1,
+    'turn/cp/player2':         newCP.player2,
+    ...opUpdates,
+  });
+}
 
-      await ref.set({
-        players: { tau: null, drukhari: null },
-        state: {
-          round:        1,
-          phase:        'initiative',
-          activePlayer: null,
-          initiative:   null,
-          units: {
-            tau:      makeTauUnits(),
-            drukhari: makeDrukhariUnits(),
-          },
-          terrain: makeDefaultTerrain(),
-        },
-        log: [],
-      });
+// ═══════════════════════════════════════════════════════════
+//  STRATEGY PHASE
+// ═══════════════════════════════════════════════════════════
 
-      // Reflect the new gameId in the URL without navigating
-      const url = new URL(window.location.href);
-      url.searchParams.set('game', gameId);
-      if (devMode) url.searchParams.set('dev', 'true');
-      window.history.replaceState({}, '', url.toString());
+async function endStrategyPhase(playerSlot) {
+  // Both players see the strategy phase; only the active player can advance it
+  if (gameData.turn?.activePlayer !== playerSlot) return;
+  await db.ref(`games-kt/${gameId}/turn/phase`).set('firefight');
+}
 
-      subscribeToGame();
-    } catch (e) {
-      showError(`Failed to create game: ${e.message}`);
-    }
+// ═══════════════════════════════════════════════════════════
+//  FIREFIGHT PHASE — ACTIVATION
+// ═══════════════════════════════════════════════════════════
+
+function activateOperative(opId, playerSlot) {
+  const op = (gameData.operatives || {})[opId];
+  if (!op || !op.ready || op.wounds <= 0) return;
+  activation = { opId, apRemaining: op.apl, playerSlot };
+  reRenderPhaseBar();
+  reRender();
+}
+
+function toggleOrder(opId, playerSlot) {
+  const op = (gameData.operatives || {})[opId];
+  if (!op) return;
+  const newOrder = op.order === 'engage' ? 'conceal' : 'engage';
+  db.ref(`games-kt/${gameId}/operatives/${opId}/order`).set(newOrder);
+}
+
+async function endActivation(playerSlot) {
+  if (!activation) return;
+  const opId = activation.opId;
+  activation  = null;
+  deploySelId = null;
+
+  await db.ref(`games-kt/${gameId}/operatives/${opId}`).update({
+    ready:              false,
+    activatedThisTurn:  true,
+  });
+
+  advanceActivatingPlayer(playerSlot);
+}
+
+async function advanceActivatingPlayer(justActivatedSlot) {
+  const ops       = (await db.ref(`games-kt/${gameId}/operatives`).once('value')).val() || {};
+  const otherSlot = justActivatedSlot === 'player1' ? 'player2' : 'player1';
+
+  function hasReady(slot) {
+    return Object.values(ops).some(o => o.player === slot && o.ready && o.wounds > 0 && o.x >= 0);
   }
 
-  // ─── Game loading (join existing) ────────────────────────────────────────────
-  function loadGame(id) {
-    gameId = id;
-    showScreen('loading');
+  const otherReady = hasReady(otherSlot);
+  const myReady    = hasReady(justActivatedSlot);
 
-    db.ref(`games/${gameId}`).once('value',
-      snap => {
-        if (!snap.exists()) {
-          showError(
-            `Game <code>${gameId}</code> was not found.<br>` +
-            `<button class="btn" style="margin-top:1rem" onclick="createGame()">Start New Game</button>`
-          );
-          return;
-        }
-        subscribeToGame();
-      },
-      err => showError(`Could not load game: ${err.message}`)
-    );
+  if (!otherReady && !myReady) {
+    // All operatives expended — end Turning Point
+    await endTurningPoint();
+    return;
   }
 
-  // ─── Firebase real-time listener ─────────────────────────────────────────────
-  function subscribeToGame() {
-    db.ref(`games/${gameId}`).on('value', snap => {
-      gameData = snap.val();
-      if (gameData) render();
-    });
+  // Switch to other player; if they have no ready ops, stay with current
+  const next = otherReady ? otherSlot : justActivatedSlot;
+  await db.ref(`games-kt/${gameId}/turn/activatingPlayer`).set(next);
+}
+
+async function endTurningPoint() {
+  const tp         = gameData.turn?.turningPoint || 1;
+  const activePlayer = gameData.turn?.activePlayer || 'player1';
+
+  if (tp >= 4) {
+    // Game over after 4 Turning Points
+    await db.ref(`games-kt/${gameId}`).update({ 'meta/status': 'ended' });
+    return;
   }
 
-  // ─── Top-level render dispatcher ─────────────────────────────────────────────
-  function render() {
-    if (devMode) {
-      renderDevMode();
-    } else {
-      renderNormalMode();
-    }
+  // Begin new Turning Point: strategy phase
+  await startStrategyPhase(activePlayer);
+
+  // Increment TP
+  await db.ref(`games-kt/${gameId}/turn/turningPoint`).set(tp + 1);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DRAG TO MOVE
+// ═══════════════════════════════════════════════════════════
+
+function startMove(playerSlot, isDash) {
+  if (!activation) return;
+  const op     = (gameData.operatives || {})[activation.opId];
+  if (!op || op.x < 0) return;
+
+  const maxMove = isDash ? 3 : op.move;
+  const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
+  const svg = boardWrap?.querySelector('svg.board-svg');
+  if (!svg) return;
+
+  // Dim all tokens except active
+  svg.querySelectorAll('.op-token').forEach(g => {
+    g.style.opacity = g.getAttribute('data-op-id') === op.id ? '1' : '0.25';
+  });
+
+  const overlay = svg.querySelector(`#overlay-${playerSlot}`);
+  clearEl(overlay);
+
+  dragState = { opId: op.id, startX: op.x, startY: op.y, maxMove, isDash, svg, overlay, playerSlot };
+
+  // Ghost at start position
+  overlay.appendChild(svgEl('circle', {
+    cx: op.x, cy: op.y, r: TOKEN_R * 0.8,
+    fill: 'none', stroke: 'rgba(201,168,76,0.4)', 'stroke-width': 0.1, 'stroke-dasharray': '0.4 0.25',
+  }));
+
+  // Range circle
+  overlay.appendChild(svgEl('circle', {
+    cx: op.x, cy: op.y, r: maxMove,
+    fill: 'rgba(201,168,76,0.04)', stroke: 'rgba(201,168,76,0.25)', 'stroke-width': 0.1, 'stroke-dasharray': '0.5 0.3',
+  }));
+
+  svg.style.cursor = 'crosshair';
+
+  function onMouseMove(e) {
+    if (!dragState) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p   = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const clamped = clampVec(dragState.startX, dragState.startY, p.x, p.y, maxMove);
+    const snapped = snapToGrid(clamped.x, clamped.y);
+    updateDragOverlay(snapped.x, snapped.y);
   }
 
-  // ─── Normal mode rendering ────────────────────────────────────────────────────
-  function renderNormalMode() {
-    const players = gameData.players || {};
+  function onMouseUp(e) {
+    if (!dragState) return;
+    svg.removeEventListener('mousemove', onMouseMove);
+    svg.removeEventListener('mouseup',   onMouseUp);
+    svg.style.cursor = '';
 
-    // Restore faction from localStorage on first render after a refresh
-    if (!myFaction) {
-      const stored = localStorage.getItem(`killteam_faction_${gameId}`);
-      if (stored && players[stored] === 'claimed') myFaction = stored;
-    }
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p       = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const clamped = clampVec(dragState.startX, dragState.startY, p.x, p.y, maxMove);
+    const snapped = snapToGrid(clamped.x, clamped.y);
 
-    const bothClaimed = players.tau === 'claimed' && players.drukhari === 'claimed';
-
-    if (!myFaction) {
-      mountPanel(
-        document.getElementById('screen-faction'),
-        buildFactionPanel(players, /*panelId*/ null, /*compact*/ false)
-      );
-      showScreen('faction');
-    } else if (!bothClaimed) {
-      mountPanel(
-        document.getElementById('screen-waiting'),
-        buildWaitingPanel(myFaction, /*compact*/ false)
-      );
-      showScreen('waiting');
-    } else {
-      showScreen('game');
-    }
+    commitMove(snapped.x, snapped.y, isDash ? 1 : 1, playerSlot);
+    dragState = null;
   }
 
-  // ─── Dev mode rendering ───────────────────────────────────────────────────────
-  function renderDevMode() {
-    ['tau', 'drukhari'].forEach(panelId => renderDevPanel(panelId));
+  svg.addEventListener('mousemove', onMouseMove);
+  svg.addEventListener('mouseup',   onMouseUp);
+}
+
+function updateDragOverlay(tx, ty) {
+  if (!dragState) return;
+  const { overlay, startX, startY } = dragState;
+  // Remove old arrow (keep range circle and ghost — first two children)
+  while (overlay.children.length > 2) overlay.removeChild(overlay.lastChild);
+
+  const dist = Math.hypot(tx - startX, ty - startY);
+
+  // Distance line
+  overlay.appendChild(svgEl('line', {
+    x1: startX, y1: startY, x2: tx, y2: ty,
+    stroke: '#c9a84c', 'stroke-width': 0.2, 'stroke-dasharray': '0.5 0.25', opacity: '0.7',
+  }));
+
+  // Destination token preview
+  overlay.appendChild(svgEl('circle', {
+    cx: tx, cy: ty, r: TOKEN_R,
+    fill: 'rgba(201,168,76,0.2)', stroke: '#c9a84c', 'stroke-width': 0.15, opacity: '0.8',
+  }));
+
+  // Distance label
+  const lx = (startX + tx) / 2 + 0.3;
+  const ly = (startY + ty) / 2 - 0.5;
+  overlay.appendChild(svgEl('rect', { x: lx - 0.5, y: ly - 0.5, width: 2.2, height: 0.9, fill: '#0a0a14', rx: 0.2, opacity: '0.85' }));
+  const lbl = svgEl('text', {
+    x: lx + 0.6, y: ly + 0.15,
+    'text-anchor': 'middle', fill: '#c9a84c', 'font-size': 0.75,
+    'font-family': 'sans-serif', 'font-weight': 700,
+  });
+  lbl.textContent = dist.toFixed(1) + '"';
+  overlay.appendChild(lbl);
+}
+
+async function commitMove(tx, ty, apCost, playerSlot) {
+  if (!activation) return;
+  const opId = activation.opId;
+
+  await db.ref(`games-kt/${gameId}/operatives/${opId}`).update({ x: tx, y: ty });
+
+  activation.apRemaining -= apCost;
+  if (activation.apRemaining <= 0) {
+    await endActivation(playerSlot);
+  } else {
+    reRenderPhaseBar();
   }
+}
 
-  function renderDevPanel(panelId) {
-    const body         = document.getElementById(`dev-body-${panelId}`);
-    const players      = gameData.players || {};
-    const claimedFac   = devFactions[panelId];
-    const bothClaimed  = players.tau === 'claimed' && players.drukhari === 'claimed';
+function setupDragMove(svg, playerSlot, unitG, overlay) {
+  // Token clicks are handled by the sidebar (activateOperative)
+  // Token dragging while active is handled by startMove / board click
+  // Nothing extra needed at board level for KT-1
+}
 
-    let content;
-    if (!claimedFac) {
-      content = buildFactionPanel(players, panelId, /*compact*/ true);
-    } else if (!bothClaimed) {
-      content = buildWaitingPanel(claimedFac, /*compact*/ true);
-    } else {
-      content = buildGamePlaceholder();
-    }
+// ═══════════════════════════════════════════════════════════
+//  RE-RENDER HELPERS
+// ═══════════════════════════════════════════════════════════
 
-    mountPanel(body, content);
+function reRender() {
+  if (devMode) renderDev();
+  else { showScreen('game'); renderGame(myPlayer); }
+}
+
+function reRenderPhaseBar() {
+  // Re-render just the phase bar without rebuilding the full game
+  const slots = devMode ? ['player1', 'player2'] : [myPlayer];
+  slots.forEach(slot => {
+    const bar = document.getElementById(`phase-bar-${slot}`);
+    if (!bar || !gameData) return;
+    const status = gameData.meta?.status;
+    const phase  = status === 'active' ? (gameData.turn?.phase || 'strategy') : status;
+    bar.innerHTML = renderPhaseBar(status, phase, slot, gameData.turn || {});
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DEV UTILS
+// ═══════════════════════════════════════════════════════════
+
+async function devNewGame() {
+  if (!confirm('Start a new dev game? Current game will be abandoned.')) return;
+  gameId     = null;
+  gameData   = null;
+  activation = null;
+  const url  = new URL(window.location.href);
+  url.searchParams.delete('game');
+  window.history.replaceState({}, '', url.toString());
+  bootDev();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  UI HELPERS
+// ═══════════════════════════════════════════════════════════
+
+function showScreen(name) {
+  document.querySelectorAll('#app .screen').forEach(s => s.classList.remove('active'));
+  const t = document.getElementById(`screen-${name}`);
+  if (t) t.classList.add('active');
+}
+
+function showError(msg) {
+  document.getElementById('error-msg').textContent = msg;
+  showScreen('error');
+}
+
+function buildGameUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('game', gameId);
+  url.searchParams.delete('dev');
+  return url.toString();
+}
+
+function el(tag, props = {}) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'className')       node.className   = v;
+    else if (k === 'textContent') node.textContent = v;
+    else                          node[k]          = v;
   }
-
-  // ─── Panel builders ───────────────────────────────────────────────────────────
-  // Each builder returns a detached DOM element; mountPanel drops it into place.
-
-  function buildFactionPanel(players, panelId, compact) {
-    const tauTaken      = players.tau      === 'claimed';
-    const drukhariTaken = players.drukhari === 'claimed';
-    const gameUrl       = buildGameUrl();
-
-    const wrap = el('div', { className: 'panel' + (compact ? ' compact' : '') });
-
-    wrap.appendChild(el('h1', { className: 'game-title', textContent: 'KILL TEAM' }));
-    wrap.appendChild(el('p',  { className: 'game-subtitle', textContent: "T'au Pathfinders vs Drukhari Wyches" }));
-    wrap.appendChild(el('p',  { className: 'choose-label', textContent: 'Choose your faction' }));
-
-    // Faction cards
-    const row = el('div', { className: 'faction-row' });
-    row.appendChild(buildFactionCard('tau',      tauTaken,      panelId));
-    row.appendChild(buildFactionCard('drukhari', drukhariTaken, panelId));
-    wrap.appendChild(row);
-
-    // Share link (only in full-size panel)
-    if (!compact) {
-      const section = el('div', { className: 'link-section' });
-      section.appendChild(el('p', { className: 'link-label', textContent: 'Share this link with your opponent' }));
-      const linkRow = el('div', { className: 'link-row' });
-      const input   = el('input', { className: 'link-input', type: 'text', value: gameUrl, readOnly: true });
-      const copyBtn = el('button', { className: 'btn', textContent: 'Copy' });
-      copyBtn.addEventListener('click', () => copyToClipboard(input, copyBtn));
-      linkRow.appendChild(input);
-      linkRow.appendChild(copyBtn);
-      section.appendChild(linkRow);
-      wrap.appendChild(section);
-    }
-
-    return wrap;
-  }
-
-  function buildFactionCard(faction, taken, panelId) {
-    const isTau    = faction === 'tau';
-    const label    = isTau ? "T'au Pathfinders" : 'Drukhari Wyches';
-    const detail   = isTau ? '10 operatives · Ranged' : '12 operatives · Melee';
-    const icon     = isTau ? '◉' : '◉';
-
-    const card = el('button', {
-      className: `faction-card ${faction}${taken ? ' taken' : ''}`,
-      disabled:  taken,
-    });
-
-    card.appendChild(el('div', { className: 'faction-card-icon', textContent: icon }));
-    card.appendChild(el('div', { className: 'faction-card-name', textContent: label }));
-    card.appendChild(el('div', { className: 'faction-card-detail', textContent: detail }));
-    card.appendChild(el('div', {
-      className:   'faction-badge ' + (taken ? 'taken' : 'available'),
-      textContent: taken ? 'TAKEN' : 'AVAILABLE',
-    }));
-
-    if (!taken) {
-      card.addEventListener('click', () => claimFaction(faction, panelId));
-    }
-
-    return card;
-  }
-
-  function buildWaitingPanel(faction, compact) {
-    const isTau   = faction === 'tau';
-    const label   = isTau ? "T'au Pathfinders" : 'Drukhari Wyches';
-    const gameUrl = buildGameUrl();
-
-    const wrap = el('div', { className: 'panel' + (compact ? ' compact' : '') });
-
-    wrap.appendChild(el('h1', { className: 'game-title', textContent: 'KILL TEAM' }));
-    wrap.appendChild(el('p',  { className: `waiting-faction-name ${faction}`, textContent: label }));
-    wrap.appendChild(el('p',  { className: 'waiting-sub', textContent: 'Waiting for opponent to join…' }));
-
-    if (!compact) {
-      const section = el('div', { className: 'link-section' });
-      section.appendChild(el('p', { className: 'link-label', textContent: 'Send this link to your opponent' }));
-      const linkRow = el('div', { className: 'link-row' });
-      const input   = el('input', { className: 'link-input', type: 'text', value: gameUrl, readOnly: true });
-      const copyBtn = el('button', { className: 'btn', textContent: 'Copy' });
-      copyBtn.addEventListener('click', () => copyToClipboard(input, copyBtn));
-      linkRow.appendChild(input);
-      linkRow.appendChild(copyBtn);
-      section.appendChild(linkRow);
-      wrap.appendChild(section);
-    }
-
-    return wrap;
-  }
-
-  function buildGamePlaceholder() {
-    const wrap = el('div', { className: 'panel' });
-    wrap.appendChild(el('p', { className: 'game-placeholder', textContent: 'Board rendering coming in Step 2.' }));
-    return wrap;
-  }
-
-  // ─── Mount helper: replace container's children with new element ──────────────
-  function mountPanel(container, newChild) {
-    // Only replace DOM if content actually changed to avoid wiping focused inputs
-    const current = container.firstElementChild;
-    if (current && current.isEqualNode(newChild)) return;
-    container.innerHTML = '';
-    container.appendChild(newChild);
-  }
-
-  // ─── Claim faction via Firebase transaction ───────────────────────────────────
-  async function claimFaction(faction, devPanelId) {
-    const ref = db.ref(`games/${gameId}/players/${faction}`);
-
-    // Set local state before the await so that when Firebase fires its
-    // real-time listener optimistically (before the transaction resolves),
-    // render() already sees the correct faction ownership and advances to
-    // the waiting screen rather than staying on faction selection.
-    if (devPanelId) {
-      devFactions[devPanelId] = faction;
-    } else {
-      myFaction = faction;
-      localStorage.setItem(`killteam_faction_${gameId}`, faction);
-    }
-
-    let committed = false;
-    try {
-      const result = await ref.transaction(current => {
-        // Abort if already claimed by anyone
-        if (current !== null) return undefined;
-        return 'claimed';
-      });
-      committed = result.committed;
-    } catch (e) {
-      // Rollback local state on error
-      if (devPanelId) { devFactions[devPanelId] = null; }
-      else { myFaction = null; localStorage.removeItem(`killteam_faction_${gameId}`); }
-      alert(`Claim failed: ${e.message}`);
-      return;
-    }
-
-    if (!committed) {
-      // Rollback: faction was claimed by opponent between our check and write
-      if (devPanelId) { devFactions[devPanelId] = null; }
-      else { myFaction = null; localStorage.removeItem(`killteam_faction_${gameId}`); }
-      const name = faction === 'tau' ? "T'au" : 'Drukhari';
-      alert(`${name} was just claimed by your opponent. Please choose the other faction.`);
-    }
-  }
-
-  // ─── URL helpers ─────────────────────────────────────────────────────────────
-  function buildGameUrl() {
-    const url = new URL(window.location.href);
-    url.searchParams.set('game', gameId);
-    url.searchParams.delete('dev');  // never share the dev URL
-    return url.toString();
-  }
-
-  // ─── Clipboard helper ─────────────────────────────────────────────────────────
-  function copyToClipboard(inputEl, btnEl) {
-    const text = inputEl.value;
-    const original = btnEl.textContent;
-
-    navigator.clipboard.writeText(text).catch(() => {
-      // Fallback for browsers that block clipboard API
-      inputEl.select();
-      document.execCommand('copy');
-    });
-
-    btnEl.textContent = 'Copied!';
-    setTimeout(() => { btnEl.textContent = original; }, 1800);
-  }
-
-  // ─── Screen visibility (normal mode only) ────────────────────────────────────
-  function showScreen(name) {
-    document.querySelectorAll('#app .screen').forEach(s => s.classList.remove('active'));
-    const target = document.getElementById(`screen-${name}`);
-    if (target) target.classList.add('active');
-  }
-
-  function showError(html) {
-    document.getElementById('error-msg').innerHTML = html;
-    showScreen('error');
-  }
-
-  // ─── DOM creation shorthand ───────────────────────────────────────────────────
-  function el(tag, props = {}) {
-    const node = document.createElement(tag);
-    for (const [k, v] of Object.entries(props)) {
-      if (k === 'className')   node.className   = v;
-      else if (k === 'textContent') node.textContent = v;
-      else                     node[k]          = v;
-    }
-    return node;
-  }
-  </script>
+  return node;
+}
+</script>
 </body>
 </html>
