@@ -2403,17 +2403,53 @@
       };
     },
 
-    async render(system, factionId) {
-      if (!system || !factionId) {
-        document.getElementById('screen-roster').innerHTML =
-          '<div class="placeholder"><h2>Select a faction from the Library to build a roster</h2></div>';
-        return;
-      }
-      RosterBuilder.state = RosterBuilder._fresh(system, factionId);
+    async render(system, factionId, rosterId) {
       const el = document.getElementById('screen-roster');
+
+      if (rosterId) {
+        el.innerHTML = '<div class="loading-text">Loading roster…</div>';
+        try {
+          const snap = await App.db.ref(`rosters/${rosterId}`).once('value');
+          const data = snap.val();
+          if (!data || !data.meta) {
+            el.innerHTML = '<div class="placeholder"><h2>Roster not found</h2></div>';
+            return;
+          }
+          system    = data.meta.gameSystem;
+          factionId = data.meta.factionId;
+          RosterBuilder.state             = RosterBuilder._fresh(system, factionId);
+          RosterBuilder.state.rosterId    = rosterId;
+          RosterBuilder.state.created     = data.meta.created || null;
+          RosterBuilder.state.name        = data.meta.name    || '';
+          const arr = v => !v ? [] : Array.isArray(v) ? v : Object.values(v);
+          RosterBuilder.state.operatives  = arr(data.units).map(u => ({
+            instanceId:    u.instanceId,
+            unitId:        u.unitId,
+            unitName:      u.unitName,
+            role:          u.role          || null,
+            points:        u.points        ?? null,
+            countsAs:      u.countsAs      || 1,
+            chosenLoadout: u.chosenLoadout || {},
+            notes:         u.notes         || '',
+            expanded:      false,
+          }));
+        } catch (err) {
+          el.innerHTML = `<div class="placeholder"><h2>Error loading roster</h2><p>${err.message}</p></div>`;
+          return;
+        }
+      } else if (!system || !factionId) {
+        el.innerHTML = '<div class="placeholder"><h2>Select a faction from the Library to build a roster</h2></div>';
+        return;
+      } else {
+        RosterBuilder.state = RosterBuilder._fresh(system, factionId);
+      }
+
       el.innerHTML = RosterBuilder._shell();
+      const nameEl = document.getElementById('rb-name');
+      if (nameEl && RosterBuilder.state.name) nameEl.value = RosterBuilder.state.name;
       RosterBuilder._bind();
       await RosterBuilder._load();
+      RosterBuilder._renderOperatives();
     },
 
     async _load() {
@@ -2429,9 +2465,9 @@
         RosterBuilder.state.compositionRules = info.compositionRules || null;
 
         const def = `${RosterBuilder.state.factionName} Roster`;
-        RosterBuilder.state.name = def;
+        if (!RosterBuilder.state.name) RosterBuilder.state.name = def;
         const nameEl = document.getElementById('rb-name');
-        if (nameEl && !nameEl.value) nameEl.value = def;
+        if (nameEl && !nameEl.value) nameEl.value = RosterBuilder.state.name;
         document.getElementById('rb-faction').textContent = RosterBuilder.state.factionName;
 
         const val = unitsSnap.val() || {};
@@ -2794,7 +2830,20 @@
     },
 
     _checkSpecialRules() {
-      return [];
+      // Faction-specific cross-team weapon limits.
+      // When more factions need this treatment, convert to a dispatch table keyed by factionId.
+      const errors = [];
+      if (RosterBuilder.state.factionId === 'void-dancer-troupe') {
+        const fusionCount = RosterBuilder.state.operatives.filter(op =>
+          Object.values(op.chosenLoadout || {}).includes('w-fusion-pistol')
+        ).length;
+        const neuroCount = RosterBuilder.state.operatives.filter(op =>
+          Object.values(op.chosenLoadout || {}).includes('w-neuro-disruptor')
+        ).length;
+        if (fusionCount > 1) errors.push('Max 1 fusion pistol across the team');
+        if (neuroCount  > 1) errors.push('Max 1 neuro disruptor across the team');
+      }
+      return errors;
     },
 
     async _doSaveDraft() {
@@ -3151,7 +3200,7 @@
           </div>
           ${isOwner ? `
             <button class="btn btn-secondary rv-edit-btn"
-                    onclick="location.hash='#roster/new/${meta.gameSystem}/${meta.factionId}'">
+                    onclick="location.hash='#roster/edit/${rosterId}'">
               Edit this roster
             </button>
           ` : ''}
@@ -3211,13 +3260,16 @@
         case 'roster':
           document.getElementById('screen-roster').classList.add('active');
           back.classList.add('visible');
-          title.textContent = sub === 'new' ? 'Roster Builder' : 'Roster';
-          if (param && App.schemas[param]) crumb.textContent = App.schemas[param].name;
           if (sub === 'new') {
+            title.textContent = 'Roster Builder';
+            if (param && App.schemas[param]) crumb.textContent = App.schemas[param].name;
             RosterBuilder.render(param, parts[3]);
+          } else if (sub === 'edit') {
+            title.textContent = 'Roster Builder';
+            RosterBuilder.render(null, null, param);
           } else {
-            document.getElementById('screen-roster').innerHTML =
-              RosterView.render(sub);
+            title.textContent = 'Roster';
+            RosterView.render(sub);
           }
           break;
 
