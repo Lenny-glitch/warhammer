@@ -1527,10 +1527,14 @@ async function rollInitiative(playerSlot) {
   }
 }
 
-async function startStrategyPhase(initiativeWinner) {
+// overrides: optional extra fields merged into the single update() — used by
+// endTurningPoint to include 'turn/turningPoint' in the same atomic write.
+async function startStrategyPhase(initiativeWinner, overrides = {}) {
   const ops     = (await db.ref(`games-kt/${gameId}/operatives`).once('value')).val() || {};
   const cpSnap  = (await db.ref(`games-kt/${gameId}/turn/cp`).once('value')).val() || { player1: 0, player2: 0 };
-  const tp      = ((await db.ref(`games-kt/${gameId}/turn/turningPoint`).once('value')).val()) || 1;
+  // Use caller-supplied TP if present (so CP calc uses the incoming TP, not the pre-increment value).
+  const tp      = overrides['turn/turningPoint']
+                    ?? ((await db.ref(`games-kt/${gameId}/turn/turningPoint`).once('value')).val() || 1);
 
   // CP award: both get 1 in TP1; non-initiative player gets 2 in TP2+
   const isFirstTP = tp === 1;
@@ -1556,6 +1560,7 @@ async function startStrategyPhase(initiativeWinner) {
     'turn/cp/player1':         newCP.player1,
     'turn/cp/player2':         newCP.player2,
     ...opUpdates,
+    ...overrides,
   });
 }
 
@@ -1625,20 +1630,16 @@ async function advanceActivatingPlayer(justActivatedSlot) {
 }
 
 async function endTurningPoint() {
-  const tp         = gameData.turn?.turningPoint || 1;
+  const tp           = gameData.turn?.turningPoint || 1;
   const activePlayer = gameData.turn?.activePlayer || 'player1';
 
   if (tp >= 4) {
-    // Game over after 4 Turning Points
     await db.ref(`games-kt/${gameId}`).update({ 'meta/status': 'ended' });
     return;
   }
 
-  // Begin new Turning Point: strategy phase
-  await startStrategyPhase(activePlayer);
-
-  // Increment TP
-  await db.ref(`games-kt/${gameId}/turn/turningPoint`).set(tp + 1);
+  // Single atomic update: TP increment + strategy phase reset in one write.
+  await startStrategyPhase(activePlayer, { 'turn/turningPoint': tp + 1 });
 }
 
 // ═══════════════════════════════════════════════════════════
