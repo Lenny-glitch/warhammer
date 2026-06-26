@@ -377,6 +377,80 @@ function snapToGrid(x, y) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  SHARED MATH UTILITIES
+//  SOURCE: warhammer40k/js/shooting.js + board.js — keep in sync.
+//  These are pure functions with no 40k-specific logic.
+// ═══════════════════════════════════════════════════════════
+
+// Line-segment intersection test (parametric)
+function segmentsIntersect(x1,y1,x2,y2, x3,y3,x4,y4) {
+  const d1x = x2-x1, d1y = y2-y1;
+  const d2x = x4-x3, d2y = y4-y3;
+  const cross = d1x*d2y - d1y*d2x;
+  if (Math.abs(cross) < 1e-10) return false;
+  const dx = x3-x1, dy = y3-y1;
+  const t = (dx*d2y - dy*d2x) / cross;
+  const u = (dx*d1y - dy*d1x) / cross;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+// Does segment (x1,y1)→(x2,y2) cross terrain rect t?
+function segmentCrossesRect(x1,y1,x2,y2, t) {
+  const rx = t.x, ry = t.y, rx2 = t.x + t.width, ry2 = t.y + t.height;
+  return segmentsIntersect(x1,y1,x2,y2, rx,ry,  rx2,ry)  ||
+         segmentsIntersect(x1,y1,x2,y2, rx2,ry, rx2,ry2) ||
+         segmentsIntersect(x1,y1,x2,y2, rx,ry2, rx2,ry2) ||
+         segmentsIntersect(x1,y1,x2,y2, rx,ry,  rx,ry2);
+}
+
+// Single ray against terrain map → 'clear' | 'cover' | 'blocked'
+// terrain: { "x,y": 'rough'|'chestHigh'|'tall' } — same format as board terrain state
+function rayResult(x1,y1,x2,y2, terrain) {
+  let hasCover = false;
+  for (const [key, tier] of Object.entries(terrain || {})) {
+    const [gx, gy] = key.split(',').map(Number);
+    if (!segmentCrossesRect(x1,y1,x2,y2, { x:gx, y:gy, width:1, height:1 })) continue;
+    if (tier === 'tall')      return 'blocked';
+    if (tier === 'chestHigh') hasCover = true;
+    // 'rough' has no LOS effect
+  }
+  return hasCover ? 'cover' : 'clear';
+}
+
+// Circle vs axis-aligned rect overlap
+function circleOverlapsRect(cx, cy, r, rect) {
+  const nearX = Math.max(rect.x, Math.min(cx, rect.x + rect.width));
+  const nearY = Math.max(rect.y, Math.min(cy, rect.y + rect.height));
+  return Math.hypot(cx - nearX, cy - nearY) < r;
+}
+
+// Circle vs circle overlap
+function circleOverlapsCircle(ax, ay, ar, bx, by, br) {
+  return Math.hypot(ax - bx, ay - by) < ar + br;
+}
+
+// Inline SVG d6 pip face — SOURCE: warhammer40k/js/game.js dieFaceSVG()
+function dieFaceSVG(value, size) {
+  size = size || 24;
+  const PIP_LAYOUTS = {
+    1: [[0.5, 0.5]],
+    2: [[0.28, 0.28], [0.72, 0.72]],
+    3: [[0.28, 0.28], [0.5, 0.5], [0.72, 0.72]],
+    4: [[0.28, 0.28], [0.72, 0.28], [0.28, 0.72], [0.72, 0.72]],
+    5: [[0.28, 0.28], [0.72, 0.28], [0.5, 0.5], [0.28, 0.72], [0.72, 0.72]],
+    6: [[0.28, 0.2], [0.72, 0.2], [0.28, 0.5], [0.72, 0.5], [0.28, 0.8], [0.72, 0.8]]
+  };
+  const r    = (size * 0.09).toFixed(1);
+  const pips = (PIP_LAYOUTS[value] || PIP_LAYOUTS[1]).map(([x, y]) =>
+    `<circle cx="${(x*size).toFixed(1)}" cy="${(y*size).toFixed(1)}" r="${r}" fill="currentColor"/>`
+  ).join('');
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" `+
+         `style="display:inline-block;vertical-align:middle;background:var(--bg);`+
+         `border:1px solid var(--border);border-radius:3px;margin:0 2px;`+
+         `color:var(--text)" aria-label="${value}">${pips}</svg>`;
+}
+
+// ═══════════════════════════════════════════════════════════
 //  TERRAIN RENDERING
 //  Source: warhammer40k/js/board.js — copied, adapted for 1" grid
 // ═══════════════════════════════════════════════════════════
@@ -524,6 +598,26 @@ function buildOperatives(exportData, playerSlot) {
     const maxW    = parseStat(u.stats.WOUNDS);
     const apl     = parseStat(u.stats.APL) || 2;
     const move    = parseStat(u.stats.MOVE) || 6;
+    const def     = parseStat(u.stats.DF)   || 3;
+    const save    = parseStat(u.stats.SAVE) || 5;
+
+    // Copy full weapon list onto instance so combat resolution has no async lookups.
+    // chosenLoadout takes priority (selected weapons); fall back to full weapons array.
+    const rawWeapons = u.chosenLoadout && u.chosenLoadout.length
+      ? u.chosenLoadout
+      : (Array.isArray(u.weapons) ? u.weapons : Object.values(u.weapons || {}));
+    const weapons = rawWeapons.map(w => ({
+      id:      w.id   || w.name,
+      name:    w.name || '',
+      type:    w.type || 'melee',
+      profiles: {
+        ATK: w.profiles?.ATK || '0',
+        HIT: w.profiles?.HIT || '4+',
+        DMG: w.profiles?.DMG || '1/1',
+        RNG: w.profiles?.RNG || '',
+        WR:  w.profiles?.WR  || '',
+      },
+    }));
 
     ops[id] = {
       id,
@@ -537,6 +631,9 @@ function buildOperatives(exportData, playerSlot) {
       ready:       true,
       apl,
       move,
+      def,
+      save,
+      weapons,
       wounds:      maxW,
       maxWounds:   maxW,
       x:           -1,
