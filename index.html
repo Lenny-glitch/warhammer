@@ -1339,14 +1339,55 @@ function buildBoardSVG(wrap, playerSlot, status, phase) {
   }
 }
 
+// ── Health arc (Jet Force Gemini style segmented arc) ──
+//
+// Arc: 270° span, gap at bottom (6 o'clock). Segments fill from bottom-left
+// clockwise; depletion empties from the rightmost segment inward.
+// Green above half wounds; all remaining turn red at/below the Injured threshold.
+
+function drawHealthArc(parent, op) {
+  const N = op.maxWounds;
+  if (!N || N <= 0) return;
+
+  const cx         = op.x, cy = op.y;
+  const r          = TOKEN_R + 0.15;   // 0.65" — just outside token body
+  const ARC_START  = 135;              // SVG° (0=right, CW): bottom-left gap edge (≈7:30)
+  const ARC_TOTAL  = 270;             // gap at bottom = remaining 90° from 4:30→7:30
+  const GAP_DEG    = 3;
+  const segSpan    = ARC_TOTAL / N;
+  const segFill    = Math.max(1, segSpan - GAP_DEG);
+
+  const isInjured  = op.wounds > 0 && op.wounds <= op.maxWounds / 2;
+  const fillColor  = isInjured ? '#c0392b' : '#4a9a5a';
+  const emptyColor = 'rgba(255,255,255,0.08)';
+  const toRad = d => d * Math.PI / 180;
+
+  for (let i = 0; i < N; i++) {
+    const sa = toRad(ARC_START + i * segSpan);
+    const ea = toRad(ARC_START + i * segSpan + segFill);
+    const x1 = (cx + r * Math.cos(sa)).toFixed(4);
+    const y1 = (cy + r * Math.sin(sa)).toFixed(4);
+    const x2 = (cx + r * Math.cos(ea)).toFixed(4);
+    const y2 = (cy + r * Math.sin(ea)).toFixed(4);
+    const la = segFill > 180 ? 1 : 0;
+
+    parent.appendChild(svgEl('path', {
+      d:                `M ${x1} ${y1} A ${r} ${r} 0 ${la} 1 ${x2} ${y2}`,
+      fill:             'none',
+      stroke:           i < op.wounds ? fillColor : emptyColor,
+      'stroke-width':   0.09,
+      'stroke-linecap': 'butt',
+    }));
+  }
+}
+
 // ── Operative token ──
 
 function drawOperativeToken(parent, op, viewerSlot, status, phase) {
-  const isP1    = op.player === 'player1';
+  const isP1      = op.player === 'player1';
   const baseColor = isP1 ? '#2a5a99' : '#6a2a99';
   const rimColor  = isP1 ? '#4a9eff' : '#c97af7';
   const isExpended = !op.ready;
-  const isInjured  = op.wounds <= op.maxWounds / 2;
   const isActive   = activation?.opId === op.id;
 
   const g = svgEl('g', { 'data-op-id': op.id, class: 'op-token' });
@@ -1355,22 +1396,8 @@ function drawOperativeToken(parent, op, viewerSlot, status, phase) {
   // Token body
   g.appendChild(svgEl('circle', { cx: op.x, cy: op.y, r: TOKEN_R, fill: baseColor + '60', stroke: rimColor, 'stroke-width': isActive ? 0.18 : 0.12 }));
 
-  // Wounded sector (red pie slice for missing wounds)
-  if (op.wounds < op.maxWounds) {
-    const missing = (op.maxWounds - op.wounds) / op.maxWounds;
-    const ri = TOKEN_R * 0.75;
-    const sa = -Math.PI / 2;
-    const ea = sa + (2 * Math.PI * missing);
-    const x1 = (op.x + ri * Math.cos(sa)).toFixed(3);
-    const y1 = (op.y + ri * Math.sin(sa)).toFixed(3);
-    const x2 = (op.x + ri * Math.cos(ea)).toFixed(3);
-    const y2 = (op.y + ri * Math.sin(ea)).toFixed(3);
-    const la = missing > 0.5 ? 1 : 0;
-    g.appendChild(svgEl('path', {
-      d: `M ${op.x} ${op.y} L ${x1} ${y1} A ${ri} ${ri} 0 ${la} 1 ${x2} ${y2} Z`,
-      fill: isInjured ? 'rgba(200,60,60,0.7)' : 'rgba(200,120,0,0.55)',
-    }));
-  }
+  // Health arc — replaces old pie sector; color shift IS the injured visual cue
+  drawHealthArc(g, op);
 
   // Abbreviation label
   const abbr = svgEl('text', {
@@ -1385,15 +1412,15 @@ function drawOperativeToken(parent, op, viewerSlot, status, phase) {
   // Conceal indicator: dashed outer ring
   if (op.order === 'conceal') {
     g.appendChild(svgEl('circle', {
-      cx: op.x, cy: op.y, r: TOKEN_R * 1.35,
+      cx: op.x, cy: op.y, r: TOKEN_R * 1.55,
       fill: 'none', stroke: rimColor + '55', 'stroke-width': 0.1, 'stroke-dasharray': '0.3 0.2',
     }));
   }
 
-  // Active activation glow
+  // Active activation glow (behind everything)
   if (isActive) {
     g.insertBefore(svgEl('circle', {
-      cx: op.x, cy: op.y, r: TOKEN_R * 1.5,
+      cx: op.x, cy: op.y, r: TOKEN_R * 1.75,
       fill: 'none', stroke: 'rgba(201,168,76,0.6)', 'stroke-width': 0.18,
     }), g.firstChild);
   }
