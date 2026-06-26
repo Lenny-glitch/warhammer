@@ -1302,6 +1302,114 @@
 
     .rv-empty { padding: 1.25rem 1rem; color: var(--text-dim); font-size: 0.85rem; text-align: center; }
     .rv-edit-btn { width: auto; padding: 0.75rem 1.5rem; }
+
+    /* ── UNIT SEARCH ── */
+    .us-wrap { max-width: 740px; margin: 0 auto; padding: 1.5rem 1.5rem 3rem; }
+
+    .us-search-bar {
+      display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;
+    }
+    .us-search-bar .uf-input { flex: 1; }
+    .us-pool-label { font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; }
+
+    .us-result-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.6rem 1rem; background: var(--surface);
+      border: 1px solid var(--border); border-bottom: none; cursor: pointer;
+      transition: background 0.1s;
+    }
+    .us-result-row:first-child { border-radius: 6px 6px 0 0; }
+    .us-result-row:last-child  { border-bottom: 1px solid var(--border); border-radius: 0 0 6px 6px; }
+    .us-result-row:only-child  { border-radius: 6px; }
+    .us-result-row:hover { background: var(--surface2); }
+    .us-result-info { display: flex; align-items: baseline; gap: 0.6rem; }
+    .us-result-name { font-size: 0.875rem; font-weight: 600; }
+    .us-result-cat  { font-size: 0.72rem; color: var(--text-dim); text-transform: capitalize; }
+    .us-result-pts  { font-size: 0.72rem; color: var(--text-dim); flex-shrink: 0; }
+    .us-empty { padding: 0.75rem 0; color: var(--text-dim); font-size: 0.85rem; }
+
+    .us-preview-panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.5rem; margin-top: 1rem;
+    }
+    .us-section-title {
+      font-size: 1rem; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; margin-bottom: 1.25rem;
+      display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+    }
+    .us-pts-badge {
+      font-size: 0.72rem; font-weight: 600; background: var(--accent-dim);
+      color: var(--accent); border-radius: 4px; padding: 0.2rem 0.5rem;
+    }
+    .us-preview-section {
+      margin-bottom: 1.5rem; padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .us-preview-section:last-of-type { border-bottom: none; }
+    .us-subsection-label {
+      font-size: 0.6rem; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.75rem;
+    }
+    .us-squad-size { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.5rem; }
+
+    .us-weapon-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 0.5rem;
+    }
+    .us-weapon-head {
+      display: flex; align-items: center; gap: 0.6rem;
+      margin-bottom: 0.6rem; flex-wrap: wrap;
+    }
+    .us-weapon-name { font-size: 0.875rem; font-weight: 600; }
+    .us-default-label {
+      display: flex; align-items: center; gap: 0.3rem;
+      font-size: 0.75rem; color: var(--text-dim); cursor: pointer; margin-left: auto;
+    }
+    .us-weapon-profiles { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end; }
+    .us-profile-field { display: flex; flex-direction: column; gap: 0.2rem; }
+    .us-profile-label {
+      font-size: 0.55rem; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--text-dim);
+    }
+    .us-profile-input { padding: 0.3rem 0.5rem; font-size: 0.8rem; width: 5rem; }
+    .us-weapon-kw { font-size: 0.7rem; color: var(--text-dim); margin-top: 0.4rem; }
+
+    .us-wargear-label {
+      font-size: 0.6rem; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.4rem;
+    }
+    .us-wargear-parsed  { margin-bottom: 0.75rem; }
+    .us-wargear-unparsed { margin-top: 0.75rem; }
+    .us-wargear-row {
+      display: flex; gap: 0.75rem; padding: 0.4rem 0;
+      border-bottom: 1px solid var(--border); font-size: 0.8rem;
+      flex-wrap: wrap;
+    }
+    .us-wargear-row:last-child { border-bottom: none; }
+    .us-slot-name { font-weight: 600; }
+    .us-slot-type {
+      color: var(--accent); font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    }
+    .us-slot-options { color: var(--text-dim); }
+    .us-unparsed-row {
+      font-size: 0.77rem; color: var(--text-dim); line-height: 1.5;
+      padding: 0.35rem 0; border-bottom: 1px solid var(--border);
+    }
+    .us-unparsed-row:last-child { border-bottom: none; }
+
+    .us-preview-actions {
+      display: flex; gap: 0.75rem; margin-top: 1.5rem;
+      padding-top: 1.25rem; border-top: 1px solid var(--border);
+    }
+    .us-preview-actions .btn { width: auto; padding: 0.6rem 1.25rem; }
+
+    /* Roster builder source-pool search button */
+    .rb-search-link {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border);
+    }
+    .rb-search-pool-btn { width: auto; padding: 0.35rem 0.75rem; font-size: 0.78rem; }
+    .rb-search-hint { font-size: 0.72rem; color: var(--text-dim); }
   </style>
 </head>
 <body>
@@ -1344,6 +1452,9 @@
 
   <!-- SCREEN: ROSTER BUILDER -->
   <div id="screen-roster" class="screen"></div>
+
+  <!-- SCREEN: UNIT SEARCH (40k lazy migration) -->
+  <div id="screen-unit-search" class="screen"></div>
 
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -2701,13 +2812,29 @@
     },
 
     _renderBrowser() {
-      const browser = document.getElementById('rb-browser');
-      const units   = RosterBuilder.state.unitLibrary;
+      const browser  = document.getElementById('rb-browser');
+      const units    = RosterBuilder.state.unitLibrary;
+      const { system, factionId } = RosterBuilder.state;
+
+      const searchBtnHTML = system === 'warhammer-40k' ? `
+        <div class="rb-search-link">
+          <button class="btn btn-secondary rb-search-pool-btn"
+                  onclick="sessionStorage.setItem('unitSearchReturn',location.hash);location.hash='#unit-search/${system}/${factionId}'">
+            Search Source Pool
+          </button>
+          <span class="rb-search-hint">Add units from the 40k database</span>
+        </div>` : '';
+
       if (!units.length) {
-        browser.innerHTML = '<div class="rb-op-empty">No units in library for this faction yet.</div>';
+        browser.innerHTML = searchBtnHTML + `<div class="rb-op-empty">${
+          system === 'warhammer-40k'
+            ? 'No confirmed units yet — search above to add.'
+            : 'No units in library for this faction yet.'
+        }</div>`;
         return;
       }
-      browser.innerHTML = units.map(u => {
+
+      browser.innerHTML = searchBtnHTML + units.map(u => {
         const chk = RosterBuilder._checkMaxed(u);
         return `
           <div class="rb-unit-row${chk.maxed ? ' maxed' : ''}">
@@ -3209,6 +3336,379 @@
     },
   };
 
+  // ── UNIT SEARCH (40k lazy migration) ────────────────────────────────────────
+
+  const UnitSearch = {
+    state: { system: null, factionSlug: null, sourcePool: null, preview: null },
+
+    async render(system, factionSlug) {
+      UnitSearch.state = { system, factionSlug, sourcePool: null, preview: null };
+      const el = document.getElementById('screen-unit-search');
+      if (!system || !factionSlug) {
+        el.innerHTML = '<div class="placeholder"><h2>No faction selected</h2></div>';
+        return;
+      }
+      el.innerHTML = `
+        <div class="us-wrap">
+          <div class="us-search-bar">
+            <input class="uf-input" id="us-search-input" type="text"
+                   placeholder="Type a unit name…" disabled>
+            <div class="us-pool-label" id="us-pool-count">Loading source pool…</div>
+          </div>
+          <div id="us-results"></div>
+          <div id="us-preview"></div>
+        </div>
+      `;
+      document.getElementById('us-search-input').addEventListener('input', e => {
+        UnitSearch._runSearch(e.target.value);
+      });
+      await UnitSearch._loadPool();
+    },
+
+    async _loadPool() {
+      try {
+        const snap = await App.db
+          .ref(`gameData/${UnitSearch.state.system}/${UnitSearch.state.factionSlug}`)
+          .once('value');
+        UnitSearch.state.sourcePool = snap.val() || {};
+        const count = Object.keys(UnitSearch.state.sourcePool).length;
+        document.getElementById('us-pool-count').textContent = `${count} units available`;
+        const input = document.getElementById('us-search-input');
+        if (input) { input.disabled = false; input.focus(); }
+      } catch (err) {
+        document.getElementById('screen-unit-search').innerHTML =
+          `<div class="placeholder"><h2>Error loading source pool</h2><p>${err.message}</p></div>`;
+      }
+    },
+
+    _runSearch(query) {
+      const q   = query.trim().toLowerCase();
+      const el  = document.getElementById('us-results');
+      document.getElementById('us-preview').innerHTML = '';
+      if (!q) { el.innerHTML = ''; return; }
+
+      const matches = Object.entries(UnitSearch.state.sourcePool || {})
+        .filter(([, u]) => u.name && u.name.toLowerCase().includes(q))
+        .sort(([, a], [, b]) => (a.name || '').localeCompare(b.name || ''));
+
+      if (!matches.length) {
+        el.innerHTML = '<div class="us-empty">No units match.</div>';
+        return;
+      }
+
+      el.innerHTML = matches.map(([uid, u]) => `
+        <div class="us-result-row" data-uid="${uid}" onclick="UnitSearch._selectUnit('${uid}')">
+          <div class="us-result-info">
+            <span class="us-result-name">${u.name}</span>
+            ${u.category ? `<span class="us-result-cat">${u.category}</span>` : ''}
+          </div>
+          ${u.points != null ? `<span class="us-result-pts">${u.points} pts</span>` : ''}
+        </div>
+      `).join('');
+    },
+
+    _selectUnit(unitId) {
+      const raw = (UnitSearch.state.sourcePool || {})[unitId];
+      if (!raw) return;
+      const transformed = UnitSearch._transform(unitId, raw);
+      UnitSearch.state.preview = transformed;
+      UnitSearch._renderPreview(transformed);
+    },
+
+    _transform(unitId, raw) {
+      const weapons = Object.entries(raw.weapons || {}).map(([wid, w]) => ({
+        id:       wid,
+        name:     w.name  || wid,
+        type:     w.type  || 'ranged',
+        isDefault: true,
+        keywords: w.keywords || [],
+        profiles: {
+          'RANGE': (w.type === 'melee' || w.range === 0) ? 'Melee' : `${w.range}"`,
+          'A':     String(w.attacks ?? ''),
+          'BS/WS': w.skill != null ? `${w.skill}+` : '',
+          'S':     String(w.S  ?? ''),
+          'AP':    String(w.AP ?? ''),
+          'D':     String(w.D  ?? ''),
+        },
+      }));
+
+      const loadoutOptions = UnitSearch._parseWargear(raw.wargearOptions || '');
+
+      return {
+        id:          unitId,
+        name:        raw.name     || unitId,
+        gameSystem:  UnitSearch.state.system,
+        faction:     UnitSearch.state.factionSlug,
+        factionId:   UnitSearch.state.factionSlug,
+        role:        raw.category || null,
+        points:      raw.points   ?? null,
+        stats:       raw.stats    || {},
+        weapons,
+        loadoutOptions,
+        keywords:    raw.keywords || [],
+        pointsTable: raw.pointsTable || null,
+        squadSize:   raw.squadSize   || null,
+        category:    raw.category    || null,
+        isCharacter: raw.isCharacter || false,
+        isPsyker:    raw.isPsyker    || false,
+        isVehicle:   raw.isVehicle   || false,
+        abilities:   !raw.abilities ? []
+                       : Array.isArray(raw.abilities)
+                           ? raw.abilities
+                           : Object.values(raw.abilities),
+        notes: '',
+      };
+    },
+
+    _parseWargear(text) {
+      if (!text) return [];
+
+      // Strip abilities/faction noise the scraper concatenated into this field
+      text = text
+        .replace(/\bABILITIES\b[\s\S]*/i, '')
+        .replace(/\bFACTION:\s*[\s\S]*/i, '')
+        .replace(/\*\s*You cannot[^.]+\./gi, '')  // strip footnote sentences
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+      if (!text) return [];
+
+      const parsed   = [];
+      const unparsed = [];
+
+      // Pattern 4: "For every N models…" — pull out first, flag as unparsed
+      text = text.replace(/For every \d+[^.]+\./gi, m => {
+        unparsed.push({ type: 'unparsed', rawText: m.trim() });
+        return '';
+      });
+
+      // Pattern 1: "…can [each] [have their] X replaced with one of the following[*]: opts"
+      const p1 = /[^.]*?can (?:each )?(?:have (?:their|its|the) )?(.+?)\s+replaced with one of the following[*]?\s*:\s*([^.]+)/gi;
+      text = text.replace(p1, (_, replaces, optText) => {
+        const options = UnitSearch._parseOptionsList(optText);
+        if (options.length) {
+          const r = UnitSearch._cleanRef(replaces);
+          parsed.push({ type: 'one-of', name: `Replace ${r}`, replaces: r, options });
+        }
+        return '';
+      });
+
+      // Pattern 1b: "…can [each] [have their] X replaced with 1 Y" (single option)
+      const p1b = /[^.]*?can (?:each )?(?:have (?:their|its|the) )?(.+?)\s+replaced with (?:1 )?([a-z][^.(]+)\./gi;
+      text = text.replace(p1b, (_, replaces, option) => {
+        const opt = UnitSearch._cleanRef(option);
+        const r   = UnitSearch._cleanRef(replaces);
+        if (opt && !opt.includes('cannot') && !opt.includes('more than') && opt.length < 60) {
+          parsed.push({ type: 'one-of', name: `Replace ${r}`, replaces: r, options: [opt] });
+        }
+        return '';
+      });
+
+      // Pattern 2: "This model/unit can be equipped with 1 Y"
+      const p2 = /[Tt]his (?:model|unit) can be equipped with (?:1 )?([^.(]+)\./g;
+      text = text.replace(p2, (_, option) => {
+        const opt = UnitSearch._cleanRef(option);
+        if (opt) parsed.push({ type: 'optional', name: `Optional: ${opt}`, options: [opt] });
+        return '';
+      });
+
+      // Pattern 3: "Up to N models can replace X with one of the following: opts"
+      const p3 = /[Uu]p to (\d+) [^.]+?one of the following[*]?\s*:\s*([^.]+)/g;
+      text = text.replace(p3, (_, n, optText) => {
+        const options = UnitSearch._parseOptionsList(optText);
+        if (options.length) {
+          parsed.push({ type: 'counted', name: `Optional (up to ${n})`, max: parseInt(n), options });
+        }
+        return '';
+      });
+
+      // Remaining substantial text → unparsed
+      text.split(/\.\s+/).forEach(chunk => {
+        const s = chunk.replace(/\.$/, '').trim();
+        if (s.length > 20) unparsed.push({ type: 'unparsed', rawText: s });
+      });
+
+      return [...parsed, ...unparsed];
+    },
+
+    _parseOptionsList(text) {
+      // Options are "1 flamer 1 grenade launcher 1 meltagun" — split on " 1 "
+      return text.trim()
+        .split(/\s+1\s+/)
+        .map(p => p.replace(/^1\s+/, '').replace(/[*\s]+$/, '').trim())
+        .filter(p => p.length > 0 && p.length < 80);
+    },
+
+    _cleanRef(text) {
+      return text
+        .replace(/^(?:their|its|the|1)\s+/i, '')
+        .replace(/\s+and\s+.*$/i, '')
+        .replace(/[*]$/, '')
+        .trim();
+    },
+
+    _renderPreview(unit) {
+      const el     = document.getElementById('us-preview');
+      const schema = App.schemas[UnitSearch.state.system] || {};
+      const statBlock = schema.statBlock      || [];
+      const profiles  = schema.weaponProfiles || [];
+
+      const statsHTML = statBlock.map(s => `
+        <div class="uc-stat">
+          <div class="uc-stat-label">${s}</div>
+          <div class="uc-stat-val">${unit.stats[s] || '—'}</div>
+        </div>
+      `).join('');
+
+      const weaponCards = unit.weapons.map((w, wi) => `
+        <div class="us-weapon-card">
+          <div class="us-weapon-head">
+            <span class="us-weapon-name">${w.name}</span>
+            <span class="uc-type-badge">${w.type === 'melee' ? 'M' : 'R'}</span>
+            <label class="us-default-label">
+              <input type="checkbox" ${w.isDefault ? 'checked' : ''}
+                     onchange="UnitSearch._onDefaultChange(this,${wi})">
+              Default
+            </label>
+            <button class="btn btn-danger" style="padding:0.2rem 0.5rem;font-size:0.7rem;width:auto;"
+                    onclick="UnitSearch._removeWeapon(${wi})">×</button>
+          </div>
+          <div class="us-weapon-profiles">
+            ${profiles.map(p => `
+              <div class="us-profile-field">
+                <span class="us-profile-label">${p}</span>
+                <input class="uf-input us-profile-input"
+                       value="${w.profiles[p] || ''}"
+                       oninput="UnitSearch._onProfileInput(this,${wi},'${p}')">
+              </div>
+            `).join('')}
+          </div>
+          ${w.keywords?.length ? `<div class="us-weapon-kw">${w.keywords.join(', ')}</div>` : ''}
+        </div>
+      `).join('');
+
+      const parsedSlots  = unit.loadoutOptions.filter(s => s.type !== 'unparsed');
+      const unparsedSlots = unit.loadoutOptions.filter(s => s.type === 'unparsed');
+
+      const parsedHTML = parsedSlots.length
+        ? parsedSlots.map(slot => `
+            <div class="us-wargear-row">
+              <span class="us-slot-name">${slot.name}</span>
+              <span class="us-slot-type">${slot.type}</span>
+              <span class="us-slot-options">${(slot.options || []).join(' / ')}</span>
+            </div>
+          `).join('')
+        : '<div class="us-empty">None parsed automatically.</div>';
+
+      const unparsedHTML = unparsedSlots.length
+        ? unparsedSlots.map(s => `<div class="us-unparsed-row">${s.rawText}</div>`).join('')
+        : '';
+
+      el.innerHTML = `
+        <div class="us-preview-panel">
+          <div class="us-section-title">
+            ${unit.name}
+            ${unit.points != null ? `<span class="us-pts-badge">${unit.points} pts</span>` : ''}
+            ${unit.category ? `<span class="lib-unit-role">${unit.category}</span>` : ''}
+          </div>
+
+          <div class="us-preview-section">
+            <div class="us-subsection-label">Stats</div>
+            <div class="uc-stats">${statsHTML}</div>
+            ${unit.squadSize ? `<div class="us-squad-size">
+              Squad size: ${unit.squadSize.min}–${unit.squadSize.max} models
+            </div>` : ''}
+          </div>
+
+          <div class="us-preview-section">
+            <div class="us-subsection-label">
+              Weapons — toggle Default, edit profiles if wrong
+            </div>
+            <div id="us-weapon-list">${weaponCards}</div>
+          </div>
+
+          <div class="us-preview-section">
+            <div class="us-subsection-label">Wargear Options</div>
+            <div class="us-wargear-parsed">
+              <div class="us-wargear-label">Structured</div>
+              ${parsedHTML}
+            </div>
+            ${unparsedSlots.length ? `
+              <div class="us-wargear-unparsed">
+                <div class="us-wargear-label">Needs manual review (not added as loadout slots)</div>
+                ${unparsedHTML}
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="us-preview-actions">
+            <button class="btn btn-primary" onclick="UnitSearch._doConfirm()">
+              Confirm &amp; Add to Library
+            </button>
+            <button class="btn btn-secondary" onclick="UnitSearch._cancelPreview()">
+              Cancel
+            </button>
+          </div>
+        </div>
+      `;
+    },
+
+    _onProfileInput(el, wi, profile) {
+      const u = UnitSearch.state.preview;
+      if (u) u.weapons[wi].profiles[profile] = el.value;
+    },
+
+    _onDefaultChange(el, wi) {
+      const u = UnitSearch.state.preview;
+      if (u) u.weapons[wi].isDefault = el.checked;
+    },
+
+    _removeWeapon(wi) {
+      const u = UnitSearch.state.preview;
+      if (!u) return;
+      u.weapons.splice(wi, 1);
+      UnitSearch._renderPreview(u);
+    },
+
+    _cancelPreview() {
+      const ret = sessionStorage.getItem('unitSearchReturn');
+      sessionStorage.removeItem('unitSearchReturn');
+      location.hash = ret || '#home';
+    },
+
+    _doConfirm() {
+      UnitSearch._confirm(UnitSearch.state.preview);
+    },
+
+    async _confirm(unit) {
+      if (!unit) return;
+      const { system, factionSlug } = UnitSearch.state;
+      const btn = document.querySelector('#us-preview .btn-primary');
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+      try {
+        // Create faction info node if this is the first confirmed unit for this faction
+        const infoRef  = App.db.ref(`gameData/${system}/factions/${factionSlug}/info`);
+        const infoSnap = await infoRef.once('value');
+        if (!infoSnap.val()) {
+          const name = factionSlug.replace(/-/g, ' ')
+            .replace(/\b\w/g, c => c.toUpperCase());
+          await infoRef.set({ name, compositionRules: {} });
+        }
+
+        await App.db
+          .ref(`gameData/${system}/factions/${factionSlug}/units/${unit.id}`)
+          .set(unit);
+
+        const ret = sessionStorage.getItem('unitSearchReturn');
+        sessionStorage.removeItem('unitSearchReturn');
+        location.hash = ret || `#library/${system}`;
+      } catch (err) {
+        alert(`Save failed: ${err.message}`);
+        if (btn) { btn.disabled = false; btn.textContent = 'Confirm & Add to Library'; }
+      }
+    },
+  };
+
   // ── ROUTER ───────────────────────────────────────────────────────────────────
 
   const Router = {
@@ -3271,6 +3771,15 @@
             title.textContent = 'Roster';
             RosterView.render(sub);
           }
+          break;
+
+        case 'unit-search':
+          // #unit-search/{system}/{factionSlug}
+          document.getElementById('screen-unit-search').classList.add('active');
+          back.classList.add('visible');
+          title.textContent = 'Unit Search';
+          if (sub && App.schemas[sub]) crumb.textContent = App.schemas[sub].name;
+          UnitSearch.render(sub, param);
           break;
 
         default:
