@@ -246,6 +246,20 @@ Five bugs fixed based on real cross-machine playtest findings:
 
 ---
 
+## Cross-Project Status — 2026-06-27
+
+All three repos share Firebase project `warhammer-5f2f4`. Current state per repo:
+
+| Repo | Branch | Last work | Next |
+|---|---|---|---|
+| warhammer40k | deploy | Phase 16 complete + Netlify deploy | Phase 17 (KL-1 composition, KL-2 loadout) |
+| roster | deploy | Phase 3b Part 1 (unit search + lazy migration for 40k) | Phase 3b Parts 2–3 (40k builder flow + sim integration) |
+| killteam | master | KT-2 Part 2 (drag-to-shoot) | KT-2 Parts 3–4 (fight, firing arc) |
+
+The 40k sim (this repo) is **blocked on roster Phase 3b** — Part 3 of that brief is the sim integration that hooks `chosenLoadout` into `buildUnitsFromRoster()`. That's Phase 17 KL-2.
+
+---
+
 ## Current Status (as of Phase 16)
 
 The game is playable end-to-end with real roster data:
