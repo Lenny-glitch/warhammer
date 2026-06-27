@@ -441,6 +441,24 @@ Verified via code inspection + Firebase data shape check:
 
 ---
 
+## Cross-Project Status — 2026-06-27
+
+| Repo | Status | Next |
+|---|---|---|
+| roster | Phase 3b Part 1 done (unit search + lazy migration scaffolded for 40k path) | Parts 2–3: 40k builder flow + publish export + sim integration |
+| killteam | KT-2 Part 2 done (drag-to-shoot, pip dice, Firebase-backed resolution) | KT-2 Parts 3–4: fight, firing arc projection |
+| warhammer40k | Phase 16 complete, deploy branch live | Phase 17: blocked on roster Phase 3b Part 3 (chosenLoadout in sim) |
+
+**Roster Phase 3b remaining work:**
+- Part 2: 40k roster builder flow — unit picker, squad size slider, live points, wargear dropdowns, legality check, publish
+- Part 3: sim integration — `buildUnitsFromRoster()` reads `chosenLoadout`, `getAllRangedWeapons` filters by equipped weapons
+
+**KT-2 remaining work:**
+- Part 3: drag-to-fight (both sides roll, alternating resolve or auto-resolve)
+- Part 4: firing arc projection during movement drag
+
+---
+
 ## KT Wahapedia Scraper — 2026-06-27
 
 Added `scraper/scrape_kt.js` and `scraper/write_firebase_kt.js` to the roster project, mirroring the 40k scraper pattern in the warhammer40k project.
