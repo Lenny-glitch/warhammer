@@ -138,8 +138,10 @@ function initTestUnits() {
   // 9 models, rank width 3, facing west (270°).
   // Facing west: front rank at x=740 (leftmost), columns ascend vertically
   // (col+1 → y−22). position.y=442 so cols run y=442→398, centred at y≈420.
-  // Sv: Firebase has 1+ (full plate+shield+barding). WHF-1 brief specifies 2+.
-  // Using 1+ per rules — brief value may assume no shield (lance); flagged.
+  // Sv 2+ is the army book default profile for KotR (full plate + shield).
+  // The 1+ achievable in play requires barding stacked with a magic item or
+  // equipment upgrade from the roster — not the base profile. Roster system
+  // will handle equipment-modified saves when wired up in a later phase.
   state.units.push({
     instanceId:   'unit-002',
     unitId:       'knights-of-the-realm',
@@ -151,7 +153,7 @@ function initTestUnits() {
     facing:       270,
     rankWidth:    3,
     palette:      'bretonnia',
-    stats: { M: '7"', WS: '4', BS: '3', S: '4', T: '3', W: '1', I: '4', A: '1', Ld: '8', Sv: '1+' },
+    stats: { M: '7"', WS: '4', BS: '3', S: '4', T: '3', W: '1', I: '4', A: '1', Ld: '8', Sv: '2+' },
     weapons: [
       { name: 'Lance',       type: 'melee', desc: '+2S on charge, Lance Formation' },
       { name: 'Hand weapon', type: 'melee', desc: '' },
