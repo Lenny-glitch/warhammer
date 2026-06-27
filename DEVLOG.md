@@ -183,11 +183,60 @@ Both player perspectives shown side by side.
 - `passTerrainTurn` advances directly to deployment — no budget-exhaustion auto-detect.
   The current pattern: first player to press "Pass Turn" ends terrain for both. This is
   a simplification; could be made stricter if needed.
-- Deployment alternation: after each placement, Firebase `turn/activePlayer` switches.
-  If P1 has more operatives than P2, P2 may "run out" before P1 — handled gracefully
-  (P2 waits while P1 finishes). Not perfectly alternating if counts differ.
+- ~~Deployment alternation deadlock on unequal team sizes~~ — **fixed 2026-06-26**.
+  Post-placement logic now checks `otherRemaining.length > 0` (not `myRemaining.length > 0`)
+  to decide whose turn it is. If the opponent has nothing left to place their turn is skipped;
+  the placing player keeps `activePlayer` until they finish or both are done.
+  Tested scenario: Tau Pathfinders (12 ops) vs Void-dancer Troupe (8 ops).
 - `endTurningPoint` calls `startStrategyPhase(activePlayer)` then increments TP — two
   separate Firebase writes; should be combined in Phase KT-2 cleanup.
+
+---
+
+### KT-2 Part 2 — Drag-to-Shoot (2026-06-26)
+
+**Shoot button** enabled. Operatives with ranged weapons (RNG field > 0) can now shoot.
+
+**Flow:**
+1. Player clicks Shoot (1AP) in activation panel
+2. If multiple ranged weapons → weapon picker panel appears inline
+3. Click-drag from active token toward an enemy:
+   - Green solid line: valid target, clear LOS, in range, Engage order
+   - Amber solid line: valid but target in cover
+   - Red dashed line: out of range / LOS blocked / Concealed / friendly in melee
+   - Hovering over a valid target: highlight ring appears on token
+4. Release on valid target → AP spent, `pendingShot` written to Firebase
+5. Both panels switch to **Shoot Resolution** view:
+   - Defender sees "Use Cover / Don't Use" if target is in cover; commits their choice
+   - Attacker sees "Roll Dice" (enabled once cover decided)
+6. Dice rolled: ATK pool + DEF pool displayed as pip d6 faces
+7. Auto-resolution: crit saves cancel crit hits, normal saves cancel normal/crit hits (2-for-1)
+8. Attacker sees "Apply N Damage" button → wounds decremented in Firebase, pendingShot cleared
+
+**Rules implemented:**
+- HIT stat 1 = always miss, 6 = always crit (regardless of HIT stat)
+- Injured penalty: HIT threshold +1 for injured operatives
+- Cover: defender converts worst non-crit die to auto normal save
+- LOS: reuses `rayResult()` — blocked by tall terrain, cover from chestHigh
+- Conceal order: target untargetable (red line, label "CONCEALED")
+- Don't shoot into melee: attacker's friendly within 1" of target blocks the shot
+
+**Firebase:** `pendingShot` node at `games-kt/{gameId}/pendingShot` tracks the shot in progress across both clients. Cleared atomically when damage is confirmed.
+
+**Out of scope:** cover save UI in fight (Part 3), weapon special rules (Part 5+), Overwatch.
+
+**Fight and Charge** action buttons now say "Coming in KT-3" (not KT-2).
+
+---
+
+### Deploy branch (2026-06-26)
+
+Created `deploy` branch from `master`. Added `build.sh` (generates `firebase-config.js`
+from Netlify environment variables at build time) and `netlify.toml` (`bash build.sh`,
+publish `.`). Pushed to `github.com/Lenny-glitch/killteam`.
+
+**To host on Netlify:** connect the `deploy` branch, set the 7 `FIREBASE_*` env vars
+from Firebase project settings (`warhammer-5f2f4`).
 
 ---
 

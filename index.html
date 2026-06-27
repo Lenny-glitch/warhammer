@@ -264,6 +264,19 @@
     .init-dice { font-size: 2.5rem; font-weight: 900; min-width: 3rem; text-align: center; }
     .init-result { font-size: 12px; color: var(--text-dim); min-height: 1.2em; }
 
+    /* ── SHOOT RESOLUTION ── */
+    .shoot-panel { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+    .shoot-panel-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .shoot-stats { display: flex; gap: 10px; flex-wrap: wrap; }
+    .shoot-stats span { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+    .shoot-stats strong { color: var(--text); }
+    .dice-pool { display: flex; gap: 4px; flex-wrap: wrap; align-items: flex-end; min-height: 28px; }
+    .dice-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .dice-group-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; }
+    .dice-group-dice { display: flex; gap: 2px; flex-wrap: wrap; }
+    .dice-separator { width: 1px; height: 32px; background: var(--border); margin: 0 6px; align-self: center; }
+    .shoot-result { font-size: 12px; padding: 5px 10px; border-radius: 4px; background: var(--surface2); }
+
     /* ── STRATEGY PHASE ── */
     .strategy-wrap { display: flex; flex-direction: column; gap: 8px; }
     .cp-row { display: flex; gap: 1rem; align-items: center; font-size: 13px; }
@@ -286,7 +299,9 @@
 </head>
 <body>
 
-<div id="dev-banner">⚠ DEV MODE — Both player perspectives shown side by side</div>
+<div id="dev-banner">⚠ DEV MODE — Both player perspectives shown side by side
+  <button onclick="devNewGame()" style="margin-left:16px;padding:2px 10px;font-size:11px;cursor:pointer;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:3px;color:inherit;font:inherit;">Reset Game</button>
+</div>
 
 <!-- Normal mode: one screen at a time -->
 <div id="app">
@@ -526,6 +541,8 @@ let terrainTier   = 'rough';
 let terrainActive = false; // debounce for terrain writes
 let deploySelId   = null;  // selected operative ID during deployment
 let dragState     = null;  // { opId, startX, startY, maxMove, svg, moveOverlay, arrowOverlay }
+let shootWeapon   = null;  // null | 'picking' | weapon object — during shoot action
+let shootState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } — during drag
 let rosterPreviewTimers = {};
 
 // ═══════════════════════════════════════════════════════════
@@ -593,8 +610,19 @@ function buildOperatives(exportData, playerSlot) {
   const arr  = Array.isArray(raw) ? raw : Object.values(raw);
   const ops  = {};
 
+  // Number duplicate operative names so "Player","Player","Player" → "Player #1","Player #2","Player #3"
+  const nameCount = {};
+  arr.forEach(u => { nameCount[u.name] = (nameCount[u.name] || 0) + 1; });
+  const nameSeen = {};
+
   arr.forEach(u => {
     const id      = `${playerSlot}_${u.instanceId}`;
+    const baseName = u.name;
+    let displayName = baseName;
+    if (nameCount[baseName] > 1) {
+      nameSeen[baseName] = (nameSeen[baseName] || 0) + 1;
+      displayName = `${baseName} #${nameSeen[baseName]}`;
+    }
     const maxW    = parseStat(u.stats.WOUNDS);
     const apl     = parseStat(u.stats.APL) || 2;
     const move    = parseStat(u.stats.MOVE) || 6;
@@ -625,7 +653,7 @@ function buildOperatives(exportData, playerSlot) {
       faction:     exportData.meta.factionId,
       factionName: exportData.meta.factionName,
       unitId:      u.unitId,
-      name:        u.name,
+      name:        displayName,
       role:        u.role || '',
       order:       'conceal',
       ready:       true,
@@ -1058,10 +1086,11 @@ function renderOpRow(op, opPlayer, viewerSlot, status, phase, turn, isDead) {
   const isExpended = !op.ready;
 
   // Clickable during firefight if it's my op, it's ready, it's deployed, and it's my turn to activate
-  const myTurn  = turn.activatingPlayer === viewerSlot;
-  const canAct  = isMe && op.ready && isDeployed && myTurn && phase === 'firefight' && status === 'active' && !activation;
+  const myTurn      = turn.activatingPlayer === viewerSlot;
+  const canAct      = isMe && op.ready && isDeployed && myTurn && phase === 'firefight' && status === 'active' && !activation;
+  const canDeselect = isActive && activation && !activation.apSpent;
   // Clickable during deployment: my undeployed ops
-  const canDeploy = isMe && !isDeployed && status === 'deployment' && turn.activePlayer === viewerSlot;
+  const canDeploy   = isMe && !isDeployed && status === 'deployment' && turn.activePlayer === viewerSlot;
 
   const woundsPct  = op.maxWounds > 0 ? op.wounds / op.maxWounds : 1;
   const isWounded  = op.wounds < op.maxWounds && op.wounds > op.maxWounds / 2;
@@ -1073,10 +1102,11 @@ function renderOpRow(op, opPlayer, viewerSlot, status, phase, turn, isDead) {
   else if (isExpended) rowClass += ' expended';
   if (isActive)     rowClass += ' active-op';
   if (isSelected)   rowClass += ' deploy-selected';
-  if (canAct || canDeploy) rowClass += ' clickable';
+  if (canAct || canDeploy || canDeselect) rowClass += ' clickable';
 
-  const clickHandler = canAct    ? `onclick="activateOperative('${op.id}','${viewerSlot}')"` :
-                       canDeploy ? `onclick="selectForDeploy('${op.id}')"` : '';
+  const clickHandler = canDeselect ? `onclick="cancelActivation()"` :
+                       canAct      ? `onclick="activateOperative('${op.id}','${viewerSlot}')"` :
+                       canDeploy   ? `onclick="selectForDeploy('${op.id}')"` : '';
 
   const woundsColor = isInjured ? 'var(--red)' : isWounded ? 'var(--orange)' : 'var(--green)';
 
@@ -1244,11 +1274,23 @@ function renderStrategyBar(playerSlot, turn) {
 // ── Firefight Phase ──
 
 function renderFirefightBar(playerSlot, turn, myTurn) {
+  // Shot resolution takes over both panels when active
+  const pending = gameData.pendingShot;
+  if (pending) {
+    const attOp = (gameData.operatives || {})[pending.attackerOpId];
+    const tgtOp = (gameData.operatives || {})[pending.targetOpId];
+    const iAmAttacker = pending.attackerSlot === playerSlot;
+    const iAmDefender = tgtOp?.player === playerSlot;
+    if (iAmAttacker || iAmDefender) {
+      return renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp);
+    }
+  }
+
   if (activation && activation.playerSlot === playerSlot) {
     return renderActivationBar(playerSlot, turn);
   }
 
-  const ops    = Object.values(gameData.operatives || {});
+  const ops     = Object.values(gameData.operatives || {});
   const myReady = ops.filter(o => o.player === playerSlot && o.ready && o.wounds > 0 && o.x >= 0).length;
 
   return `
@@ -1270,6 +1312,30 @@ function renderActivationBar(playerSlot, turn) {
   if (!op) return '';
   const ap = activation.apRemaining;
 
+  // Weapon picker mode
+  if (shootWeapon === 'picking') {
+    const ranged = getRangedWeapons(op);
+    return `
+      <span class="phase-bar-label">Choose Weapon</span>
+      <div class="phase-bar-body">
+        <div class="shoot-panel">
+          <strong style="font-size:12px;">${escHtml(op.name)} — select ranged weapon:</strong>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${ranged.map((w, i) => `
+              <button class="action-btn" onclick="pickWeaponForShoot('${playerSlot}',${i})" style="display:flex;flex-direction:column;align-items:flex-start;padding:6px 10px;">
+                <span>${escHtml(w.name)}</span>
+                <span style="font-size:10px;color:var(--text-dim);">ATK ${w.profiles.ATK} / ${w.profiles.HIT} / RNG ${w.profiles.RNG} / DMG ${w.profiles.DMG}</span>
+              </button>`).join('')}
+          </div>
+          <button class="btn" onclick="cancelShoot()">Cancel</button>
+        </div>
+      </div>`;
+  }
+
+  const ranged       = getRangedWeapons(op);
+  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!gameData.pendingShot;
+  const dragActive   = !!shootState || !!dragState;
+
   return `
     <div class="activation-wrap">
       <span class="activation-name">${escHtml(op.name)}</span>
@@ -1278,11 +1344,11 @@ function renderActivationBar(playerSlot, turn) {
         ${op.order === 'engage' ? 'Engage' : 'Conceal'}
       </button>
       <div class="activation-actions">
-        <button class="action-btn" onclick="startMove('${playerSlot}',false)" ${ap < 1 ? 'disabled' : ''}>Move (1AP)</button>
-        <button class="action-btn" onclick="startMove('${playerSlot}',true)"  ${ap < 1 ? 'disabled' : ''}>Dash (1AP)</button>
-        <button class="action-btn stub" title="Coming in KT-2" disabled>Shoot (1AP)</button>
-        <button class="action-btn stub" title="Coming in KT-2" disabled>Fight (1AP)</button>
-        <button class="action-btn stub" title="Coming in KT-2" disabled>Charge (1AP)</button>
+        <button class="action-btn" onclick="startMove('${playerSlot}',false)" ${ap < 1 || dragActive ? 'disabled' : ''}>Move (1AP)</button>
+        <button class="action-btn" onclick="startMove('${playerSlot}',true)"  ${ap < 1 || dragActive ? 'disabled' : ''}>Dash (1AP)</button>
+        <button class="action-btn" onclick="startShoot('${playerSlot}')" ${shootDisabled ? 'disabled' : ''}>Shoot (1AP)</button>
+        <button class="action-btn stub" title="Coming in KT-3" disabled>Fight (1AP)</button>
+        <button class="action-btn stub" title="Coming in KT-3" disabled>Charge (1AP)</button>
       </div>
       <button class="btn" onclick="endActivation('${playerSlot}')" style="margin-left:auto;">End Activation</button>
     </div>
@@ -1579,13 +1645,16 @@ function cancelDeploy() {
 
 function setupDeployClick(svg, playerSlot) {
   const iAmActive = gameData.turn?.activePlayer === playerSlot;
-  if (!iAmActive || !deploySelId) return;
+  if (!iAmActive) return;
 
   const isP1 = playerSlot === 'player1';
   const minY  = isP1 ? BOARD_H - DEPLOY_DEPTH : 0;
   const maxY  = isP1 ? BOARD_H : DEPLOY_DEPTH;
 
   svg.style.cursor = 'crosshair';
+
+  // No { once: true } — SVG is replaced on every reRender so old listeners die naturally.
+  // Guard on deploySelId inside the handler so non-selection clicks are ignored.
   svg.addEventListener('click', async e => {
     if (!deploySelId) return;
     const pt = svg.createSVGPoint();
@@ -1593,10 +1662,8 @@ function setupDeployClick(svg, playerSlot) {
     const p  = pt.matrixTransform(svg.getScreenCTM().inverse());
     const sp = snapToGrid(p.x, p.y);
 
-    if (sp.y < minY || sp.y > maxY) {
-      // Clicked outside deploy zone — ignore
-      return;
-    }
+    // snapToGrid clamps to 0.5…BOARD_H-0.5; treat anything within the zone as valid.
+    if (sp.y < minY || sp.y > maxY) return;
 
     // Check not on top of another operative
     const ops = Object.values(gameData.operatives || {});
@@ -1608,22 +1675,21 @@ function setupDeployClick(svg, playerSlot) {
 
     await db.ref(`games-kt/${gameId}/operatives/${opId}`).update({ x: sp.x, y: sp.y });
 
-    // Check if we should pass to other player or advance
+    // Check if we should pass to other player or advance to initiative.
+    // Unequal team sizes: skip a player's turn if they have nothing left to place.
     const updated = (await db.ref(`games-kt/${gameId}/operatives`).once('value')).val() || {};
-    const myRemaining   = Object.values(updated).filter(o => o.player === playerSlot && o.x < 0);
-    const otherSlot     = playerSlot === 'player1' ? 'player2' : 'player1';
-    const otherRemaining = Object.values(updated).filter(o => o.player === otherSlot && o.x < 0);
-    const allDone       = myRemaining.length === 0 && otherRemaining.length === 0;
+    const otherSlot      = playerSlot === 'player1' ? 'player2' : 'player1';
+    const myRemaining    = Object.values(updated).filter(o => o.player === playerSlot && o.x < 0);
+    const otherRemaining = Object.values(updated).filter(o => o.player === otherSlot  && o.x < 0);
 
-    if (allDone) {
+    if (myRemaining.length === 0 && otherRemaining.length === 0) {
       await db.ref(`games-kt/${gameId}`).update({ 'meta/status': 'initiative' });
-    } else if (myRemaining.length === 0) {
-      // I'm done, wait — opponent still placing
-    } else {
-      // Pass to other player for alternating placement
+    } else if (otherRemaining.length > 0) {
+      // Opponent still has ops → give them the turn (normal alternation).
       await db.ref(`games-kt/${gameId}/turn/activePlayer`).set(otherSlot);
     }
-  }, { once: true });
+    // else: opponent is done, I still have ops → activePlayer stays on me, I keep placing.
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1705,7 +1771,14 @@ async function endStrategyPhase(playerSlot) {
 function activateOperative(opId, playerSlot) {
   const op = (gameData.operatives || {})[opId];
   if (!op || !op.ready || op.wounds <= 0) return;
-  activation = { opId, apRemaining: op.apl, playerSlot };
+  activation = { opId, apRemaining: op.apl, playerSlot, apSpent: false };
+  reRenderPhaseBar();
+  reRender();
+}
+
+function cancelActivation() {
+  if (!activation || activation.apSpent) return;
+  activation = null;
   reRenderPhaseBar();
   reRender();
 }
@@ -1772,6 +1845,7 @@ async function endTurningPoint() {
 
 function startMove(playerSlot, isDash) {
   if (!activation) return;
+  if (shootState || gameData.pendingShot) return;
   const op     = (gameData.operatives || {})[activation.opId];
   if (!op || op.x < 0) return;
 
@@ -1873,6 +1947,7 @@ async function commitMove(tx, ty, apCost, playerSlot) {
 
   await db.ref(`games-kt/${gameId}/operatives/${opId}`).update({ x: tx, y: ty });
 
+  activation.apSpent = true;
   activation.apRemaining -= apCost;
   if (activation.apRemaining <= 0) {
     await endActivation(playerSlot);
@@ -1882,9 +1957,405 @@ async function commitMove(tx, ty, apCost, playerSlot) {
 }
 
 function setupDragMove(svg, playerSlot, unitG, overlay) {
-  // Token clicks are handled by the sidebar (activateOperative)
-  // Token dragging while active is handled by startMove / board click
-  // Nothing extra needed at board level for KT-1
+  svg.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    cancelActivation();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SHOOT ACTION — KT-2 Part 2
+// ═══════════════════════════════════════════════════════════
+
+function parseRng(s)  { return parseInt(s  || '0') || 0; }
+function parseHit(s)  { return parseInt(s  || '4') || 4; }
+function parseDmgPair(s) {
+  const p = String(s || '1/1').split('/').map(v => parseInt(v) || 1);
+  return [p[0] || 1, p[1] || p[0] || 1]; // [normalDmg, critDmg]
+}
+function isInjuredOp(op) { return op.wounds > 0 && op.wounds <= op.maxWounds / 2; }
+function getRangedWeapons(op) {
+  return (op.weapons || []).filter(w => parseRng(w.profiles.RNG) > 0);
+}
+
+// Returns { valid, reason, inCover }
+function getShootValidity(attacker, target, weapon) {
+  const terrain = gameData.terrain || {};
+  const range   = parseRng(weapon.profiles.RNG);
+  const dist    = Math.hypot(target.x - attacker.x, target.y - attacker.y);
+
+  if (target.wounds <= 0)         return { valid: false, reason: 'Incapacitated', inCover: false };
+  if (target.order === 'conceal') return { valid: false, reason: 'CONCEALED',     inCover: false };
+  if (dist > range)               return { valid: false, reason: 'Out of range',  inCover: false };
+
+  const los = rayResult(attacker.x, attacker.y, target.x, target.y, terrain);
+  if (los === 'blocked')          return { valid: false, reason: 'LOS blocked',   inCover: false };
+
+  // Don't shoot into melee: attacker has a friendly within 1" of target
+  const friendlyInMelee = Object.values(gameData.operatives || {}).some(o =>
+    o.player === attacker.player && o.id !== attacker.id && o.x >= 0 &&
+    o.wounds > 0 && Math.hypot(o.x - target.x, o.y - target.y) < 1
+  );
+  if (friendlyInMelee) return { valid: false, reason: 'Friendly in melee', inCover: false };
+
+  return { valid: true, reason: null, inCover: los === 'cover' };
+}
+
+function startShoot(playerSlot) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op || op.x < 0) return;
+  const ranged = getRangedWeapons(op);
+  if (!ranged.length) return;
+  if (ranged.length === 1) { beginShootDrag(playerSlot, ranged[0]); return; }
+  shootWeapon = 'picking';
+  reRenderPhaseBar();
+}
+
+function pickWeaponForShoot(playerSlot, idx) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  const w  = getRangedWeapons(op)[idx];
+  if (w) beginShootDrag(playerSlot, w);
+}
+
+function cancelShoot() {
+  shootWeapon = null;
+  if (shootState) {
+    clearEl(shootState.overlay);
+    shootState.svg.style.cursor = '';
+    shootState = null;
+  }
+  const ps = activation?.playerSlot;
+  if (gameId) db.ref(`games-kt/${gameId}/pendingShot`).remove();
+  // AP already spent on target confirmation — if exhausted, end activation
+  if (activation && activation.apSpent && activation.apRemaining <= 0) {
+    endActivation(ps);
+  } else {
+    reRenderPhaseBar();
+    reRender();
+  }
+}
+
+function beginShootDrag(playerSlot, weapon) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op || op.x < 0) return;
+
+  shootWeapon = weapon;
+  reRenderPhaseBar();
+
+  const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
+  const svg = boardWrap?.querySelector('svg.board-svg');
+  if (!svg) return;
+
+  const overlay = svg.querySelector(`#overlay-${playerSlot}`);
+  clearEl(overlay);
+  shootState = { opId: op.id, weapon, svg, overlay, playerSlot };
+  svg.style.cursor = 'crosshair';
+
+  function onMouseMove(e) {
+    if (!shootState) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    updateShootOverlay(pt.matrixTransform(svg.getScreenCTM().inverse()));
+  }
+
+  function onMouseUp(e) {
+    if (!shootState) return;
+    svg.removeEventListener('mousemove', onMouseMove);
+    svg.removeEventListener('mouseup',   onMouseUp);
+
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+
+    const attacker = (gameData.operatives || {})[shootState.opId];
+    const target   = Object.values(gameData.operatives || {}).find(o =>
+      o.player !== attacker?.player && o.wounds > 0 && o.x >= 0 &&
+      Math.hypot(o.x - p.x, o.y - p.y) < TOKEN_R * 1.5
+    );
+
+    const ss = shootState;
+    shootState = null;
+    clearEl(ss.overlay);
+    ss.svg.style.cursor = '';
+
+    if (target && attacker) {
+      const v = getShootValidity(attacker, target, weapon);
+      if (v.valid) { confirmShootTarget(attacker, target, weapon, playerSlot, v.inCover); return; }
+    }
+    shootWeapon = null;
+    reRenderPhaseBar();
+  }
+
+  svg.addEventListener('mousemove', onMouseMove);
+  svg.addEventListener('mouseup',   onMouseUp);
+}
+
+function updateShootOverlay(p) {
+  if (!shootState) return;
+  const { opId, weapon, overlay } = shootState;
+  const attacker = (gameData.operatives || {})[opId];
+  if (!attacker) return;
+
+  clearEl(overlay);
+  const range = parseRng(weapon.profiles.RNG);
+  const mx = p.x, my = p.y;
+
+  // Weapon range circle
+  overlay.appendChild(svgEl('circle', {
+    cx: attacker.x, cy: attacker.y, r: range,
+    fill: 'rgba(200,80,50,0.04)', stroke: 'rgba(200,80,50,0.25)',
+    'stroke-width': 0.1, 'stroke-dasharray': '0.5 0.3',
+  }));
+
+  // Nearest hovered enemy
+  const hoverTarget = Object.values(gameData.operatives || {}).find(o =>
+    o.player !== attacker.player && o.wounds > 0 && o.x >= 0 &&
+    Math.hypot(o.x - mx, o.y - my) < TOKEN_R * 1.5
+  );
+
+  let stroke = 'rgba(160,160,180,0.5)', dash = '0.3 0.2', lw = 0.12, lc = 'rgba(160,160,180,0.9)';
+  let ex = mx, ey = my, labelTxt = Math.hypot(mx - attacker.x, my - attacker.y).toFixed(1) + '"';
+
+  if (hoverTarget) {
+    ex = hoverTarget.x; ey = hoverTarget.y;
+    const v = getShootValidity(attacker, hoverTarget, weapon);
+    const tDist = Math.hypot(ex - attacker.x, ey - attacker.y).toFixed(1);
+    if (!v.valid) {
+      stroke = '#e74c3c'; dash = '0.35 0.2'; lw = 0.15; lc = '#e74c3c';
+      labelTxt = v.reason || 'Invalid';
+    } else if (v.inCover) {
+      stroke = '#e67e22'; dash = 'none'; lw = 0.2; lc = '#e67e22';
+      labelTxt = tDist + '" (Cover)';
+    } else {
+      stroke = '#27ae60'; dash = 'none'; lw = 0.2; lc = '#27ae60';
+      labelTxt = tDist + '"';
+    }
+    const ringCol = !v.valid ? '#e74c3c' : v.inCover ? '#e67e22' : '#f1c40f';
+    overlay.appendChild(svgEl('circle', {
+      cx: ex, cy: ey, r: TOKEN_R * 1.65,
+      fill: 'none', stroke: ringCol, 'stroke-width': 0.14, opacity: '0.85',
+    }));
+  }
+
+  const lineAttrs = { x1: attacker.x, y1: attacker.y, x2: ex, y2: ey, stroke, 'stroke-width': lw };
+  if (dash !== 'none') lineAttrs['stroke-dasharray'] = dash;
+  overlay.appendChild(svgEl('line', lineAttrs));
+
+  const midX = (attacker.x + ex) / 2, midY = (attacker.y + ey) / 2 - 0.55;
+  const lblW  = Math.max(1.4, labelTxt.length * 0.165 + 0.4);
+  overlay.appendChild(svgEl('rect', { x: midX - lblW/2, y: midY - 0.35, width: lblW, height: 0.72, fill: '#0a0a14', rx: 0.15, opacity: '0.9' }));
+  const lbl = svgEl('text', { x: midX, y: midY + 0.12, 'text-anchor': 'middle', fill: lc, 'font-size': 0.6, 'font-family': 'sans-serif', 'font-weight': 700 });
+  lbl.textContent = labelTxt;
+  overlay.appendChild(lbl);
+}
+
+async function confirmShootTarget(attacker, target, weapon, playerSlot, inCover) {
+  if (!activation) return;
+  // Spend 1 AP on target confirmation
+  activation.apSpent = true;
+  activation.apRemaining -= 1;
+
+  await db.ref(`games-kt/${gameId}/pendingShot`).set({
+    attackerOpId: attacker.id,
+    targetOpId:   target.id,
+    attackerSlot: playerSlot,
+    weapon,
+    inCover,
+    useCover:     false,
+    coverDecided: !inCover,  // no cover = decision is instant
+    phase:        'coverChoice',
+  });
+  shootWeapon = null;
+  reRenderPhaseBar();
+}
+
+async function decideCover(useIt) {
+  const p = gameData.pendingShot;
+  if (!p || !p.inCover) return;
+  await db.ref(`games-kt/${gameId}/pendingShot`).update({ useCover: useIt, coverDecided: true });
+}
+
+async function rollShot(playerSlot) {
+  const p = gameData.pendingShot;
+  if (!p || p.phase !== 'coverChoice' || !p.coverDecided) return;
+
+  const attacker = (gameData.operatives || {})[p.attackerOpId];
+  const target   = (gameData.operatives || {})[p.targetOpId];
+  if (!attacker || !target) return;
+
+  const w          = p.weapon;
+  const atkCount   = parseInt(w.profiles.ATK) || 1;
+  const hitStat    = parseHit(w.profiles.HIT);
+  const effectiveHit = isInjuredOp(attacker) ? Math.min(hitStat + 1, 6) : hitStat;
+  const [normalDmg, critDmg] = parseDmgPair(w.profiles.DMG);
+  const saveStat   = target.save || 5;
+  const defCount   = target.def  || 3;
+
+  const atkRolls = Array.from({ length: atkCount }, () => Math.ceil(Math.random() * 6));
+  let   defRolls = Array.from({ length: defCount }, () => Math.ceil(Math.random() * 6));
+
+  if (p.useCover && defCount > 0) {
+    // Convert the lowest non-crit die to an auto normal save
+    let minIdx = -1;
+    for (let i = 0; i < defRolls.length; i++) {
+      if (defRolls[i] !== 6 && (minIdx < 0 || defRolls[i] < defRolls[minIdx])) minIdx = i;
+    }
+    if (minIdx >= 0) defRolls[minIdx] = 'auto';
+  }
+
+  const critHits    = atkRolls.filter(d => d === 6).length;
+  const normalHits  = atkRolls.filter(d => d !== 6 && d !== 1 && d >= effectiveHit).length;
+  const critSaves   = defRolls.filter(d => d === 6).length;
+  const normalSaves = defRolls.filter(d => d === 'auto' || (typeof d === 'number' && d !== 6 && d >= saveStat)).length;
+
+  let rC = critHits, rN = normalHits, rCS = critSaves, rNS = normalSaves;
+  const csForCrit = Math.min(rC, rCS); rC -= csForCrit; rCS -= csForCrit;
+  while (rC > 0 && rNS >= 2) { rC--; rNS -= 2; }
+  const csForNorm = Math.min(rN, rCS); rN -= csForNorm;
+  const nsForNorm = Math.min(rN, rNS); rN -= nsForNorm;
+
+  const totalDamage = rC * critDmg + rN * normalDmg;
+
+  await db.ref(`games-kt/${gameId}/pendingShot`).update({
+    phase: 'rolled', atkRolls, defRolls,
+    remainingCritHits: rC, remainingNormalHits: rN,
+    totalDamage, normalDmg, critDmg, effectiveHit,
+  });
+}
+
+async function confirmShotDamage(playerSlot) {
+  const p = gameData.pendingShot;
+  if (!p || p.phase !== 'rolled') return;
+  const target = (gameData.operatives || {})[p.targetOpId];
+  if (!target) return;
+
+  const newWounds = Math.max(0, (target.wounds || 0) - (p.totalDamage || 0));
+  await db.ref(`games-kt/${gameId}`).update({
+    [`operatives/${target.id}/wounds`]: newWounds,
+    pendingShot: null,
+  });
+
+  if (activation && activation.apRemaining <= 0) {
+    await endActivation(playerSlot);
+  } else {
+    reRenderPhaseBar();
+  }
+}
+
+// ── Shoot resolution render helpers ──────────────────────────
+
+function renderDicePool(rolls, isAtk, hitStat, saveStat) {
+  if (!rolls || !rolls.length) return '<span style="font-size:11px;color:var(--text-dim);">—</span>';
+  const g = { crit: [], hit: [], miss: [], critSave: [], normSave: [], auto: [], fail: [] };
+  rolls.forEach(d => {
+    if (isAtk) {
+      if (d === 6)                             g.crit.push(d);
+      else if (d !== 1 && d >= hitStat)       g.hit.push(d);
+      else                                     g.miss.push(d);
+    } else {
+      if (d === 'auto')                        g.auto.push(d);
+      else if (d === 6)                        g.critSave.push(d);
+      else if (typeof d === 'number' && d >= saveStat) g.normSave.push(d);
+      else                                     g.fail.push(d);
+    }
+  });
+  const defs = isAtk
+    ? [['crit','CRIT','#e74c3c'],['hit','HIT','#27ae60'],['miss','MISS','var(--text-dim)']]
+    : [['critSave','CRIT SAVE','#e74c3c'],['normSave','SAVE','#27ae60'],['auto','COVER','#e67e22'],['fail','FAIL','var(--text-dim)']];
+  return defs.map(([key, lbl, col]) => {
+    const dice = g[key];
+    if (!dice.length) return '';
+    return `<div class="dice-group">
+      <div class="dice-group-dice">${dice.map(d => `<span style="color:${col}">${d === 'auto' ? `<span style="font-size:18px;line-height:1">★</span>` : dieFaceSVG(d, 22)}</span>`).join('')}</div>
+      <div class="dice-group-label" style="color:${col}">${lbl}</div>
+    </div><div class="dice-separator"></div>`;
+  }).join('');
+}
+
+function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp) {
+  const w        = pending.weapon || {};
+  const attName  = attOp?.name || '?';
+  const tgtName  = tgtOp?.name || '?';
+  const hitStat  = pending.effectiveHit || parseHit(w.profiles?.HIT);
+  const saveStat = tgtOp?.save || 5;
+
+  // Cover row (only if target is in cover)
+  let coverHtml = '';
+  if (pending.inCover) {
+    if (!pending.coverDecided) {
+      coverHtml = !iAmAttacker
+        ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+             <span style="font-size:11px;color:var(--gold);">Target in cover — use it?</span>
+             <button class="action-btn" onclick="decideCover(true)">Use Cover</button>
+             <button class="action-btn" onclick="decideCover(false)">Don't Use</button>
+           </div>`
+        : `<span style="font-size:11px;color:var(--text-dim);">Cover: waiting for defender's choice…</span>`;
+    } else {
+      const cc = pending.useCover ? '#e67e22' : 'var(--text-dim)';
+      coverHtml = `<span style="font-size:11px;color:${cc};">Cover: ${pending.useCover ? 'USED (+1 auto save)' : 'Not used'}</span>`;
+    }
+  }
+
+  const rollBtn = (pending.phase === 'coverChoice' && pending.coverDecided && iAmAttacker)
+    ? `<button class="action-btn" style="border-color:var(--green);color:var(--green);" onclick="rollShot('${playerSlot}')">Roll Dice</button>`
+    : '';
+
+  const cancelBtn = (iAmAttacker && pending.phase !== 'rolled')
+    ? `<button class="btn" onclick="cancelShoot()">Cancel Shot</button>`
+    : '';
+
+  let diceHtml = '', resultHtml = '';
+  if (pending.phase === 'rolled' && pending.atkRolls) {
+    diceHtml = `
+      <div style="display:flex;flex-direction:column;gap:6px;width:100%;">
+        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;">Attack (${w.profiles?.ATK || '?'} dice, hit on ${hitStat}+${isInjuredOp(attOp) ? ' — Injured' : ''})</div>
+        <div class="dice-pool">${renderDicePool(pending.atkRolls, true, hitStat, saveStat)}</div>
+        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;">Defence (${tgtOp?.def || 3} dice, save on ${saveStat}+${pending.useCover ? ' + cover' : ''})</div>
+        <div class="dice-pool">${renderDicePool(pending.defRolls, false, hitStat, saveStat)}</div>
+      </div>`;
+
+    const parts = [];
+    if (pending.remainingCritHits > 0)   parts.push(`${pending.remainingCritHits}× crit (${pending.critDmg} dmg)`);
+    if (pending.remainingNormalHits > 0) parts.push(`${pending.remainingNormalHits}× hit (${pending.normalDmg} dmg)`);
+    const dmgStr = parts.length ? parts.join(' + ') + ` = ${pending.totalDamage} wound${pending.totalDamage !== 1 ? 's' : ''}` : 'All hits saved — 0 damage';
+    resultHtml = `<div class="shoot-result">${dmgStr}</div>`;
+    resultHtml += iAmAttacker
+      ? `<button class="btn btn-primary" onclick="confirmShotDamage('${playerSlot}')">Apply ${pending.totalDamage} Damage to ${escHtml(tgtName)}</button>`
+      : `<span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`;
+  }
+
+  const label = iAmAttacker ? 'Shooting' : 'Incoming Shot';
+  const vs    = iAmAttacker
+    ? `${escHtml(w.name || '?')} → ${escHtml(tgtName)} &nbsp;|&nbsp; ATK ${w.profiles?.ATK || '?'} / ${w.profiles?.HIT || '?'} / ${w.profiles?.DMG || '?'}`
+    : `${escHtml(w.name || '?')} ← ${escHtml(attName)} &nbsp;|&nbsp; DEF ${tgtOp?.def || 3}d / SAVE ${saveStat}+`;
+
+  return `
+    <span class="phase-bar-label">${label}</span>
+    <div class="phase-bar-body">
+      <div class="shoot-panel">
+        <div class="shoot-panel-header">
+          <strong style="font-size:13px;">${escHtml(iAmAttacker ? attName : tgtName)}</strong>
+          <span class="shoot-stats"><span>${vs}</span></span>
+          ${cancelBtn}
+        </div>
+        ${coverHtml}
+        ${rollBtn}
+        ${diceHtml}
+        ${resultHtml}
+      </div>
+    </div>`;
+}
+
+// Global Escape key: cancel activation if no AP spent.
+// Registered once; safe to call multiple times (idempotent via flag).
+if (!window._ktEscBound) {
+  window._ktEscBound = true;
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') cancelActivation();
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1913,11 +2384,21 @@ function reRenderPhaseBar() {
 // ═══════════════════════════════════════════════════════════
 
 async function devNewGame() {
-  if (!confirm('Start a new dev game? Current game will be abandoned.')) return;
-  gameId     = null;
-  gameData   = null;
-  activation = null;
-  const url  = new URL(window.location.href);
+  if (!confirm('Reset dev game? Current game will be deleted.')) return;
+  // Delete the old game doc so Firebase doesn't hold stale data
+  if (gameId) {
+    try { await db.ref(`games-kt/${gameId}`).remove(); } catch(e) {}
+  }
+  // Reset all local state
+  gameId        = null;
+  gameData      = null;
+  activation    = null;
+  dragState     = null;
+  deploySelId   = null;
+  shootWeapon   = null;
+  shootState    = null;
+  terrainActive = false;
+  const url = new URL(window.location.href);
   url.searchParams.delete('game');
   window.history.replaceState({}, '', url.toString());
   bootDev();
