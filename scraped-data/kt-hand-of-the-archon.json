@@ -1,0 +1,670 @@
+{
+  "faction": "hand-of-the-archon",
+  "operatives": {
+    "archsybarite": {
+      "id": "archsybarite",
+      "name": "Kabalite Archsybarite",
+      "gameSystem": "kill-team",
+      "faction": "Hand of the Archon",
+      "factionId": "hand-of-the-archon",
+      "role": "Archsybarite",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "9"
+      },
+      "weapons": [
+        {
+          "id": "blast-pistol",
+          "name": "Blast pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\" , Piercing 2"
+          }
+        },
+        {
+          "id": "splinter-pistol",
+          "name": "Splinter pistol",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "2/4",
+            "WR": "Range 8\" , Lethal 5+"
+          }
+        },
+        {
+          "id": "splinter-rifle",
+          "name": "Splinter rifle",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "2/4",
+            "WR": "Lethal 5+"
+          }
+        },
+        {
+          "id": "agoniser",
+          "name": "Agoniser",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/5",
+            "WR": "Brutal , Lethal 5+ , Shock"
+          }
+        },
+        {
+          "id": "array-of-blades",
+          "name": "Array of blades",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        },
+        {
+          "id": "power-weapon",
+          "name": "Power weapon",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/6",
+            "WR": "Lethal 5+"
+          }
+        },
+        {
+          "id": "venom-blade",
+          "name": "Venom blade",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Lethal 4+"
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Cunning",
+          "type": "passive",
+          "description": "In the Gambit step of each Strategy phase , if this operative is in the killzone and you pass at the first opportunity, you gain 1CP. Ignore each STRATEGIC GAMBIT from the mission pack (if any) when determining this."
+        },
+        {
+          "name": "Torturous Vision",
+          "type": "passive",
+          "description": "Once during each of this operative’s activations , if it doesn’t have any of your Pain tokens when it performs either the Fight or Shoot action, it can gain one of your Pain tokens when you select a valid target or an enemy operative to fight against."
+        }
+      ],
+      "keywords": [
+        "HAND OF THE ARCHON",
+        "AELDARI",
+        "DRUKHARI",
+        "LEADER",
+        "ARCHSYBARITE"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kabalite-Archsybarite"
+    },
+    "agent": {
+      "id": "agent",
+      "name": "Kabalite Agent",
+      "gameSystem": "kill-team",
+      "faction": "Hand of the Archon",
+      "factionId": "hand-of-the-archon",
+      "role": "Agent",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "splinter-rifle",
+          "name": "Splinter rifle",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "2/4",
+            "WR": "Lethal 5+"
+          }
+        },
+        {
+          "id": "array-of-blades",
+          "name": "Array of blades",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Sadistic Competition",
+          "type": "passive",
+          "description": "Once per turning point, when a friendly HAND OF THE ARCHON operative gains one of your Pain tokens , one friendly HAND OF THE ARCHON AGENT operative that doesn’t have one of your Pain tokens can also gain one."
+        }
+      ],
+      "keywords": [
+        "HAND OF THE ARCHON",
+        "AELDARI",
+        "DRUKHARI",
+        "AGENT"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kabalite-Agent"
+    },
+    "crimson-duellist": {
+      "id": "crimson-duellist",
+      "name": "Kabalite Crimson Duellist",
+      "gameSystem": "kill-team",
+      "faction": "Hand of the Archon",
+      "factionId": "hand-of-the-archon",
+      "role": "Crimson Duellist",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "splinter-pistol",
+          "name": "Splinter pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "2/4",
+            "WR": "Range 8\" , Lethal 5+"
+          }
+        },
+        {
+          "id": "razorflail",
+          "name": "Razorflail",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "2+",
+            "DMG": "4/5",
+            "WR": "Brutal , Tangle *"
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Brutal Display",
+          "type": "passive",
+          "description": "Once per turning point, when this operative incapacitates an enemy operative within its control range , you can select one other enemy operative visible to and within 6\" of either this operative or the incapacitated enemy operative. Until the start of the next turning point, that other enemy operative cannot control markers or perform the Pick Up Marker or mission actions ."
+        },
+        {
+          "name": "Crimson Duellist",
+          "type": "passive",
+          "description": "This operative can perform two Fight actions during its activation ."
+        }
+      ],
+      "keywords": [
+        "HAND OF THE ARCHON",
+        "AELDARI",
+        "DRUKHARI",
+        "CRIMSON DUELLIST"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kabalite-Crimson-Duellist"
+    },
+    "disciple-of-yaelindra": {
+      "id": "disciple-of-yaelindra",
+      "name": "Kabalite Disciple of Yaelindra",
+      "gameSystem": "kill-team",
+      "faction": "Hand of the Archon",
+      "factionId": "hand-of-the-archon",
+      "role": "Disciple of Yaelindra",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "stinger-pistol",
+          "name": "Stinger pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/5",
+            "WR": "Range 8\" , Lethal 5+ , Stinger *"
+          }
+        },
+        {
+          "id": "array-of-blades",
+          "name": "Array of blades",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "TORMENT GRENADE",
+          "type": "action",
+          "apCost": "1AP",
+          "description": "Select one enemy operative visible to and within 6\" of this operative. That operative and each other operative within 1\" of it takes a poison test. This operative cannot perform this action while within control range of an enemy operative."
+        }
+      ],
+      "keywords": [
+        "HAND OF THE ARCHON",
+        "AELDARI",
+        "DRUKHARI",
+        "DISCIPLE OF YAELINDRA"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kabalite-Disciple-of-Yaelindra"
+    },
+    "elixicant": {
+      "id": "elixicant",
+      "name": "Kabalite Elixicant",
+      "gameSystem": "kill-team",
+      "faction": "Hand of the Archon",
+      "factionId": "hand-of-the-archon",
+      "role": "Elixicant",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "splinter-rifle",
+          "name": "Splinter rifle",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "2/4",
+            "WR": "Lethal 5+"
+          }
+        },
+        {
+          "id": "stim-needler",
+          "name": "Stim-needler",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "0/0",
+            "WR": "Range 3\" , Lethal 3+ , Stun"
+          }
+        },
+        {
+          "id": "array-of-blades",
+          "name": "Array of blades",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "ADMINISTER DRUG",
+          "type": "action",
+          "apCost": "1AP",
+          "description": "Select one friendly HAND OF THE ARCHON operative visible to and within 3\" of this operative, then select one of the following for that friendly operative: It regains up to 2D3 lost wounds. Select a different COMBAT DRUG rule for it to have for the battle (this replaces its previous one). This operative cannot perform this action while within control range of an enemy operative."
+        },
+        {
+          "name": "Combat Drugs",
+          "type": "passive",
+          "description": "At the end of the Select Operatives step , if this operative is selected for deployment, select one of the following COMBAT DRUG rules for friendly HAND OF THE ARCHON operatives to have for the battle: Painbringer: Whenever an attack dice inflicts damage of 3 or more on this operative, roll one D6: on a 6, subtract 1 from that inflicted damage. Adrenalight: In the Ready step of each Strategy phase, you can select one friendly operative that has this COMBAT DRUG to gain one of your Pain tokens . Hypex: You can ignore any changes to this operative’s Move stat from being injured ."
+        }
+      ],
+      "keywords": [
+        "HAND OF THE ARCHON",
+        "AELDARI",
+        "DRUKHARI",
+        "ELIXICANT"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kabalite-Elixicant"
+    },
+    "flayer": {
+      "id": "flayer",
+      "name": "Kabalite Flayer",
+      "gameSystem": "kill-team",
+      "faction": "Hand of the Archon",
+      "factionId": "hand-of-the-archon",
+      "role": "Flayer",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "pain-sculptors",
+          "name": "Pain sculptors",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Ceaseless , Flay *"
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Insensible to Pain",
+          "type": "passive",
+          "description": "Normal and Critical Dmg of 3 or more inflicts 1 less damage on this operative."
+        }
+      ],
+      "keywords": [
+        "HAND OF THE ARCHON",
+        "AELDARI",
+        "DRUKHARI",
+        "FLAYER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kabalite-Flayer"
+    },
+    "gunner": {
+      "id": "gunner",
+      "name": "Kabalite Gunner",
+      "gameSystem": "kill-team",
+      "faction": "Hand of the Archon",
+      "factionId": "hand-of-the-archon",
+      "role": "Gunner",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "blaster",
+          "name": "Blaster",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Piercing 2"
+          }
+        },
+        {
+          "id": "shredder",
+          "name": "Shredder",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Rending , Torrent 2\""
+          }
+        },
+        {
+          "id": "array-of-blades",
+          "name": "Array of blades",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [],
+      "keywords": [
+        "HAND OF THE ARCHON",
+        "AELDARI",
+        "DRUKHARI",
+        "GUNNER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kabalite-Gunner"
+    },
+    "heavy-gunner": {
+      "id": "heavy-gunner",
+      "name": "Kabalite Heavy Gunner",
+      "gameSystem": "kill-team",
+      "faction": "Hand of the Archon",
+      "factionId": "hand-of-the-archon",
+      "role": "Heavy Gunner",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "dark-lance",
+          "name": "Dark lance",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "6/7",
+            "WR": "Heavy ( Dash only), Piercing 2"
+          }
+        },
+        {
+          "id": "splinter-cannon-focused",
+          "name": "Splinter cannon (focused)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "3/5",
+            "WR": "Heavy ( Dash only), Lethal 5+"
+          }
+        },
+        {
+          "id": "splinter-cannon-sweeping",
+          "name": "Splinter cannon (sweeping)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/5",
+            "WR": "Heavy ( Dash only), Lethal 5+ , Torrent 1\""
+          }
+        },
+        {
+          "id": "array-of-blades",
+          "name": "Array of blades",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [],
+      "keywords": [
+        "HAND OF THE ARCHON",
+        "AELDARI",
+        "DRUKHARI",
+        "HEAVY GUNNER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kabalite-Heavy-Gunner"
+    },
+    "skysplinter-assassin": {
+      "id": "skysplinter-assassin",
+      "name": "Kabalite Skysplinter Assassin",
+      "gameSystem": "kill-team",
+      "faction": "Hand of the Archon",
+      "factionId": "hand-of-the-archon",
+      "role": "Skysplinter Assassin",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "razorwing",
+          "name": "Razorwing",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "4+",
+            "DMG": "1/2",
+            "WR": "Saturate , Seek , Silent"
+          }
+        },
+        {
+          "id": "shardcarbine",
+          "name": "Shardcarbine",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "2+",
+            "DMG": "2/2",
+            "WR": "Devastating 2 , Lethal 5+"
+          }
+        },
+        {
+          "id": "array-of-blades",
+          "name": "Array of blades",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "MARK",
+          "type": "action",
+          "apCost": "1AP",
+          "description": "Select one enemy operative visible to this operative. Until the end of the turning point, whenever this operative is shooting that enemy operative you can use this effect. If you do: This operative’s ranged weapons have the Seek Light weapon rule. That enemy operative cannot be obscured . This operative cannot perform this action while within control range of an enemy operative"
+        },
+        {
+          "name": "Merciless Hunter",
+          "type": "passive",
+          "description": "If this operative doesn’t perform the Mark unique action (see other side of card) during its activation , it can perform two Shoot actions during its activation, but a razorwing must be selected for one (and only one) of those actions."
+        },
+        {
+          "name": "Omen",
+          "type": "passive",
+          "description": "In the Select Operatives step , when you’re selecting equipment , you can select one enemy operative or one other friendly HAND OF THE ARCHON operative (reveal your selection when you reveal equipment). Whenever attack or defence dice are rolled for that operative: If it’s an enemy operative, your opponent must re-roll their dice results of 6. If it’s a friendly operative, you can re-roll any of your dice results of 1."
+        }
+      ],
+      "keywords": [
+        "HAND OF THE ARCHON",
+        "AELDARI",
+        "DRUKHARI",
+        "SKYSPLINTER ASSASSIN"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kabalite-Skysplinter-Assassin"
+    }
+  }
+}

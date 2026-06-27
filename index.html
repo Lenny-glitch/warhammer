@@ -1558,6 +1558,7 @@
         abilities: [],
         equipment: [],
         keywords: [],
+        originalSource: null,
       };
     },
 
@@ -1635,8 +1636,9 @@
       }));
       UnitForm._renderAbilities();
 
-      s.equipment = arr(unit.equipment);
-      s.keywords  = arr(unit.keywords);
+      s.equipment      = arr(unit.equipment);
+      s.keywords       = arr(unit.keywords);
+      s.originalSource = unit.source || null;  // preserved on edit so scraper units stay tagged
       UnitForm._renderTags('equipment');
       UnitForm._renderTags('keywords');
 
@@ -2112,7 +2114,8 @@
           abilities:      UnitForm.state.abilities,
           equipment:      UnitForm.state.equipment,
           keywords:       UnitForm.state.keywords,
-          notes:          document.getElementById('f-notes').value.trim() || ''
+          notes:          document.getElementById('f-notes').value.trim() || '',
+          source:         isEdit ? (UnitForm.state.originalSource || 'user') : 'user',
         };
 
         if (!isEdit) {

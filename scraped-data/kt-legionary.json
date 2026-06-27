@@ -1,0 +1,887 @@
+{
+  "faction": "legionary",
+  "operatives": {
+    "aspiring-champion": {
+      "id": "aspiring-champion",
+      "name": "Legionary Aspiring Champion",
+      "gameSystem": "kill-team",
+      "faction": "Legionary",
+      "factionId": "legionary",
+      "role": "Aspiring Champion",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "3+",
+        "WOUNDS": "15"
+      },
+      "weapons": [
+        {
+          "id": "plasma-pistol-standard",
+          "name": "Plasma pistol (standard)",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/5",
+            "WR": "Range 8\" , Piercing 1"
+          }
+        },
+        {
+          "id": "plasma-pistol-supercharge",
+          "name": "Plasma pistol (supercharge)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Range 8\" , Hot , Lethal 5+ , Piercing 1"
+          }
+        },
+        {
+          "id": "tainted-bolt-pistol",
+          "name": "Tainted bolt pistol",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/5",
+            "WR": "Range 8\" , Rending"
+          }
+        },
+        {
+          "id": "power-fist",
+          "name": "Power fist",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "4+",
+            "DMG": "5/7",
+            "WR": "Brutal"
+          }
+        },
+        {
+          "id": "power-maul",
+          "name": "Power maul",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/6",
+            "WR": "Shock"
+          }
+        },
+        {
+          "id": "power-weapon",
+          "name": "Power weapon",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/6",
+            "WR": "Lethal 5+"
+          }
+        },
+        {
+          "id": "tainted-chainsword",
+          "name": "Tainted chainsword",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Rending"
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "In the Eyes of the Gods",
+          "type": "passive",
+          "description": "Once during each of this operative’s activations , if it incapacitates an enemy operative, add 1 to its APL stat until the end of that activation."
+        }
+      ],
+      "keywords": [
+        "LEGIONARY",
+        "CHAOS",
+        "HERETIC ASTARTES",
+        "LEADER",
+        "ASPIRING CHAMPION"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Legionary-Aspiring-Champion"
+    },
+    "chosen": {
+      "id": "chosen",
+      "name": "Legionary Chosen",
+      "gameSystem": "kill-team",
+      "faction": "Legionary",
+      "factionId": "legionary",
+      "role": "Chosen",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "3+",
+        "WOUNDS": "15"
+      },
+      "weapons": [
+        {
+          "id": "plasma-pistol-standard",
+          "name": "Plasma pistol (standard)",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/5",
+            "WR": "Range 8\" , Piercing 1"
+          }
+        },
+        {
+          "id": "plasma-pistol-supercharge",
+          "name": "Plasma pistol (supercharge)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Range 8\" , Hot , Lethal 5+ , Piercing 1"
+          }
+        },
+        {
+          "id": "tainted-bolt-pistol",
+          "name": "Tainted bolt pistol",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/5",
+            "WR": "Range 8\" , Rending"
+          }
+        },
+        {
+          "id": "daemon-blade",
+          "name": "Daemon blade",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/7",
+            "WR": "Lethal 5+"
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Daemonic Aura",
+          "type": "passive",
+          "description": "Whenever an enemy operative performs the Fall Back action while within control range of this operative, you can use this rule. If you do, roll one D6: on a 3+, that enemy operative cannot perform that action during that activation / counteraction (the AP spent on it is refunded)."
+        },
+        {
+          "name": "Soul Gorge",
+          "type": "passive",
+          "description": "After this operative fights or retaliates , if it isn’t incapacitated , but it incapacitated an enemy operative during that sequence, it regains up to D3+1 lost wounds."
+        }
+      ],
+      "keywords": [
+        "LEGIONARY",
+        "CHAOS",
+        "HERETIC ASTARTES",
+        "LEADER",
+        "CHOSEN"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Legionary-Chosen"
+    },
+    "anointed": {
+      "id": "anointed",
+      "name": "Legionary Anointed",
+      "gameSystem": "kill-team",
+      "faction": "Legionary",
+      "factionId": "legionary",
+      "role": "Anointed",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "3+",
+        "WOUNDS": "14"
+      },
+      "weapons": [
+        {
+          "id": "bolt-pistol",
+          "name": "Bolt pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\""
+          }
+        },
+        {
+          "id": "daemonic-claw",
+          "name": "Daemonic claw",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Rending"
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Unleash Daemon",
+          "type": "passive",
+          "description": "Once per battle, when this operative is activated , you can use this rule. If you do, until the end of the battle: This operative cannot perform the Pick Up Marker or mission actions (excluding Operate Hatch ). If it’s carrying a marker, it must immediately perform the Place Marker action for 0AP (this takes precedence over all other rules). Normal and Critical Dmg of 4 or more inflicts 1 less damage on this operative. If this operative has the NURGLE keyword, you cannot reduce the damage of an attack dice by more than 1. In other words, you cannot use both rules to reduce Normal Dmg of 4 or more by 2. Its daemonic claw has the Ceaseless and Lethal 5+ weapon rules."
+        }
+      ],
+      "keywords": [
+        "LEGIONARY",
+        "CHAOS",
+        "HERETIC ASTARTES",
+        "ANOINTED"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Legionary-Anointed"
+    },
+    "balefire-acolyte": {
+      "id": "balefire-acolyte",
+      "name": "Legionary Balefire Acolyte",
+      "gameSystem": "kill-team",
+      "faction": "Legionary",
+      "factionId": "legionary",
+      "role": "Balefire Acolyte",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "3+",
+        "WOUNDS": "14"
+      },
+      "weapons": [
+        {
+          "id": "bolt-pistol",
+          "name": "Bolt pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\""
+          }
+        },
+        {
+          "id": "fireblast",
+          "name": "Fireblast",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "PSYCHIC , Blast 2\" , 1\" Devastating 1 , Saturate"
+          }
+        },
+        {
+          "id": "life-siphon",
+          "name": "Life siphon",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "3/3",
+            "WR": "PSYCHIC , Saturate , Siphon Life *"
+          }
+        },
+        {
+          "id": "fell-dagger",
+          "name": "Fell dagger",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "PSYCHIC , Rending , Siphon Life *"
+          }
+        }
+      ],
+      "abilities": [],
+      "keywords": [
+        "LEGIONARY",
+        "CHAOS",
+        "HERETIC ASTARTES",
+        "PSYKER",
+        "BALEFIRE ACOLYTE"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Legionary-Balefire-Acolyte"
+    },
+    "butcher": {
+      "id": "butcher",
+      "name": "Legionary Butcher",
+      "gameSystem": "kill-team",
+      "faction": "Legionary",
+      "factionId": "legionary",
+      "role": "Butcher",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "3+",
+        "WOUNDS": "14"
+      },
+      "weapons": [
+        {
+          "id": "bolt-pistol",
+          "name": "Bolt pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\""
+          }
+        },
+        {
+          "id": "double-handed-chainaxe",
+          "name": "Double-handed chainaxe",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "4+",
+            "DMG": "5/7",
+            "WR": "Brutal"
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Devastating Onslaught",
+          "type": "passive",
+          "description": "Whenever this operative is fighting or retaliating , enemy operatives cannot assist . At the end of each enemy operative’s activation or counteraction , you can select one enemy operative within 2\" of this operative. This operative can perform a free Charge action (you can change its order to Engage to do so), but it cannot move more than 2\" and must end that move within control range of that selected operative."
+        }
+      ],
+      "keywords": [
+        "LEGIONARY",
+        "CHAOS",
+        "HERETIC ASTARTES",
+        "BUTCHER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Legionary-Butcher"
+    },
+    "gunner": {
+      "id": "gunner",
+      "name": "Legionary Gunner",
+      "gameSystem": "kill-team",
+      "faction": "Legionary",
+      "factionId": "legionary",
+      "role": "Gunner",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "3+",
+        "WOUNDS": "14"
+      },
+      "weapons": [
+        {
+          "id": "bolt-pistol",
+          "name": "Bolt pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\""
+          }
+        },
+        {
+          "id": "flamer",
+          "name": "Flamer",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "2+",
+            "DMG": "3/3",
+            "WR": "Range 8\" , Saturate , Torrent 2\""
+          }
+        },
+        {
+          "id": "meltagun",
+          "name": "Meltagun",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "6/3",
+            "WR": "Range 6\" , Devastating 4 , Piercing 2"
+          }
+        },
+        {
+          "id": "plasma-gun-standard",
+          "name": "Plasma gun (standard)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/6",
+            "WR": "Piercing 1"
+          }
+        },
+        {
+          "id": "plasma-gun-supercharge",
+          "name": "Plasma gun (supercharge)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "5/6",
+            "WR": "Hot , Lethal 5+ , Piercing 1"
+          }
+        },
+        {
+          "id": "fists",
+          "name": "Fists",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [],
+      "keywords": [
+        "LEGIONARY",
+        "CHAOS",
+        "HERETIC ASTARTES",
+        "GUNNER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Legionary-Gunner"
+    },
+    "heavy-gunner": {
+      "id": "heavy-gunner",
+      "name": "Legionary Heavy Gunner",
+      "gameSystem": "kill-team",
+      "faction": "Legionary",
+      "factionId": "legionary",
+      "role": "Heavy Gunner",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "3+",
+        "WOUNDS": "14"
+      },
+      "weapons": [
+        {
+          "id": "bolt-pistol",
+          "name": "Bolt pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\""
+          }
+        },
+        {
+          "id": "heavy-bolter-focused",
+          "name": "Heavy bolter (focused)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Heavy ( Reposition only), Piercing Crits 1"
+          }
+        },
+        {
+          "id": "heavy-bolter-sweeping",
+          "name": "Heavy bolter (sweeping)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Heavy ( Reposition only), Piercing Crits 1 , Torrent 1\""
+          }
+        },
+        {
+          "id": "missile-launcher-frag",
+          "name": "Missile launcher (frag)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/5",
+            "WR": "Blast 2\" , Heavy ( Reposition only)"
+          }
+        },
+        {
+          "id": "missile-launcher-krak",
+          "name": "Missile launcher (krak)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "5/7",
+            "WR": "Heavy ( Reposition only), Piercing 1"
+          }
+        },
+        {
+          "id": "reaper-chaincannon-focused",
+          "name": "Reaper chaincannon (focused)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Ceaseless , Heavy ( Reposition only), Punishing"
+          }
+        },
+        {
+          "id": "reaper-chaincannon-sweeping",
+          "name": "Reaper chaincannon (sweeping)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Ceaseless , Heavy ( Reposition only), Punishing , Torrent 2\""
+          }
+        },
+        {
+          "id": "fists",
+          "name": "Fists",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [],
+      "keywords": [
+        "LEGIONARY",
+        "CHAOS",
+        "HERETIC ASTARTES",
+        "HEAVY GUNNER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Legionary-Heavy-Gunner"
+    },
+    "icon-bearer": {
+      "id": "icon-bearer",
+      "name": "Legionary Icon Bearer",
+      "gameSystem": "kill-team",
+      "faction": "Legionary",
+      "factionId": "legionary",
+      "role": "Icon Bearer",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "3+",
+        "WOUNDS": "14"
+      },
+      "weapons": [
+        {
+          "id": "bolt-pistol",
+          "name": "Bolt pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\""
+          }
+        },
+        {
+          "id": "boltgun",
+          "name": "Boltgun",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        },
+        {
+          "id": "chainsword",
+          "name": "Chainsword",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": ""
+          }
+        },
+        {
+          "id": "fists",
+          "name": "Fists",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Icon Bearer",
+          "type": "passive",
+          "description": "Whenever determining control of a marker, treat this operative’s APL stat as 1 higher. Note this isn’t a change to its APL stat, so any changes are cumulative with this."
+        },
+        {
+          "name": "Favoured of the Dark Gods",
+          "type": "passive",
+          "description": "In the Ready step of each Strategy phase , if this operative controls an objective marker that isn’t tainted, that objective marker is tainted for the battle and you gain 1CP. Note that if any operative (including enemy operatives) has tainted an objective marker, you cannot taint that objective marker."
+        }
+      ],
+      "keywords": [
+        "LEGIONARY",
+        "CHAOS",
+        "HERETIC ASTARTES",
+        "ICON BEARER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Legionary-Icon-Bearer"
+    },
+    "shrivetalon": {
+      "id": "shrivetalon",
+      "name": "Legionary Shrivetalon",
+      "gameSystem": "kill-team",
+      "faction": "Legionary",
+      "factionId": "legionary",
+      "role": "Shrivetalon",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "3+",
+        "WOUNDS": "14"
+      },
+      "weapons": [
+        {
+          "id": "bolt-pistol",
+          "name": "Bolt pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\""
+          }
+        },
+        {
+          "id": "flensing-blades",
+          "name": "Flensing blades",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "3/5",
+            "WR": "Lethal 5+"
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "GRISLY MARK",
+          "type": "action",
+          "apCost": "2AP",
+          "description": "Place your Grisly marker within this operative’s control range . This operative cannot perform this action more than once per battle, and cannot perform it while within control range of an enemy operative."
+        },
+        {
+          "name": "Vicious Reflexes",
+          "type": "passive",
+          "description": "Whenever this operative is retaliating , you resolve the first attack dice (i.e. defender instead of attacker)."
+        },
+        {
+          "name": "Horrifying Dismemberment",
+          "type": "passive",
+          "description": "Whenever this operative incapacitates an enemy operative while fighting or retaliating , select one other enemy operative visible to and within 3\" of either this operative or the incapacitated enemy operative. Subtract 1 from that enemy operative’s APL stat until the end of its next activation ."
+        }
+      ],
+      "keywords": [
+        "LEGIONARY",
+        "CHAOS",
+        "HERETIC ASTARTES",
+        "SHRIVETALON"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Legionary-Shrivetalon"
+    },
+    "warrior": {
+      "id": "warrior",
+      "name": "Legionary Warrior",
+      "gameSystem": "kill-team",
+      "faction": "Legionary",
+      "factionId": "legionary",
+      "role": "Warrior",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "3+",
+        "WOUNDS": "14"
+      },
+      "weapons": [
+        {
+          "id": "bolt-pistol",
+          "name": "Bolt pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\""
+          }
+        },
+        {
+          "id": "boltgun",
+          "name": "Boltgun",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        },
+        {
+          "id": "chainsword",
+          "name": "Chainsword",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": ""
+          }
+        },
+        {
+          "id": "fists",
+          "name": "Fists",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Infernal Pact",
+          "type": "passive",
+          "description": "Once per battle, when a friendly LEGIONARY WARRIOR operative is activated , you can use this rule. If you do, change that operative’s Marks of Chaos keyword."
+        }
+      ],
+      "keywords": [
+        "LEGIONARY",
+        "CHAOS",
+        "HERETIC ASTARTES",
+        "WARRIOR"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Legionary-Warrior"
+    }
+  }
+}

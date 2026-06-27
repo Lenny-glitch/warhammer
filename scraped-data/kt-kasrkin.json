@@ -1,0 +1,690 @@
+{
+  "faction": "kasrkin",
+  "operatives": {
+    "sergeant": {
+      "id": "sergeant",
+      "name": "Kasrkin Sergeant",
+      "gameSystem": "kill-team",
+      "faction": "Kasrkin",
+      "factionId": "kasrkin",
+      "role": "Sergeant",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "9"
+      },
+      "weapons": [
+        {
+          "id": "bolt-pistol",
+          "name": "Bolt pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\""
+          }
+        },
+        {
+          "id": "hot-shot-lasgun",
+          "name": "Hot-shot lasgun",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        },
+        {
+          "id": "hot-shot-laspistol",
+          "name": "Hot-shot laspistol",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\""
+          }
+        },
+        {
+          "id": "plasma-pistol-standard",
+          "name": "Plasma pistol (standard)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/5",
+            "WR": "Range 8\" , Piercing 1"
+          }
+        },
+        {
+          "id": "plasma-pistol-supercharge",
+          "name": "Plasma pistol (supercharge)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Range 8\" , Hot , Lethal 5+ , Piercing 1"
+          }
+        },
+        {
+          "id": "chainsword",
+          "name": "Chainsword",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": ""
+          }
+        },
+        {
+          "id": "gun-butt",
+          "name": "Gun butt",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "3+",
+            "DMG": "2/3",
+            "WR": ""
+          }
+        },
+        {
+          "id": "power-weapon",
+          "name": "Power weapon",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/6",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "TACTICAL COMMAND",
+          "type": "action",
+          "apCost": "0AP",
+          "description": "Select one friendly KASRKIN operative, then select one SKILL AT ARMS for that operative to have until the Ready step of the next Strategy phase . This can be in addition to any SKILL AT ARMS it already has, but they cannot be the same. This operative cannot perform this action while within control range of an enemy operative."
+        },
+        {
+          "name": "Veteran Leadership",
+          "type": "passive",
+          "description": "Whenever this operative is in the killzone and you use the SKILL AT ARMS STRATEGIC GAMBIT , you can select one additional SKILL AT ARMS but they cannot be the same."
+        }
+      ],
+      "keywords": [
+        "KASRKIN",
+        "IMPERIUM",
+        "ASTRA MILITARUM",
+        "LEADER",
+        "SERGEANT"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kasrkin-Sergeant"
+    },
+    "combat-medic": {
+      "id": "combat-medic",
+      "name": "Kasrkin Combat Medic",
+      "gameSystem": "kill-team",
+      "faction": "Kasrkin",
+      "factionId": "kasrkin",
+      "role": "Combat Medic",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "hot-shot-lasgun",
+          "name": "Hot-shot lasgun",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        },
+        {
+          "id": "gun-butt",
+          "name": "Gun butt",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "4+",
+            "DMG": "2/3",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "MEDIKIT",
+          "type": "action",
+          "apCost": "0AP",
+          "description": "Select one friendly KASRKIN operative within this operative’s control range to regain up to 2D3 lost wounds. It cannot be an operative that the Medic! rule was used on during this turning point. This operative cannot perform this action while within control range of an enemy operative."
+        },
+        {
+          "name": "Medic!",
+          "type": "passive",
+          "description": "The first time during each turning point that another friendly KASRKIN operative would be incapacitated while visible to and within 3\" of this operative, you can use this rule, providing neither this nor that operative is within control range of an enemy operative. If you do, that friendly operative isn’t incapacitated, has 1 wound remaining and cannot be incapacitated for the remainder of the action. After that action, that friendly operative can immediately perform a free Dash action, but must end that move within this operative’s control range. Subtract 1 from this and that operative’s APL stats until the end of their next activations respectively, and if this rule was used during that friendly operative’s activation, that activation ends. You cannot use this rule if this operative is incapacitated, or if it’s a Shoot action and this operative would be a primary or secondary target."
+        }
+      ],
+      "keywords": [
+        "KASRKIN",
+        "IMPERIUM",
+        "ASTRA MILITARUM",
+        "MEDIC",
+        "COMBAT MEDIC"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kasrkin-Combat-Medic"
+    },
+    "demo-trooper": {
+      "id": "demo-trooper",
+      "name": "Kasrkin Demo-Trooper",
+      "gameSystem": "kill-team",
+      "faction": "Kasrkin",
+      "factionId": "kasrkin",
+      "role": "Demo-Trooper",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "hot-shot-laspistol",
+          "name": "Hot-shot laspistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\""
+          }
+        },
+        {
+          "id": "gun-butt",
+          "name": "Gun butt",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "4+",
+            "DMG": "2/3",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Melta Mine",
+          "type": "passive",
+          "description": "This operative is carrying your Melta Mine marker. It can perform the Pick Up Marker action on that marker, and whenever it performs the Place Marker action on that marker, it can immediately perform a free Dash action. That marker cannot be placed within an enemy operative’s control range (if this operative is incapacitated while carrying that marker and that marker cannot be placed, it’s removed with this operative)."
+        },
+        {
+          "name": "Proximity Mine",
+          "type": "passive",
+          "description": "The first time your Melta Mine marker is within another operative’s control range , remove that marker and inflict 2D6+3 damage on that operative; if it isn’t incapacitated , end its action (if any), even if that action’s effects aren’t fulfilled. If it cannot be placed, move it the minimum amount to do so. Note that this operative is ignored for these effects (i.e. it cannot set it off or take damage from that marker)."
+        },
+        {
+          "name": "Blast Padding",
+          "type": "passive",
+          "description": "Whenever an operative is shooting this operative with a weapon that has the Blast or Torrent weapon rule (excluding weapons that have a sweeping profile), you can re-roll one of your defence dice . In addition, this operative isn’t affected by the x\" Devastating x weapon rule (i.e. Devastating with a distance) unless they are the target during that sequence."
+        }
+      ],
+      "keywords": [
+        "KASRKIN",
+        "IMPERIUM",
+        "ASTRA MILITARUM",
+        "DEMO-TROOPER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kasrkin-Demo-Trooper"
+    },
+    "gunner": {
+      "id": "gunner",
+      "name": "Kasrkin Gunner",
+      "gameSystem": "kill-team",
+      "faction": "Kasrkin",
+      "factionId": "kasrkin",
+      "role": "Gunner",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "flamer",
+          "name": "Flamer",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "2+",
+            "DMG": "3/3",
+            "WR": "Range 8\" , Saturate , Torrent 2\""
+          }
+        },
+        {
+          "id": "grenade-launcher-frag",
+          "name": "Grenade launcher (frag)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "2/4",
+            "WR": "Blast 2\""
+          }
+        },
+        {
+          "id": "grenade-launcher-krak",
+          "name": "Grenade launcher (krak)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Piercing 1"
+          }
+        },
+        {
+          "id": "hot-shot-volley-gun-focused",
+          "name": "Hot-shot volley gun (focused)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Piercing Crits 1"
+          }
+        },
+        {
+          "id": "hot-shot-volley-gun-sweeping",
+          "name": "Hot-shot volley gun (sweeping)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Piercing Crits 1 , Torrent 1\""
+          }
+        },
+        {
+          "id": "meltagun",
+          "name": "Meltagun",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "6/3",
+            "WR": "Range 6\" , Devastating 4 , Piercing 2"
+          }
+        },
+        {
+          "id": "plasma-gun-standard",
+          "name": "Plasma gun (standard)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/6",
+            "WR": "Piercing 1"
+          }
+        },
+        {
+          "id": "plasma-gun-supercharge",
+          "name": "Plasma gun (supercharge)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "5/6",
+            "WR": "Hot , Lethal 5+ , Piercing 1"
+          }
+        },
+        {
+          "id": "gun-butt",
+          "name": "Gun butt",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "4+",
+            "DMG": "2/3",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [],
+      "keywords": [
+        "KASRKIN",
+        "IMPERIUM",
+        "ASTRA MILITARUM",
+        "GUNNER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kasrkin-Gunner"
+    },
+    "recon-trooper": {
+      "id": "recon-trooper",
+      "name": "Kasrkin Recon-Trooper",
+      "gameSystem": "kill-team",
+      "faction": "Kasrkin",
+      "factionId": "kasrkin",
+      "role": "Recon-Trooper",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "hot-shot-lasgun",
+          "name": "Hot-shot lasgun",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        },
+        {
+          "id": "gun-butt",
+          "name": "Gun butt",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "4+",
+            "DMG": "2/3",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "AUSPEX SCAN",
+          "type": "action",
+          "apCost": "1AP",
+          "description": "Until the start of this operative’s next activation or until it’s incapacitated (whichever comes first), whenever an enemy operative is within 8\" of this operative, that enemy operative is being scanned. Whenever a friendly KASRKIN operative is shooting an enemy operative that’s being scanned, that enemy operative cannot be obscured This operative cannot perform this action while within control range of an enemy operative."
+        },
+        {
+          "name": "Reconnoitre Killzone",
+          "type": "passive",
+          "description": "The Relocate strategy ploy costs you 0CP if this operative is the selected friendly KASRKIN operative."
+        }
+      ],
+      "keywords": [
+        "KASRKIN",
+        "IMPERIUM",
+        "ASTRA MILITARUM",
+        "RECON-TROOPER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kasrkin-Recon-Trooper"
+    },
+    "sharpshooter": {
+      "id": "sharpshooter",
+      "name": "Kasrkin Sharpshooter",
+      "gameSystem": "kill-team",
+      "faction": "Kasrkin",
+      "factionId": "kasrkin",
+      "role": "Sharpshooter",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "hot-shot-marksman-rifle-concealed",
+          "name": "Hot-shot marksman rifle (concealed)",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "2+",
+            "DMG": "3/3",
+            "WR": "Devastating 3 , Heavy , Silent , Concealed Position *"
+          }
+        },
+        {
+          "id": "hot-shot-marksman-rifle-mobile",
+          "name": "Hot-shot marksman rifle (mobile)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        },
+        {
+          "id": "hot-shot-marksman-rifle-stationary",
+          "name": "Hot-shot marksman rifle (stationary)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "2+",
+            "DMG": "3/3",
+            "WR": "Devastating 3 , Heavy"
+          }
+        },
+        {
+          "id": "gun-butt",
+          "name": "Gun butt",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "4+",
+            "DMG": "2/3",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Camo Cloak",
+          "type": "passive",
+          "description": "Whenever an operative is shooting this operative: Ignore the Saturate weapon rule. If you can retain any cover saves , you can retain one additional cover save, or you can retain one cover save as a critical success instead. This isn’t cumulative with improved cover saves from Vantage terrain."
+        }
+      ],
+      "keywords": [
+        "KASRKIN",
+        "IMPERIUM",
+        "ASTRA MILITARUM",
+        "SHARPSHOOTER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kasrkin-Sharpshooter"
+    },
+    "trooper": {
+      "id": "trooper",
+      "name": "Kasrkin Trooper",
+      "gameSystem": "kill-team",
+      "faction": "Kasrkin",
+      "factionId": "kasrkin",
+      "role": "Trooper",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "hot-shot-lasgun",
+          "name": "Hot-shot lasgun",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        },
+        {
+          "id": "gun-butt",
+          "name": "Gun butt",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "4+",
+            "DMG": "2/3",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Adaptive Equipment",
+          "type": "passive",
+          "description": "You can do each of the following once per turning point: One friendly KASRKIN TROOPER operative can perform the Smoke Grenade action. One friendly KASRKIN TROOPER operative can perform the Stun Grenade action. The rules for these actions are found in universal equipment . Performing these actions using this rule doesn’t count towards their action limits (i.e. if you also select those grenades from equipment)."
+        }
+      ],
+      "keywords": [
+        "KASRKIN",
+        "IMPERIUM",
+        "ASTRA MILITARUM",
+        "TROOPER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kasrkin-Trooper"
+    },
+    "vox-trooper": {
+      "id": "vox-trooper",
+      "name": "Kasrkin Vox-Trooper",
+      "gameSystem": "kill-team",
+      "faction": "Kasrkin",
+      "factionId": "kasrkin",
+      "role": "Vox-Trooper",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "2",
+        "MOVE": "6\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "hot-shot-lasgun",
+          "name": "Hot-shot lasgun",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": ""
+          }
+        },
+        {
+          "id": "gun-butt",
+          "name": "Gun butt",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "3",
+            "HIT": "4+",
+            "DMG": "2/3",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "BATTLE COMMS",
+          "type": "action",
+          "apCost": "1AP",
+          "description": "Select one other friendly KASRKIN operative. Until the end of that operative’s next activation , add 1 to its APL stat (to a maximum of 3 after all APL stat changes have been totalled). This operative can perform this action twice during its activation, but cannot perform this action while within control range of an enemy operative."
+        }
+      ],
+      "keywords": [
+        "KASRKIN",
+        "IMPERIUM",
+        "ASTRA MILITARUM",
+        "VOX-TROOPER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Kasrkin-Vox-Trooper"
+    }
+  }
+}

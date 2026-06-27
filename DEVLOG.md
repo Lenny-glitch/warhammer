@@ -441,3 +441,38 @@ Verified via code inspection + Firebase data shape check:
 
 ---
 
+## KT Wahapedia Scraper — 2026-06-27
+
+Added `scraper/scrape_kt.js` and `scraper/write_firebase_kt.js` to the roster project, mirroring the 40k scraper pattern in the warhammer40k project.
+
+**Scraper:** `node scraper/scrape_kt.js`
+**Output:** `scraped-data/kt-{faction}.json` + `scraped-data/kt-scrape-report.txt`
+**Write:** `node scraper/write_firebase_kt.js` → writes to `gameData/kill-team/factions/{factionId}/units/`
+
+**Factions scraped (from `https://wahapedia.ru/kill-team3/kill-teams/{slug}/`):**
+- Ork Kommandos (11 operatives) → `kt-ork-kommandos.json`
+- Tau Pathfinders (16 operatives) → `kt-tau-pathfinders.json`
+- Void-dancer Troupe (4 operatives) → `kt-void-dancer-troupe.json`
+
+**Parsed per operative:** APL, MOVE, SAVE, WOUNDS stats (DF defaults to "3" — not listed on KT3 pages), all weapons with ATK/HIT/DMG/WR profiles, abilities, keywords, base size.
+
+**Manual patches applied in Firebase:**
+- `tau-pathfinders / mb3-recon-drone`: `countsAs = 2` ✓
+- `ork-kommandos / bomb-squig`: `countsAs = 0.5` ✓
+
+**Source tracking:** Every scraped operative has `source: "scraper"` in Firebase. User-created units (via Unit Creator form) now write `source: "user"` on save. On edit, the existing source is preserved so scraper units stay tagged as "scraper" even after human edits. Units seeded before this session have no source field.
+
+**URL pattern quirk:** Wahapedia's live pages use `class=" bkg"` (leading space) on weapon tbody elements, vs `class="bkg bkg0"` in saved MHT files. Scraper handles both.
+
+**ID format change — action needed on existing saved rosters:**
+The scraper generates clean IDs (`boss-nob`, `shas-ui`, `boy`) without the old `-001` numeric suffix used by the manual seed scripts. The write script replaced all units at each faction path, so old IDs (`boss-nob-001`, `shas-ui-001`, etc.) no longer exist in Firebase.
+
+Effect: The three existing draft rosters reference old unitIds and will show "unit not found" in the roster builder UI. The published game exports (`exports/kill-team/{rosterId}`) are denormalized and unaffected — the KT game app still works.
+
+**Action:** Rebuild the three dev rosters in the roster builder once it's back in scope:
+- Tau Pathfinders roster (`-OvzZzqDWpwSVAwZx3kO`)
+- Void-dancer Troupe roster (`-OvzZzrLgyu9iYFRbFrb`)
+- Kommandos roster (`-Ow0T5UGlT8q7ryTPnck`)
+
+---
+
