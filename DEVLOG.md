@@ -469,10 +469,29 @@ The scraper generates clean IDs (`boss-nob`, `shas-ui`, `boy`) without the old `
 
 Effect: The three existing draft rosters reference old unitIds and will show "unit not found" in the roster builder UI. The published game exports (`exports/kill-team/{rosterId}`) are denormalized and unaffected — the KT game app still works.
 
-**Action:** Rebuild the three dev rosters in the roster builder once it's back in scope:
-- Tau Pathfinders roster (`-OvzZzqDWpwSVAwZx3kO`)
-- Void-dancer Troupe roster (`-OvzZzrLgyu9iYFRbFrb`)
-- Kommandos roster (`-Ow0T5UGlT8q7ryTPnck`)
+**Action:** Use the Draft Cleaner utility (added in next session) to auto-repair these rosters.
+
+---
+
+## Roster Cleaner — 2026-06-26
+
+Added a **Draft Cleaner** maintenance utility to the roster app at `#clean-drafts` (accessible via "Clean Drafts" link on the home screen).
+
+**Problem it solves:** The KT scraper write changed all unitIds from `boss-nob-001` format to clean slugs (`boss-nob`). Any draft roster built against the old IDs now has broken unit references.
+
+**How it works:**
+1. Fetches all `status: "draft"` rosters from Firebase.
+2. For each unit instance, checks if the current `unitId` still exists in Firebase.
+3. If not, tries two auto-repair strategies in order:
+   - **Slug-strip:** removes trailing `-\d+` suffix and checks if the result exists.
+   - **Name-match:** searches all units in the faction for a name that exactly matches `unitName`; succeeds if exactly one match found.
+4. Renders a report: ✓ ok / ↻ auto-fixable / ⚠ manual units, with fix arrows showing old → new ID.
+5. "Apply Fixes" button PATCHes all auto-fixable `unitId` fields to Firebase, then re-renders to confirm.
+
+**Notes:**
+- Only touches `status === 'draft'` rosters — published exports are denormalized and unaffected.
+- Weapon IDs also changed (e.g., `w-fusion-pistol` → `fusion-pistol`). The cleaner fixes `unitId` only; loadout selections on repaired units may need re-picking in the builder.
+- Reports "loadout may need re-selection" note on each auto-fixed row.
 
 ---
 

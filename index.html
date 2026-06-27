@@ -156,6 +156,103 @@
       pointer-events: all;
     }
 
+    /* ── HOME UTIL LINK ── */
+    .home-util {
+      margin-top: 2rem;
+      text-align: center;
+    }
+    .util-link {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      text-decoration: none;
+      letter-spacing: 0.06em;
+      opacity: 0.7;
+      transition: opacity 0.15s;
+    }
+    .util-link:hover { opacity: 1; color: var(--text); }
+
+    /* ── ROSTER CLEANER ── */
+    .cleaner-wrap {
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 5rem;
+    }
+    .cleaner-summary {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      margin-bottom: 1.5rem;
+    }
+    .cleaner-roster {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    .cleaner-roster-header {
+      padding: 0.75rem 1rem;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: flex;
+      gap: 0.5rem;
+      align-items: baseline;
+    }
+    .cleaner-roster-meta {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      font-weight: 400;
+    }
+    .cleaner-unit-row {
+      display: grid;
+      grid-template-columns: 2fr 1.5fr auto;
+      gap: 0.5rem 1rem;
+      align-items: start;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem;
+    }
+    .cleaner-unit-row:last-child { border-bottom: none; }
+    .cleaner-unit-name { color: var(--text); }
+    .cleaner-unit-id   { color: var(--text-dim); font-family: monospace; font-size: 0.72rem; }
+    .cleaner-status    { text-align: right; white-space: nowrap; }
+    .cleaner-note      {
+      grid-column: 1 / -1;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      padding-left: 0.5rem;
+      margin-top: -0.2rem;
+    }
+    .tag-ok     { color: var(--green); }
+    .tag-auto   { color: #7abaff; }
+    .tag-manual { color: #f0c060; }
+    .tag-error  { color: var(--red); }
+    .fix-arrow  { color: var(--text-dim); margin: 0 0.3rem; }
+    .cleaner-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      margin-top: 1.5rem;
+    }
+    .cleaner-apply-btn {
+      padding: 0.7rem 1.5rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter 0.15s;
+    }
+    .cleaner-apply-btn:hover  { filter: brightness(1.15); }
+    .cleaner-apply-btn:disabled { opacity: 0.4; cursor: default; filter: none; }
+    .cleaner-status-msg {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+
     /* ── BUTTONS ── */
     .btn {
       padding: 0.875rem 1rem;
@@ -1434,6 +1531,9 @@
       <button class="btn btn-primary"    onclick="App.goToUnitCreator()">Add Unit to Library</button>
       <button class="btn btn-secondary"  onclick="App.goToRoster()">Browse &amp; Build Roster</button>
     </div>
+    <div class="home-util">
+      <a href="#clean-drafts" class="util-link">Clean Drafts</a>
+    </div>
   </div>
 
   <!-- SCREEN: UNIT FORM -->
@@ -1455,6 +1555,9 @@
 
   <!-- SCREEN: UNIT SEARCH (40k lazy migration) -->
   <div id="screen-unit-search" class="screen"></div>
+
+  <!-- SCREEN: ROSTER CLEANER -->
+  <div id="screen-clean-drafts" class="screen"></div>
 
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -3715,6 +3818,235 @@
     },
   };
 
+  // ── ROSTER CLEANER ───────────────────────────────────────────────────────────
+
+  const RosterCleaner = {
+
+    // Loaded once per render: { [factionId]: { [unitId]: unit } }
+    _factionCache: {},
+
+    async render() {
+      const el = document.getElementById('screen-clean-drafts');
+      el.innerHTML = '<div class="cleaner-wrap"><div class="loading-text">Scanning draft rosters…</div></div>';
+
+      let rosters;
+      try {
+        const snap = await App.db.ref('rosters').once('value');
+        rosters = snap.val() || {};
+      } catch (e) {
+        el.innerHTML = `<div class="cleaner-wrap"><p class="tag-error">Failed to load rosters: ${e.message}</p></div>`;
+        return;
+      }
+
+      // Filter to drafts only
+      const drafts = Object.entries(rosters)
+        .filter(([, r]) => r.meta && r.meta.status === 'draft')
+        .map(([id, r]) => ({ id, meta: r.meta, units: RosterCleaner._toArray(r.units) }));
+
+      if (!drafts.length) {
+        el.innerHTML = '<div class="cleaner-wrap"><div class="loading-text">No draft rosters found.</div></div>';
+        return;
+      }
+
+      // Check each unit in each draft roster
+      const results = await Promise.all(drafts.map(r => RosterCleaner._checkRoster(r)));
+
+      RosterCleaner._renderReport(el, results);
+    },
+
+    _toArray(units) {
+      if (!units) return [];
+      return Array.isArray(units) ? units : Object.values(units);
+    },
+
+    async _checkRoster(roster) {
+      const { id, meta, units } = roster;
+      const system    = meta.gameSystem || 'kill-team';
+      const factionId = meta.factionId  || null;
+
+      const unitResults = await Promise.all(units.map(u => RosterCleaner._checkUnit(system, factionId, u)));
+      return { id, meta, system, factionId, unitResults };
+    },
+
+    async _checkUnit(system, factionId, unit) {
+      const { unitId, unitName } = unit;
+      if (!factionId || !unitId) {
+        return { unit, status: 'manual', reason: !factionId ? 'roster has no factionId' : 'unit has no unitId' };
+      }
+
+      // 1. Does the current ID exist?
+      const snap = await App.db.ref(`gameData/${system}/factions/${factionId}/units/${unitId}`).once('value');
+      if (snap.exists()) return { unit, status: 'ok' };
+
+      // 2. Try slug-strip: remove trailing -NNN
+      const stripped = unitId.replace(/-\d+$/, '');
+      if (stripped !== unitId) {
+        const stripSnap = await App.db.ref(`gameData/${system}/factions/${factionId}/units/${stripped}`).once('value');
+        if (stripSnap.exists()) {
+          return { unit, status: 'auto', newId: stripped, method: 'slug-strip' };
+        }
+      }
+
+      // 3. Try name-match across all faction units
+      const allUnits = await RosterCleaner._loadFaction(system, factionId);
+      if (!allUnits) {
+        return { unit, status: 'manual', reason: 'faction not found in gameData' };
+      }
+
+      const target  = (unitName || '').toLowerCase().trim();
+      const matches = target
+        ? Object.entries(allUnits).filter(([, u]) => (u.name || '').toLowerCase().trim() === target)
+        : [];
+
+      if (matches.length === 1) {
+        return { unit, status: 'auto', newId: matches[0][0], method: 'name-match' };
+      }
+
+      return {
+        unit, status: 'manual',
+        reason:     matches.length === 0 ? 'no unit found with matching name' : 'multiple units share that name',
+        candidates: matches.map(([id]) => id),
+      };
+    },
+
+    async _loadFaction(system, factionId) {
+      const key = `${system}/${factionId}`;
+      if (RosterCleaner._factionCache[key] !== undefined) return RosterCleaner._factionCache[key];
+      const snap = await App.db.ref(`gameData/${system}/factions/${factionId}/units`).once('value');
+      RosterCleaner._factionCache[key] = snap.val() || null;
+      return RosterCleaner._factionCache[key];
+    },
+
+    _renderReport(el, results) {
+      const totalRosters  = results.length;
+      let   autoCount     = 0;
+      let   manualCount   = 0;
+      let   okCount       = 0;
+
+      const rosterHtml = results.map(r => {
+        const rosterMeta = `${r.meta.factionName || r.factionId || '?'} · ${r.system}`;
+        const rowsHtml   = r.unitResults.map(({ unit, status, newId, method, reason, candidates }) => {
+          if (status === 'ok') {
+            okCount++;
+            return `
+              <div class="cleaner-unit-row">
+                <div class="cleaner-unit-name">${unit.unitName || unit.unitId}</div>
+                <div class="cleaner-unit-id">${unit.unitId}</div>
+                <div class="cleaner-status tag-ok">✓ ok</div>
+              </div>`;
+          }
+          if (status === 'auto') {
+            autoCount++;
+            const methodLabel = method === 'slug-strip' ? 'slug' : 'name';
+            return `
+              <div class="cleaner-unit-row" data-roster="${r.id}" data-old="${unit.unitId}" data-new="${newId}" data-instance="${unit.instanceId}">
+                <div class="cleaner-unit-name">${unit.unitName || unit.unitId}</div>
+                <div class="cleaner-unit-id">${unit.unitId}<span class="fix-arrow">→</span>${newId}</div>
+                <div class="cleaner-status tag-auto">↻ auto (${methodLabel})</div>
+                <div class="cleaner-note">Loadout selections may need re-picking — weapon IDs also changed.</div>
+              </div>`;
+          }
+          // manual
+          manualCount++;
+          const candText = candidates && candidates.length
+            ? `Candidates: ${candidates.join(', ')}`
+            : reason || 'no match';
+          return `
+            <div class="cleaner-unit-row">
+              <div class="cleaner-unit-name">${unit.unitName || unit.unitId}</div>
+              <div class="cleaner-unit-id">${unit.unitId}</div>
+              <div class="cleaner-status tag-manual">⚠ manual</div>
+              <div class="cleaner-note">${candText}</div>
+            </div>`;
+        }).join('');
+
+        return `
+          <div class="cleaner-roster">
+            <div class="cleaner-roster-header">
+              ${r.meta.name || r.id}
+              <span class="cleaner-roster-meta">${rosterMeta} · ${r.id}</span>
+            </div>
+            ${rowsHtml}
+          </div>`;
+      }).join('');
+
+      const hasAuto = autoCount > 0;
+      el.innerHTML = `
+        <div class="cleaner-wrap">
+          <div class="cleaner-summary">
+            ${totalRosters} draft roster${totalRosters !== 1 ? 's' : ''} checked ·
+            <span class="tag-ok">${okCount} units ok</span> ·
+            <span class="tag-auto">${autoCount} auto-fixable</span> ·
+            <span class="tag-manual">${manualCount} need manual review</span>
+          </div>
+          ${rosterHtml}
+          <div class="cleaner-actions">
+            <button class="cleaner-apply-btn" id="cleaner-apply" ${hasAuto ? '' : 'disabled'}
+                    onclick="RosterCleaner.applyFixes()">
+              Apply ${autoCount} Fix${autoCount !== 1 ? 'es' : ''}
+            </button>
+            <span class="cleaner-status-msg" id="cleaner-msg">
+              ${manualCount ? `${manualCount} unit${manualCount !== 1 ? 's' : ''} need manual attention — edit their rosters directly.` : ''}
+            </span>
+          </div>
+        </div>`;
+    },
+
+    async applyFixes() {
+      const btn = document.getElementById('cleaner-apply');
+      const msg = document.getElementById('cleaner-msg');
+      btn.disabled = true;
+      btn.textContent = 'Applying…';
+      msg.textContent = '';
+
+      // Collect all auto-fix rows
+      const rows = document.querySelectorAll('.cleaner-unit-row[data-old]');
+
+      // Group by rosterId so we can PATCH the whole units array at once per roster
+      const byRoster = {};
+      rows.forEach(row => {
+        const rosterId   = row.dataset.roster;
+        const instanceId = row.dataset.instance;
+        const newId      = row.dataset.new;
+        if (!byRoster[rosterId]) byRoster[rosterId] = [];
+        byRoster[rosterId].push({ instanceId, newId });
+      });
+
+      let errorCount = 0;
+
+      for (const [rosterId, fixes] of Object.entries(byRoster)) {
+        try {
+          // Fetch the current units array
+          const snap  = await App.db.ref(`rosters/${rosterId}/units`).once('value');
+          const units = RosterCleaner._toArray(snap.val());
+
+          // Apply fixes
+          fixes.forEach(({ instanceId, newId }) => {
+            const u = units.find(u => u.instanceId === instanceId);
+            if (u) u.unitId = newId;
+          });
+
+          // Write back
+          await App.db.ref(`rosters/${rosterId}/units`).set(units);
+        } catch (e) {
+          console.error(`Failed to patch roster ${rosterId}:`, e);
+          errorCount++;
+        }
+      }
+
+      if (errorCount) {
+        msg.textContent = `Done with ${errorCount} error(s) — check console.`;
+        msg.style.color = 'var(--red)';
+      } else {
+        btn.textContent = 'Applied ✓';
+        msg.textContent = 'Fixes written. Re-select loadouts in the roster builder for repaired units.';
+        msg.style.color = 'var(--green)';
+        // Refresh to show updated state
+        setTimeout(() => RosterCleaner.render(), 1800);
+      }
+    },
+  };
+
   // ── ROUTER ───────────────────────────────────────────────────────────────────
 
   const Router = {
@@ -3786,6 +4118,14 @@
           title.textContent = 'Unit Search';
           if (sub && App.schemas[sub]) crumb.textContent = App.schemas[sub].name;
           UnitSearch.render(sub, param);
+          break;
+
+        case 'clean-drafts':
+          document.getElementById('screen-clean-drafts').classList.add('active');
+          back.classList.add('visible');
+          title.textContent = 'Draft Cleaner';
+          crumb.textContent = 'Maintenance';
+          RosterCleaner.render();
           break;
 
         default:
