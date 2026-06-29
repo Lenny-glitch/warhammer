@@ -331,3 +331,548 @@ from Firebase project settings (`warhammer-5f2f4`).
   If the 40k terrain rendering changes significantly, consider whether to sync.
 - **The `activation` variable is local JS state** — not in Firebase. If a player refreshes
   mid-activation, they lose their in-progress AP state. This is acceptable for KT-1.
+
+---
+
+## Code Reference Map
+
+> Fast lookup for future AI sessions. Every section below maps a feature to its function
+> names and approximate line numbers in `index.html`. Line numbers will drift as code grows —
+> use them as a starting point, then grep to verify.
+
+---
+
+### Constants (line ~403)
+
+```
+BOARD_W = 22          Board width in inches (SVG units)
+BOARD_H = 30          Board height in inches
+DEPLOY_DEPTH = 10     Deployment zone depth — bottom/top 10" each
+TERRAIN_BUDGET = 10   Points per player for terrain placement
+TOKEN_R = 0.5         Operative token radius in SVG inches
+TERRAIN_COSTS         { rough:1, chestHigh:2, tall:3 }
+DEV_ROSTER_P1/P2      Hardcoded Firebase roster IDs for dev mode
+```
+
+All coordinates are in inches. The SVG `viewBox` is `0 0 22 30`. 1 SVG unit = 1 inch.
+P1 deploys at the bottom (`y: 20–30`). P2 deploys at the top (`y: 0–10`).
+
+---
+
+### SVG & Math Utilities (line ~421)
+
+| Function | What it does |
+|---|---|
+| `svgEl(tag, attrs)` | Create a namespaced SVG element with attributes |
+| `clearEl(el)` | Remove all children from an element |
+| `toSVG(svg, cx, cy)` | Convert screen coordinates to SVG coordinates |
+| `clampVec(fx, fy, tx, ty, max)` | Clamp destination to within `max` inches along a vector |
+| `snapToGrid(x, y)` | Round to nearest inch, clamped to board bounds (0.5–21.5, 0.5–29.5) |
+| `segmentsIntersect(...)` | Parametric line-segment intersection test |
+| `segmentCrossesRect(...)` | Does a line cross a terrain square? |
+| `rayResult(x1,y1,x2,y2, terrain)` | Returns `'clear'` \| `'cover'` \| `'blocked'` — used for LOS |
+| `circleOverlapsRect(...)` | Circle vs AABB overlap |
+| `dieFaceSVG(value, size)` | Inline HTML string of a pip d6 face |
+
+`rayResult` is the key LOS function — it iterates every terrain square and tests whether the
+attacker→target line crosses it. Tall = blocked. ChestHigh = cover. Rough = no LOS effect.
+This function is **copied from `warhammer40k/js/board.js`** and should be kept in sync.
+
+---
+
+### App State (line ~586)
+
+All module-level `let` variables. The important ones:
+
+| Variable | Type | Purpose |
+|---|---|---|
+| `gameId` | string | Firebase game key |
+| `gameData` | object | Live Firebase snapshot (updated on every `on('value')` event) |
+| `myPlayer` | `'player1'`\|`'player2'` | Local player slot (normal mode only) |
+| `activation` | object\|null | Local-only active operative state — **not in Firebase** |
+| `dragState` | object\|null | Active Move/Dash drag state |
+| `shootWeapon` | null\|`'picking'`\|weapon | Shoot weapon selection state |
+| `shootState` | object\|null | Active shoot drag in progress |
+| `fightWeapon` | null\|`'picking'`\|weapon | Fight weapon selection state |
+| `fightState` | object\|null | Active fight drag in progress |
+| `radialSlot` | string\|null | Which player's radial menu is showing |
+| `deploySelId` | string\|null | Operative selected for deployment |
+
+**`activation` object shape:**
+```js
+{ opId, apRemaining, playerSlot, apSpent, hasMoved, hasDashed, hasShot, hasFought }
+```
+Set by `activateOperative()` (line ~1872), cleared by `endActivation()` or `cancelActivation()`.
+`apSpent` becomes `true` on first AP-costing action — this gates whether Cancel is allowed.
+
+---
+
+### Bootstrap (line ~614)
+
+`DOMContentLoaded` reads `?dev=true` and `?game=` from the URL.
+- Dev mode → `bootDev()` (skips lobby entirely)
+- Game ID in URL → `loadGame(id)` → `subscribeToGame()`
+- No params → `renderLobby('create')`
+
+`subscribeToGame()` (line ~924) opens a Firebase `on('value')` listener that calls `render()`
+on every change. This is the single re-render trigger for all Firebase state changes.
+
+---
+
+### Roster Loading & Operative Building (line ~665)
+
+**Data flow:** `exports/kill-team/{rosterId}` in Firebase → `fetchRosterExport()` → `buildOperatives()` → operative instances written to `games-kt/{gameId}/operatives/`
+
+`buildOperatives(exportData, playerSlot)` (line ~670):
+- Iterates `exportData.units` (array or object)
+- Numbers duplicate names: `"Troupe Player"×5` → `"Troupe Player #1"` through `#5`
+- Parses stats from strings: `parseStat("6\"")` → `6`
+- Copies full weapon list onto each instance (no async lookup during gameplay)
+- Sets `x: -1, y: -1` (undeployed sentinel)
+- Returns a flat `{ [id]: operativeObject }` map
+
+**Operative instance shape (written to Firebase):**
+```js
+{
+  id, player, faction, factionName, unitId,
+  name,        // display name (numbered if duplicate)
+  role,        // e.g. "Shas'ui", "Lead Player"
+  order,       // 'engage' | 'conceal'  — starts as 'conceal'
+  ready,       // bool — false when expended
+  apl,         // action points per activation (from stats.APL)
+  move,        // inches (from stats.MOVE)
+  def,         // defence dice (from stats.DF)
+  save,        // save threshold (from stats.SAVE)
+  wounds,      // current wounds
+  maxWounds,   // max wounds (from stats.WOUNDS)
+  weapons,     // full weapon array (see Weapon Format below)
+  x, y,        // board position; -1 = undeployed
+  activatedThisTurn,
+}
+```
+
+---
+
+### Weapon Profile Format
+
+Weapons come from the roster export and are stored verbatim on the operative instance.
+
+**Kill Team weapon profile fields:**
+```
+ATK   — number of attack dice (string, e.g. "4")
+HIT   — hit threshold (string, e.g. "3+")
+DMG   — "normalDmg/critDmg" (string, e.g. "4/6")
+RNG   — range in inches as a plain integer string (e.g. "8"), OR empty
+WR    — weapon rule text (e.g. "Range 3\", Devastating 3, Piercing 2")
+type  — 'ranged' | 'melee'
+isDefault — bool (first weapon of each type from scraper)
+```
+
+**Range ambiguity note:** Some weapons store range in `WR` as `"Range X\""` instead of
+in the `RNG` field. `getRangedWeapons()` (line ~2247) filters by `parseRng(w.profiles?.RNG) > 0`,
+which only reads the `RNG` field. `getMaxSightRange()` (line ~2257) is the more robust helper —
+it tries `RNG` first, then falls back to a `/Range\s+(\d+)/i` regex on `WR`. Use
+`getMaxSightRange()` for visual/informational range; use `getRangedWeapons()` for game-valid
+shoot targets.
+
+**Weapon parse helpers (line ~2240):**
+```js
+parseRng(s)          // parseInt on RNG field — returns 0 if missing/non-numeric
+parseHit(s)          // parseInt on "3+" → 3
+parseDmgPair(s)      // "4/6" → [4, 6]  (normalDmg, critDmg)
+isInjuredOp(op)      // wounds > 0 && wounds <= maxWounds/2
+getRangedWeapons(op) // filter by parseRng(RNG) > 0
+getMeleeWeapons(op)  // filter by type === 'melee'
+getDefaultMeleeWeapon(op) // isDefault:true, or first melee
+getMaxSightRange(op) // max range across all ranged-type weapons (RNG or WR regex)
+hasFightTarget(op)   // any enemy within 1" (control range)
+```
+
+---
+
+### Game Creation / Joining (line ~769)
+
+`createGame(name, rosterId)` — P1 path:
+1. Fetch roster export from Firebase
+2. `buildOperatives(exportData, 'player1')`
+3. Push to `games-kt/` with `meta.status = 'waiting'`
+4. Save `myPlayer = 'player1'` to localStorage
+5. Call `subscribeToGame()`
+
+`joinGame(name, rosterId)` — P2 path (line ~819):
+1. Verify game exists and has no P2 yet
+2. Fetch roster, build P2 operatives
+3. `db.update()` with P2 player data, P2 operatives, and `meta/status: 'terrain'`
+4. Subscribe
+
+Both paths store player slot in `localStorage` keyed by gameId so page refresh restores context.
+
+---
+
+### Dev Mode (line ~858)
+
+`bootDev()` (line ~862):
+- Fetches both hardcoded dev rosters in parallel
+- Builds both sets of operatives, merges into one object
+- Creates game with `meta.status: 'terrain'` and `meta.dev: true`
+- Does NOT set `myPlayer` — both player panels are active simultaneously
+
+Dev banner (HTML, line ~360):
+- **Reset Game** → `devNewGame()` (line ~3022): confirms, deletes old game, resets all state, calls `bootDev()`
+- **Auto-Place** → `autoPlaceDev()` (line ~3045): places all undeployed ops in grid within deploy zones, writes `meta/status: 'initiative'` in one Firebase update
+
+`autoPlaceDev` layout: up to 10 per row, evenly spaced across 22" board width.
+P1 starts at y=29 going up by 2"; P2 starts at y=1 going down by 2".
+
+---
+
+### Render Architecture (line ~935)
+
+```
+subscribeToGame() → on('value') → render()
+                                    ├─ devMode → renderDev() → renderDevCol() ×2
+                                    └─ normal  → renderGame(myPlayer)
+
+renderGame(playerSlot)
+  builds: topbar + sidebar ×2 + board-wrap + phase-bar
+  calls:  buildBoardSVG()     → draws SVG, wires interactions
+          renderPhaseBar()    → dispatches to phase-specific renderer
+          renderOpList()      → operative sidebar rows
+
+reRender()          (line ~3000)  Full re-render. Called on Firebase updates.
+reRenderPhaseBar()  (line ~3006)  Partial re-render — phase bar only, no SVG rebuild.
+                                   Used for mid-action state changes (AP spent, cover choice).
+refreshRadialIfActive()  (line ~2228)  Re-positions radial menu after re-render.
+```
+
+**SVG layer order (bottom to top):**
+1. Background rect (`#0a0a14`)
+2. Grid lines (`gridG`)
+3. Deploy zone tints (`deployG`) — only during deployment
+4. Terrain squares (`terrainG`)
+5. Operative tokens (`unitG`) — `<g class="op-token" data-op-id="...">` per operative
+6. Overlay (`<g id="overlay-{slot}">`) — drag lines, arc circles, glow rings
+
+---
+
+### Terrain Phase (line ~1208 phase bar, ~1623 interaction)
+
+**Bar:** `renderTerrainBar()` — shows tier buttons (Rough/Chest-High/Tall), budget bars for
+both players, "Pass Turn" button (only active player). Tier selection updates local `terrainTier`
+variable and re-renders phase bar only.
+
+**Interaction:** `setupTerrainPaint(svg, playerSlot)` (line ~1623):
+- `mousedown`: determine paint vs erase mode (erase if clicking own square with same tier)
+- `mousemove`: accumulate squares in `strokes` Map and `erases` Set; check budget on each square
+- `mouseup`/`mouseleave`: `commitStroke()` → single `db.update()` with all `terrain/{x,y}` and
+  `terrainOwner/{x,y}` changes
+
+Budget tracking uses a running projection across the current stroke to prevent overspend.
+Only the active player can paint; can't paint opponent's squares.
+
+`passTerrainTurn()` (line ~1738): writes `meta/status: 'deployment'` — whichever player
+presses first ends terrain for both. No double-confirm.
+
+---
+
+### Deployment Phase (line ~1262 phase bar, ~1752 interaction)
+
+**Flow:**
+1. Click operative in sidebar → `selectForDeploy(opId)` sets `deploySelId`
+2. Click board inside own deploy zone → `setupDeployClick()` handler fires
+3. Validates: inside zone bounds, no token within `TOKEN_R * 2` (1")
+4. Writes `{ x, y }` to `operatives/{opId}`
+5. Re-fetches all operatives, checks `anyUndeployed`; if none remain → writes `meta/status: 'initiative'`
+
+Both players deploy simultaneously (no `activePlayer` gating since KT-3 Part 1).
+
+Zone bounds: P1 `y: 20–30` (`BOARD_H - DEPLOY_DEPTH` to `BOARD_H`), P2 `y: 0–10`.
+
+---
+
+### Initiative Phase (line ~1286 phase bar, ~1800 logic)
+
+`rollInitiative(playerSlot)` (line ~1800):
+- Rolls 2D6 (`Math.ceil(Math.random() * 6) × 2`)
+- Writes result to `initiative/{playerSlot}`
+- Re-fetches `initiative/`, checks if both rolled
+- Tie → sets `initiative: null` to reset
+- Winner → 1800ms delay then `startStrategyPhase(winner)`
+
+---
+
+### Strategy Phase (line ~1315 bar, ~1862 logic, ~1823 start)
+
+`startStrategyPhase(initiativeWinner, overrides)` (line ~1823):
+- Called by initiative resolution AND by `endTurningPoint` (which passes `overrides` to
+  include the TP increment in the same atomic write)
+- Awards CP: TP1 = 1 each; TP2+ = initiative winner gets 1, loser gets 2
+- Readies all operatives (`ready: true, activatedThisTurn: false`)
+- Writes everything in one `db.update()`: status, phase, CP, operative states
+
+`endStrategyPhase(playerSlot)` (line ~1862):
+- Guards: only active player can advance
+- Writes `turn/phase: 'firefight'`
+
+---
+
+### Firefight Phase — Activation (line ~1334 bar, ~1872 logic)
+
+**Activation flow:**
+1. `activateOperative(opId, playerSlot)` (line ~1872) — sets local `activation` object
+2. `showRadialMenu()` appears on token; `renderActivationBar()` appears in phase bar
+3. Player takes actions (Move, Dash, Shoot, Fight)
+4. `endActivation(playerSlot)` (line ~1894) — marks op `ready: false`, calls `advanceActivatingPlayer()`
+
+`advanceActivatingPlayer(justActivatedSlot)` (line ~1908):
+- Re-fetches operative states
+- If both players have no ready ops → `endTurningPoint()`
+- Otherwise: try to give turn to the other player; if they have no ready ops, stay with current
+
+`endTurningPoint()` (line ~1930):
+- TP 4 → writes `meta/status: 'ended'`
+- Otherwise → `startStrategyPhase(activePlayer, { 'turn/turningPoint': tp + 1 })`
+  (single atomic write — no separate TP increment step)
+
+**Action gate logic** (computed in both `renderActivationBar` and `showRadialMenu`):
+```
+moveDisabled  = ap < 1 || dragActive || hasMoved
+dashDisabled  = ap < 1 || dragActive || hasDashed
+shootDisabled = ap < 1 || !ranged.length || shootState || fightState || pendingShot || pendingFight || conceal
+fightDisabled = ap < 1 || !melee.length || !hasFightTarget || shootState || fightState || pendingShot || pendingFight || hasFought
+```
+
+---
+
+### Token Rendering (line ~1508 health arc, ~1552 token)
+
+`drawHealthArc(parent, op)` (line ~1514):
+- 270° segmented arc, gap at bottom (6 o'clock)
+- One segment per wound point
+- Green above half; all-red at/below Injured threshold (wounds ≤ maxWounds/2)
+- Radius: `TOKEN_R + 0.15` (0.65" — just outside token body)
+- Arc math: start at 135°, step by `270/N` degrees per segment, `segFill = segSpan - 3°` gap
+
+`drawOperativeToken(parent, op, viewerSlot, status, phase)` (line ~1552):
+- Dead ops: dark circle + red X lines, 0.65 opacity
+- Expended ops: 0.45 opacity on `<g>`
+- Token body: faction-colored fill circle + rim-colored stroke
+- Health arc drawn on top of body
+- Abbreviation label: first character of op name, rim color
+- Order pip: top-right corner, green = Engage, dark = Conceal
+- Active glow ring: gold, r = `TOKEN_R * 1.75`, inserted as first child (behind everything)
+- Player colors: P1 `#4a9eff` / P2 `#c97af7`
+
+---
+
+### Move / Dash Drag (line ~1947)
+
+`startMove(playerSlot, isDash)` (line ~1947):
+- Computes `maxMove = isDash ? 3 : op.move`
+- Dims all non-active tokens to 0.25 opacity
+- Adds ghost circle at start position (permanent overlay child [0])
+- Adds movement range circle (permanent overlay child [1])
+- Stores `dragState = { ..., maxSightRange, arcRgb }` — includes firing arc data
+- Attaches `mousemove` / `mouseup` handlers; calls `updateDragOverlay()` on each move
+
+`updateDragOverlay(tx, ty)` (line ~2019):
+- Keeps children [0] and [1] (ghost + range circle)
+- Clears everything else, then draws fresh:
+  1. Distance line (gold dashed)
+  2. Destination preview circle
+  3. Distance label (mid-line, dark background)
+  4. **Firing arc circle** centered at destination (faction color, 10% fill, 30% stroke)
+  5. **Enemy glow rings** (amber yellow) on all live enemies within `maxSightRange`
+
+`commitMove(tx, ty, apCost, playerSlot)` (line ~2073):
+- Writes `{ x, y }` to `operatives/{opId}`
+- Decrements `activation.apRemaining`
+- If AP exhausted → `endActivation()`; else `reRenderPhaseBar()`
+
+---
+
+### Firing Arc Projection (inside `updateDragOverlay`, line ~2051)
+
+Only active during Move or Dash drag (not Shoot, Fight, or Charge).
+
+`getMaxSightRange(op)` (line ~2257):
+- Scans all `type: 'ranged'` weapons
+- Reads `w.profiles.RNG` first (integer string); if 0, regex `Range\s+(\d+)` on `w.profiles.WR`
+- Returns the max range found, or 0 (arc not drawn for melee-only operatives)
+
+Visual: faction-colored dashed circle at drag destination (`rgba({arcRgb}, 0.10)` fill).
+Enemy operatives within range get an amber ring (`rgba(255,220,50,0.60)`), regardless of
+Conceal order (range visibility is not hidden information). Distance-only check per frame;
+no `rayResult()` during drag.
+
+---
+
+### Radial Action Menu (line ~2120)
+
+`showRadialMenu(opId, playerSlot)` (line ~2124):
+- Converts operative's SVG position to screen coordinates via `svg.getScreenCTM()`
+- Builds 6 radial buttons + 1 "End" center button as positioned `<div>` elements
+- Buttons arranged at: -90° (order), -30° (move), 30° (dash), 90° (shoot), 150° (fight), 210° (charge)
+- Radius from center: 72px; button size: 50×50px
+- Hover-restriction display: hovering a button highlights buttons it would lock (`data-locks` attribute)
+- Mounted at `#radial-menu` (fixed position div in HTML body)
+
+`refreshRadialIfActive()` (line ~2228) — called by `reRender()`:
+- If activation is live and no drag/shoot/fight state → `showRadialMenu()`
+- Otherwise → `hideRadialMenu()`
+- This is how the menu follows the token after a Move commits.
+
+---
+
+### Shoot Action (line ~2237)
+
+**Flow:**
+1. `startShoot(playerSlot)` (line ~2300) — gets `getRangedWeapons(op)`. Single weapon → skip picker. Multiple → set `shootWeapon = 'picking'` and re-render.
+2. `beginShootDrag(playerSlot, weapon)` (line ~2337) — sets `shootState`, attaches mouse handlers
+3. `updateShootOverlay(p)` (line ~2393) — per-frame: draws range circle from attacker, colored line to hover target (green=valid, amber=cover, red=invalid), hover ring on target
+4. `mouseup` → `getShootValidity()` → if valid, `confirmShootTarget()`
+5. `confirmShootTarget()` (line ~2452) — spends 1AP, writes `pendingShot` to Firebase
+6. Both clients render `renderShotResolutionBar()` — defender chooses cover, then attacker rolls
+7. `rollShot(playerSlot)` (line ~2478) — rolls ATK + DEF dice, applies cover, runs save resolution, writes results back to `pendingShot`
+8. `confirmShotDamage()` (line ~2526) — atomic update: wounds to target + `pendingShot: null`
+
+**`getShootValidity(attacker, target, weapon)`** (line ~2277):
+- Checks: target alive, not Conceal, in range, LOS not blocked, no friendly within 1" of target
+- Returns `{ valid, reason, inCover }`
+
+**Shoot dice resolution (in `rollShot`):**
+- Roll = 6 → always crit. Roll = 1 → always miss. Roll ≥ HIT → normal hit.
+- Injured penalty: effective HIT + 1 (capped at 6).
+- Cover: convert the lowest non-crit defence die to `'auto'` (automatic normal save).
+- Crit saves cancel crit hits 1-for-1 → then crit saves cancel normal hits 2-for-1 (RAW).
+- Normal saves cancel normal hits 1-for-1.
+
+**`pendingShot` Firebase node shape:**
+```
+attackerOpId, targetOpId, attackerSlot,
+weapon, inCover, useCover, coverDecided,
+phase: 'coverChoice' → 'rolled',
+atkRolls, defRolls,
+remainingCritHits, remainingNormalHits,
+totalDamage, normalDmg, critDmg, effectiveHit
+```
+
+---
+
+### Fight Action (line ~2651)
+
+**Flow:**
+1. `startFight(playerSlot)` (line ~2655) — gets `getMeleeWeapons(op)`. Single weapon → skip picker. Multiple → `fightWeapon = 'picking'`.
+2. `beginFightDrag(playerSlot, weapon)` (line ~2685) — sets `fightState`, draws 1" control range circle
+3. `updateFightOverlay(p)` (line ~2742) — per-frame: draws 1" range ring around attacker, hover ring on target (red if valid/≤1", grey if out of reach), dashed red line, "FIGHT" or distance label
+4. `mouseup` → if target within 1" → `confirmFightTarget()`
+5. `confirmFightTarget()` (line ~2787) — rolls both sides' dice, auto-resolves, writes `pendingFight` in one Firebase write
+6. Both clients render `renderFightResolutionBar()` showing annotated dice pools
+7. `confirmFightDamage()` (line ~2880) — attacker only; atomic update: both operatives' wounds + `pendingFight: null`
+
+**Auto-resolve algorithm (in `confirmFightTarget`):**
+```
+Classify ATK dice:  d=6 → crit, d≥HIT (d≠1) → hit, else → miss
+Classify DEF dice:  same with defender's weapon HIT stat
+
+Defender blocks:
+  Step 1: defender crits block attacker crits (1-for-1)
+  Step 2: remaining defender crits block attacker normals (1-for-1)
+  Step 3: defender normals block attacker normals (1-for-1)
+  Remaining unblocked attacker dice → Strike (deal damage to defender)
+  Remaining defender dice → Strike (deal damage to attacker)
+
+dmgToDefender = unblocked_atk_crits × atkCDmg + unblocked_atk_hits × atkNDmg
+dmgToAttacker = surviving_def_crits × defCDmg + surviving_def_hits × defNDmg
+```
+
+Defender's weapon auto-selected: `isDefault: true` melee weapon, or first melee weapon.
+Injured penalty applies to both sides independently. No AP cost for defender retaliation.
+
+**`pendingFight` Firebase node shape:**
+```
+attackerOpId, defenderOpId, attackerSlot,
+atkWeapon, defWeapon,
+atkHitStat, defHitStat, atkNDmg, atkCDmg, defNDmg, defCDmg,
+phase: 'confirm',
+atkRolls, defRolls,
+atkAnnotated,   // per-die: 'crit' | 'hit' | 'miss'
+defAnnotated,   // per-die: 'crit-block' | 'hit-block' | 'crit-strike' | 'hit-strike' | 'miss'
+dmgToDefender, dmgToAttacker
+```
+
+---
+
+### Cross-Client State Pattern (`pendingShot` / `pendingFight`)
+
+Both Shoot and Fight use the same pattern to sync resolution across two browsers:
+
+1. **Attacker writes** the full resolved state to a Firebase node (`pendingShot` or `pendingFight`)
+2. **Firebase `on('value')`** fires on both clients → `render()` → `renderFirefightBar()` detects the node
+3. **`renderFirefightBar()` checks** `iAmAttacker` and `iAmDefender` → renders the appropriate view
+4. **Final commit** by attacker clears the node atomically with the wound update
+
+This pattern works because **all resolution happens client-side on the attacker**, then the full
+result (annotated dice, damage totals) is written in one write. The defender never needs to compute
+anything — they only see the results and optionally make choices (cover) before the roll.
+
+For new actions that need cross-client interaction, follow this pattern. Name the Firebase node
+clearly (`pendingCharge`, `pendingOverwatch`, etc.) and check `iAmAttacker`/`iAmDefender` in
+`renderFirefightBar()` before the general activation bar render.
+
+---
+
+### Roster Integration Reference
+
+**How a roster gets into a game:**
+
+```
+Roster Builder App
+  └─ publishes to: exports/kill-team/{rosterId}
+       └─ schema: { meta: { factionId, factionName, ... }, units: [...] }
+
+killteam/index.html
+  └─ fetchRosterExport(rosterId)         reads exports/kill-team/{rosterId}
+  └─ buildOperatives(exportData, slot)   transforms units → operative instances
+  └─ db.ref('games-kt').push().set({     writes to games-kt/ collection
+       operatives: { [id]: operativeInstance, ... }
+     })
+```
+
+**Roster export unit shape** (what `buildOperatives` reads):
+```js
+{
+  instanceId,   // unique identifier within the roster
+  unitId,       // references gameData/kill-team/factions/{faction}/units/{id}
+  name,         // display name
+  role,         // e.g. "Shas'ui", "Troupe Player"
+  stats: { APL, MOVE, DF, SAVE, WOUNDS },  // string values, parsed via parseStat()
+  weapons: [{ id, name, type, isDefault, profiles: { ATK, HIT, DMG, WR, RNG } }],
+  chosenLoadout, // optional override — takes priority over weapons array
+}
+```
+
+**Key denormalization decisions:**
+- Full weapon list is copied onto each operative instance at game creation time.
+  Reason: no async Firebase lookup needed during gameplay when resolving combat.
+- `apl`, `move`, `def`, `save` are stored as parsed integers on the instance.
+  Reason: same — avoid string parsing during combat.
+- Names are resolved (numbered) at instance creation time.
+  Reason: consistent display; op names never change mid-game.
+
+**Adding a new game system (e.g. AoS):**
+- Create `exports/{system}/{rosterId}` nodes in Firebase (same structure)
+- Create `games-{system}/{gameId}` collection (different from `games-kt/`)
+- Adapt `buildOperatives` for system-specific stats (AoS uses different stat names)
+- The `rayResult()` / `segmentsIntersect()` / `dieFaceSVG()` utilities are pure math —
+  copy them directly; they have zero KT-specific logic
+
+---
+
+### KT-2 Part 4 — Firing Arc (added 2026-06-29)
+
+`getMaxSightRange(op)` (line ~2257) — scans `type: 'ranged'` weapons, reads `RNG` field or
+parses `/Range\s+(\d+)/i` from `WR`. Returns max range in inches; 0 if no ranged weapons.
+
+Fired from `updateDragOverlay` (line ~2051) during Move/Dash drag only.
+Not fired during Shoot, Fight, or Charge drags (those use `shootState`/`fightState`, not `dragState`).

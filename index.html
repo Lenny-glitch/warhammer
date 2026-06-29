@@ -200,6 +200,45 @@
     .tag-deploy   { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); font-size: 9px; }
     .op-row.deploy-selected { background: rgba(201,168,76,0.12); border-left: 2px solid var(--gold); }
 
+    /* ── OP CARD EXPAND ── */
+    .op-header { display: flex; align-items: flex-start; gap: 4px; margin-bottom: 2px; }
+    .op-header .op-name { flex: 1; min-width: 0; margin-bottom: 0; }
+    .op-expand-btn {
+      background: none; border: none; cursor: pointer;
+      color: var(--text-dim); font-size: 9px; padding: 1px 2px;
+      flex-shrink: 0; line-height: 1.6; margin-top: 1px;
+    }
+    .op-expand-btn:hover { color: var(--text); }
+    .op-expanded {
+      margin-top: 7px; padding-top: 7px;
+      border-top: 1px solid var(--border);
+    }
+    .op-stat-grid {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;
+    }
+    .op-stat-cell { text-align: center; }
+    .op-stat-label { font-size: 8px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+    .op-stat-val   { font-size: 11px; font-weight: 600; }
+    .op-weapons    { display: flex; flex-direction: column; gap: 0; margin-bottom: 4px; }
+    .op-weapon-row {
+      display: flex; flex-wrap: wrap; gap: 3px; align-items: baseline;
+      padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .op-weapon-row:last-child { border-bottom: none; }
+    .op-weapon-name { font-size: 10px; font-weight: 600; flex: 0 0 100%; margin-bottom: 1px; }
+    .op-weapon-stat {
+      font-size: 9px; color: var(--text-dim);
+      background: var(--surface2); padding: 0 3px; border-radius: 2px;
+    }
+    .op-weapon-kw {
+      font-size: 8px; color: var(--text-dim); font-style: italic; flex-shrink: 1;
+    }
+    .op-abilities { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+    .op-ability-tag {
+      font-size: 8px; padding: 1px 4px; border-radius: 2px; cursor: help;
+      background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border);
+    }
+
     /* ── BOARD WRAP ── */
     .board-wrap { flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 12px; }
     .board-svg  { display: block; max-height: 100%; }
@@ -353,12 +392,26 @@
       color: var(--text-dim); margin-bottom: 0.75rem;
     }
     .divider { width: 100%; border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+
+    /* ── KT-3 GRIMDARK EFFECTS ── */
+    @keyframes kt3-screen-flash {
+      0%   { opacity: 0; }
+      30%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    #kt3-vignette {
+      position: fixed; inset: 0; pointer-events: none; z-index: 500;
+      background: radial-gradient(ellipse at center, transparent 50%, rgba(180,30,30,0.55) 100%);
+      opacity: 0;
+    }
+    #kt3-vignette.flash { animation: kt3-screen-flash 0.5s ease-out forwards; }
   </style>
 </head>
 <body>
 
 <div id="dev-banner">⚠ DEV MODE — Both player perspectives shown side by side
   <button onclick="devNewGame()" style="margin-left:16px;padding:2px 10px;font-size:11px;cursor:pointer;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:3px;color:inherit;font:inherit;">Reset Game</button>
+  <button onclick="autoPlaceDev()" style="margin-left:8px;padding:2px 10px;font-size:11px;cursor:pointer;background:rgba(255,200,50,0.15);border:1px solid rgba(255,200,50,0.4);border-radius:3px;color:inherit;font:inherit;" title="Skip deployment — place all operatives automatically and advance to initiative">Auto-Place</button>
 </div>
 
 <!-- Normal mode: one screen at a time -->
@@ -388,6 +441,7 @@
   </div>
 </div>
 
+<div id="kt3-vignette"></div>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="firebase-config.js"></script>
@@ -411,6 +465,16 @@ const TERRAIN_FX      = { rough: 'Difficult ground', chestHigh: 'Cover, passable
 // Hardcoded dev rosters — Tau Pathfinders + Void-dancer Troupe
 const DEV_ROSTER_P1 = '-OvzZzqDWpwSVAwZx3kO';
 const DEV_ROSTER_P2 = '-OvzZzrLgyu9iYFRbFrb';
+
+// Pre-authored blood splat blob paths (unit scale; origin at 0,0; fits ~−1 to 1 box)
+const SPLAT_PATHS = [
+  'M 0 -0.8 C 0.5 -1 0.95 -0.4 0.8 0.15 C 0.65 0.6 0.2 0.95 -0.25 0.82 C -0.7 0.68 -1 0.15 -0.75 -0.3 C -0.5 -0.7 -0.4 -0.65 0 -0.8 Z',
+  'M 0.15 -0.9 C 0.55 -0.85 0.9 -0.3 0.75 0.3 C 0.58 0.82 -0.05 1.05 -0.52 0.72 C -0.9 0.42 -0.85 -0.18 -0.6 -0.58 C -0.3 -0.92 -0.18 -0.98 0.15 -0.9 Z',
+  'M -0.2 -0.95 C 0.32 -0.92 0.82 -0.5 0.88 0.05 C 0.95 0.55 0.55 0.9 0.02 0.82 C -0.48 0.72 -0.9 0.35 -0.82 -0.28 C -0.72 -0.72 -0.55 -1.02 -0.2 -0.95 Z',
+  'M 0.22 -0.72 C 0.62 -0.62 0.82 -0.08 0.72 0.42 C 0.52 0.9 -0.08 1.12 -0.6 0.72 C -0.92 0.45 -0.72 -0.18 -0.52 -0.62 C -0.22 -1.02 -0.08 -0.82 0.22 -0.72 Z',
+  'M -0.1 -0.92 C 0.48 -1.02 1.02 -0.32 0.92 0.22 C 0.82 0.72 0.28 0.92 -0.22 0.82 C -0.78 0.72 -1.02 0.12 -0.82 -0.38 C -0.62 -0.82 -0.52 -0.82 -0.1 -0.92 Z',
+  'M 0.3 -0.78 C 0.72 -0.68 0.92 -0.18 0.82 0.32 C 0.62 0.82 0.12 1.02 -0.38 0.82 C -0.82 0.62 -0.92 0.02 -0.72 -0.48 C -0.42 -0.92 -0.08 -0.92 0.3 -0.78 Z',
+];
 
 // ═══════════════════════════════════════════════════════════
 //  SVG HELPERS
@@ -604,6 +668,8 @@ let shootState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } 
 let fightWeapon   = null;  // null | 'picking' | weapon object — during fight action
 let fightState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } — during fight drag
 let radialSlot    = null;  // playerSlot whose radial is currently showing
+let expandedOps   = new Set(); // op IDs whose sidebar cards are expanded
+let splatData     = []; // { x, y, pathIdx, rotation, scale, color, bornAt } — permanent death stains
 let rosterPreviewTimers = {};
 
 // ═══════════════════════════════════════════════════════════
@@ -708,6 +774,9 @@ function buildOperatives(exportData, playerSlot) {
       },
     }));
 
+    const abilArr = Array.isArray(u.abilities) ? u.abilities : Object.values(u.abilities || {});
+    const abilities = abilArr.map(a => ({ name: a.name || '', description: a.description || '' }));
+
     ops[id] = {
       id,
       player:      playerSlot,
@@ -723,6 +792,7 @@ function buildOperatives(exportData, playerSlot) {
       def,
       save,
       weapons,
+      abilities,
       wounds:      maxW,
       maxWounds:   maxW,
       x:           -1,
@@ -922,8 +992,12 @@ function loadGame(id) {
 
 function subscribeToGame() {
   db.ref(`games-kt/${gameId}`).on('value', snap => {
+    const prev = gameData;
     gameData = snap.val();
-    if (gameData) render();
+    if (gameData) {
+      render();
+      detectAndPlayEffects(prev, gameData);
+    }
   });
 }
 
@@ -1140,6 +1214,60 @@ function renderOpList(opArr, opPlayer, viewerSlot, status, phase, turn) {
   return opArr.map(o => renderOpRow(o, opPlayer, viewerSlot, status, phase, turn, false)).join('');
 }
 
+function toggleOpExpand(opId) {
+  if (expandedOps.has(opId)) expandedOps.delete(opId);
+  else expandedOps.add(opId);
+  reRender();
+}
+
+function renderOpExpanded(op) {
+  const stats = [
+    ['APL',  op.apl  ?? '?'],
+    ['Move', (op.move ?? '?') + '"'],
+    ['DF',   op.def  ?? '?'],
+    ['Save', (op.save ?? '?') + '+'],
+    ['W',    `${op.wounds ?? '?'}/${op.maxWounds ?? '?'}`],
+  ];
+
+  const statsHtml = `<div class="op-stat-grid">${
+    stats.map(([lbl, val]) => `
+      <div class="op-stat-cell">
+        <div class="op-stat-label">${lbl}</div>
+        <div class="op-stat-val">${val}</div>
+      </div>`).join('')
+  }</div>`;
+
+  const weaponsHtml = (op.weapons || []).map(w => {
+    const typeIcon = w.type === 'melee' ? '⚔' : '◎';
+    const atk = w.profiles?.ATK || '?';
+    const hit = w.profiles?.HIT || '?';
+    const dmg = w.profiles?.DMG || '?';
+    // Range from RNG field or extracted from WR
+    const rngNum = parseInt(w.profiles?.RNG) || ((/Range\s+(\d+)/i.exec(w.profiles?.WR || '') || [])[1] | 0);
+    const rngStr = rngNum ? `${rngNum}"` : (w.type === 'melee' ? 'Melee' : '—');
+    // Strip "Range X"," from WR for keywords-only display
+    const kws = (w.profiles?.WR || '').replace(/Range\s+\d+[""]\s*,?\s*/i, '').trim().replace(/^,\s*/, '');
+    return `
+      <div class="op-weapon-row">
+        <div class="op-weapon-name">${typeIcon} ${escHtml(w.name)}</div>
+        <span class="op-weapon-stat" title="Attack dice">A${escHtml(atk)}</span>
+        <span class="op-weapon-stat" title="Hit threshold">${escHtml(hit)}</span>
+        <span class="op-weapon-stat" title="Normal / Crit damage">DMG ${escHtml(dmg)}</span>
+        <span class="op-weapon-stat" title="Range">${escHtml(rngStr)}</span>
+        ${kws ? `<span class="op-weapon-kw" title="${escHtml(kws)}">${escHtml(kws.length > 28 ? kws.slice(0, 26) + '…' : kws)}</span>` : ''}
+      </div>`;
+  }).join('');
+
+  const abilities = op.abilities || [];
+  const abilitiesHtml = abilities.length
+    ? `<div class="op-abilities">${
+        abilities.map(a => `<span class="op-ability-tag" title="${escHtml(a.description || '')}">${escHtml(a.name)}</span>`).join('')
+      }</div>`
+    : '';
+
+  return `<div class="op-expanded">${statsHtml}${weaponsHtml ? `<div class="op-weapons">${weaponsHtml}</div>` : ''}${abilitiesHtml}</div>`;
+}
+
 function renderOpRow(op, opPlayer, viewerSlot, status, phase, turn, isDead) {
   const isMe       = opPlayer === viewerSlot;
   const isDeployed = op.x >= 0 && op.y >= 0;
@@ -1171,9 +1299,14 @@ function renderOpRow(op, opPlayer, viewerSlot, status, phase, turn, isDead) {
 
   const woundsColor = isDead || isInjured ? 'var(--red)' : isWounded ? 'var(--orange)' : 'var(--green)';
 
+  const isExpanded = expandedOps.has(op.id);
+
   return `
     <div class="${rowClass}" ${clickHandler} data-op-id="${op.id}">
-      <div class="op-name">${isDead ? '✕ ' : ''}${escHtml(op.name)}</div>
+      <div class="op-header">
+        <div class="op-name">${isDead ? '✕ ' : ''}${escHtml(op.name)}</div>
+        <button class="op-expand-btn" onclick="event.stopPropagation();toggleOpExpand('${op.id}')" title="${isExpanded ? 'Collapse' : 'Show stats & weapons'}">${isExpanded ? '▾' : '▸'}</button>
+      </div>
       ${op.role ? `<div class="op-role">${escHtml(op.role)}</div>` : ''}
       <div class="op-status-row">
         <span class="op-wounds" style="color:${woundsColor}">${op.wounds}/${op.maxWounds}W</span>
@@ -1184,6 +1317,7 @@ function renderOpRow(op, opPlayer, viewerSlot, status, phase, turn, isDead) {
         ${isInjured ? `<span class="op-tag tag-injured">Injured</span>` : ''}
         ${isSelected ? `<span class="op-tag" style="background:rgba(201,168,76,0.15);color:var(--gold);border:1px solid rgba(201,168,76,0.4);">Selected</span>` : ''}
       </div>
+      ${isExpanded ? renderOpExpanded(op) : ''}
     </div>
   `;
 }
@@ -1471,10 +1605,13 @@ function buildBoardSVG(wrap, playerSlot, status, phase) {
   // Background
   svg.appendChild(svgEl('rect', { x: 0, y: 0, width: BOARD_W, height: BOARD_H, fill: '#0a0a14' }));
 
-  // Layers
+  // Layers (painter's order: bg → grid → splats → deploy → terrain → beams → bursts → tokens → overlay)
   const gridG    = svgEl('g'); drawGrid(gridG); svg.appendChild(gridG);
+  const splatG   = svgEl('g', { id: `splat-g-${playerSlot}`, 'pointer-events': 'none' }); svg.appendChild(splatG);
   const deployG  = svgEl('g'); svg.appendChild(deployG);
   const terrainG = svgEl('g'); svg.appendChild(terrainG);
+  const beamG    = svgEl('g', { id: `beam-g-${playerSlot}`,  'pointer-events': 'none' }); svg.appendChild(beamG);
+  const burstG   = svgEl('g', { id: `burst-g-${playerSlot}`, 'pointer-events': 'none' }); svg.appendChild(burstG);
   const unitG    = svgEl('g'); svg.appendChild(unitG);
   const overlay  = svgEl('g', { id: `overlay-${playerSlot}`, 'pointer-events': 'none' }); svg.appendChild(overlay);
 
@@ -1483,6 +1620,9 @@ function buildBoardSVG(wrap, playerSlot, status, phase) {
 
   // Terrain
   drawTerrain(terrainG, gameData.terrain);
+
+  // Permanent blood splats (drawn after terrain so the correct layer order is maintained in the DOM)
+  splatData.forEach(s => drawSplat(splatG, s));
 
   // Operatives
   const ops = gameData.operatives || {};
@@ -1879,6 +2019,7 @@ function activateOperative(opId, playerSlot) {
 function cancelActivation() {
   if (!activation || activation.apSpent) return;
   activation = null;
+  hideRadialMenu();
   reRenderPhaseBar();
   reRender();
 }
@@ -1895,6 +2036,7 @@ async function endActivation(playerSlot) {
   const opId = activation.opId;
   activation  = null;
   deploySelId = null;
+  hideRadialMenu();
 
   await db.ref(`games-kt/${gameId}/operatives/${opId}`).update({
     ready:              false,
@@ -1963,7 +2105,9 @@ function startMove(playerSlot, isDash) {
   const overlay = svg.querySelector(`#overlay-${playerSlot}`);
   clearEl(overlay);
 
-  dragState = { opId: op.id, startX: op.x, startY: op.y, maxMove, isDash, svg, overlay, playerSlot };
+  const arcRgb = playerSlot === 'player1' ? '74,158,255' : '201,122,247';
+  dragState = { opId: op.id, startX: op.x, startY: op.y, maxMove, isDash, svg, overlay, playerSlot,
+                maxSightRange: getMaxSightRange(op), arcRgb };
 
   // Ghost at start position
   overlay.appendChild(svgEl('circle', {
@@ -2044,6 +2188,27 @@ function updateDragOverlay(tx, ty) {
   });
   lbl.textContent = dist.toFixed(1) + '"';
   overlay.appendChild(lbl);
+
+  // Firing arc — weapon range projected from drag destination
+  if (dragState.maxSightRange > 0) {
+    const { arcRgb, maxSightRange } = dragState;
+    overlay.appendChild(svgEl('circle', {
+      cx: tx, cy: ty, r: maxSightRange,
+      fill: `rgba(${arcRgb},0.10)`,
+      stroke: `rgba(${arcRgb},0.30)`,
+      'stroke-width': 0.12, 'stroke-dasharray': '0.4 0.25',
+    }));
+    const myPlayer = (gameData.operatives[dragState.opId] || {}).player;
+    for (const enemy of Object.values(gameData.operatives || {})) {
+      if (enemy.player === myPlayer || enemy.wounds <= 0 || enemy.x < 0) continue;
+      if (Math.hypot(enemy.x - tx, enemy.y - ty) <= maxSightRange) {
+        overlay.appendChild(svgEl('circle', {
+          cx: enemy.x, cy: enemy.y, r: TOKEN_R + 0.12,
+          fill: 'none', stroke: 'rgba(255,220,50,0.60)', 'stroke-width': 0.14,
+        }));
+      }
+    }
+  }
 }
 
 async function commitMove(tx, ty, apCost, playerSlot) {
@@ -2229,6 +2394,19 @@ function getMeleeWeapons(op) {
 function getDefaultMeleeWeapon(op) {
   const melee = getMeleeWeapons(op);
   return melee.find(w => w.isDefault) || melee[0] || null;
+}
+function getMaxSightRange(op) {
+  let max = 0;
+  for (const w of (op.weapons || [])) {
+    if (w.type !== 'ranged') continue;
+    let r = parseRng(w.profiles?.RNG);
+    if (!r) {
+      const m = /Range\s+(\d+)/i.exec(w.profiles?.WR || '');
+      if (m) r = parseInt(m[1]) || 0;
+    }
+    if (r > max) max = r;
+  }
+  return max;
 }
 function hasFightTarget(op) {
   return Object.values(gameData.operatives || {}).some(o =>
@@ -2947,6 +3125,339 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
     </div>`;
 }
 
+// ═══════════════════════════════════════════════════════════
+//  KT-3 — GRIMDARK VISUAL EFFECTS
+//  All effects are local-only — no Firebase writes.
+//  Triggered by detectAndPlayEffects() after each render().
+// ═══════════════════════════════════════════════════════════
+
+// 'subtle' | 'dramatic' | 'cinematic' from weapon normal damage value
+function getAnimTier(nDmg, cDmg) {
+  let tier = nDmg <= 3 ? 'subtle' : nDmg <= 5 ? 'dramatic' : 'cinematic';
+  if (cDmg >= 8 && tier !== 'cinematic') {
+    tier = tier === 'subtle' ? 'dramatic' : 'cinematic';
+  }
+  return tier;
+}
+
+// Beam color keyed on weapon name substrings
+function getBeamColor(name) {
+  const n = (name || '').toLowerCase();
+  if (/las|laser|lasgun|laspistol|hot.shot/.test(n))          return '#e84040';
+  if (/pulse|tau|ion|rail|burst|pathfinder/.test(n))          return '#40c8e8';
+  if (/bolt|bolter|slugga|dakka|shoota|stub|autogun/.test(n)) return '#e8c840';
+  if (/plasma|melta|fusion|flamer|inferno/.test(n))           return '#e87040';
+  if (/needler|shuriken|catapult|neuro|hallucinogen/.test(n)) return '#40e870';
+  return '#e8e8e8';
+}
+
+// Dark red with slight per-splat hue variation
+function randomSplatColor() {
+  const r = Math.min(220, Math.max(80,  0x8b + ((Math.random() - 0.5) * 50 | 0)));
+  const g = Math.min(60,  Math.max(0,   0x1a + ((Math.random() - 0.5) * 20 | 0)));
+  const b = Math.min(60,  Math.max(0,   0x1a + ((Math.random() - 0.5) * 20 | 0)));
+  return `rgb(${r},${g},${b})`;
+}
+
+// Append SMIL stroke-draw + opacity-fade animations to a line element
+function appendBeamAnims(el, len, dur, initOpacity) {
+  const drawDurS  = (dur * 0.40 / 1000).toFixed(3);
+  const fadeDurS  = (dur * 0.60 / 1000).toFixed(3);
+  const fadeBegin = (dur * 0.40 / 1000).toFixed(3);
+
+  const draw = document.createElementNS(NS, 'animate');
+  draw.setAttribute('attributeName', 'stroke-dashoffset');
+  draw.setAttribute('from', len); draw.setAttribute('to', 0);
+  draw.setAttribute('dur', drawDurS + 's'); draw.setAttribute('fill', 'freeze');
+  el.appendChild(draw);
+
+  const fade = document.createElementNS(NS, 'animate');
+  fade.setAttribute('attributeName', 'opacity');
+  fade.setAttribute('from', String(initOpacity ?? 1)); fade.setAttribute('to', '0');
+  fade.setAttribute('begin', fadeBegin + 's');
+  fade.setAttribute('dur', fadeDurS + 's'); fade.setAttribute('fill', 'freeze');
+  el.appendChild(fade);
+}
+
+// Draw a weapon beam from attacker to target (or 80% for misses)
+function drawBeam(parent, ax, ay, tx, ty, color, tier, hasDamage) {
+  const DURS = { subtle: 350, dramatic: 700, cinematic: 1200 };
+  const LW   = { subtle: 0.07, dramatic: 0.11, cinematic: 0.16 };
+  if (!hasDamage && tier === 'subtle') return;
+
+  const dur  = DURS[tier];
+  const lw   = LW[tier];
+  const frac = hasDamage ? 1 : 0.8;
+  const endX = ax + (tx - ax) * frac;
+  const endY = ay + (ty - ay) * frac;
+  const len  = Math.hypot(endX - ax, endY - ay);
+
+  if (tier !== 'subtle') {
+    const glow = svgEl('line', {
+      x1: ax, y1: ay, x2: endX, y2: endY,
+      stroke: color, 'stroke-width': lw * 5,
+      'stroke-linecap': 'round',
+      'stroke-dasharray': len, 'stroke-dashoffset': len,
+      opacity: 0.22,
+    });
+    appendBeamAnims(glow, len, dur, 0.22);
+    parent.appendChild(glow);
+  }
+
+  const line = svgEl('line', {
+    x1: ax, y1: ay, x2: endX, y2: endY,
+    stroke: color, 'stroke-width': lw,
+    'stroke-linecap': 'round',
+    'stroke-dasharray': len, 'stroke-dashoffset': len,
+    opacity: 1,
+  });
+  appendBeamAnims(line, len, dur, 1);
+  parent.appendChild(line);
+
+  // Cinematic: brief afterimage that fades behind the main beam
+  if (tier === 'cinematic') {
+    const after = svgEl('line', {
+      x1: ax, y1: ay, x2: endX, y2: endY,
+      stroke: color, 'stroke-width': lw * 0.6,
+      'stroke-linecap': 'round',
+      'stroke-dasharray': len, 'stroke-dashoffset': 0,
+      opacity: 0.35,
+    });
+    const af = document.createElementNS(NS, 'animate');
+    af.setAttribute('attributeName', 'opacity');
+    af.setAttribute('from', '0.35'); af.setAttribute('to', '0');
+    af.setAttribute('begin', (dur * 0.25 / 1000).toFixed(3) + 's');
+    af.setAttribute('dur',   (dur * 0.75 / 1000).toFixed(3) + 's');
+    af.setAttribute('fill',  'freeze');
+    after.appendChild(af);
+    parent.appendChild(after);
+    setTimeout(() => { if (parent.contains(after)) parent.removeChild(after); }, dur + 200);
+  }
+
+  setTimeout(() => { if (parent.contains(line)) parent.removeChild(line); }, dur + 200);
+}
+
+// Radial blood/impact burst centered on a board position
+function drawImpactBurst(parent, x, y, tier) {
+  const RS   = { subtle: 0.8, dramatic: 1.2, cinematic: 1.8 };
+  const DURS = { subtle: 350, dramatic: 700, cinematic: 1200 };
+  const r   = RS[tier];
+  const dur = DURS[tier];
+
+  const burst = svgEl('circle', { cx: x, cy: y, r: r * 0.5, fill: '#c0392b', opacity: 0.75 });
+  const grow = document.createElementNS(NS, 'animate');
+  grow.setAttribute('attributeName', 'r');
+  grow.setAttribute('from', r * 0.35); grow.setAttribute('to', r * 1.1);
+  grow.setAttribute('dur', (dur / 1000) + 's'); grow.setAttribute('fill', 'freeze');
+  const fade = document.createElementNS(NS, 'animate');
+  fade.setAttribute('attributeName', 'opacity');
+  fade.setAttribute('from', '0.75'); fade.setAttribute('to', '0');
+  fade.setAttribute('dur', (dur / 1000) + 's'); fade.setAttribute('fill', 'freeze');
+  burst.appendChild(grow); burst.appendChild(fade);
+  parent.appendChild(burst);
+
+  if (tier === 'cinematic') {
+    for (let i = 0; i < 3; i++) {
+      const a  = (i / 3) * Math.PI * 2 + Math.random();
+      const sx = x + Math.cos(a) * r * 0.55;
+      const sy = y + Math.sin(a) * r * 0.55;
+      const s  = svgEl('circle', { cx: sx, cy: sy, r: r * 0.32, fill: '#c0392b', opacity: 0.5 });
+      const sf = document.createElementNS(NS, 'animate');
+      sf.setAttribute('attributeName', 'opacity');
+      sf.setAttribute('from', '0.5'); sf.setAttribute('to', '0');
+      sf.setAttribute('dur', (dur * 0.65 / 1000) + 's'); sf.setAttribute('fill', 'freeze');
+      s.appendChild(sf);
+      parent.appendChild(s);
+      setTimeout(() => { if (parent.contains(s)) parent.removeChild(s); }, dur * 0.65 + 100);
+    }
+  }
+
+  setTimeout(() => { if (parent.contains(burst)) parent.removeChild(burst); }, dur + 200);
+}
+
+// Spark-burst clash indicator at midpoint between two combatants
+function drawClash(parent, ax, ay, dx, dy, totalDmg) {
+  const size = totalDmg === 0 ? 0 : totalDmg < 6 ? 0.4 : totalDmg < 15 ? 0.7 : 1.0;
+  if (size === 0) return;
+  const dur = totalDmg < 6 ? 350 : totalDmg < 15 ? 700 : 1200;
+  const mx  = (ax + dx) / 2;
+  const my  = (ay + dy) / 2;
+
+  const g = svgEl('g');
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const r1 = size * 0.25;
+    const r2 = size * (0.6 + Math.random() * 0.4);
+    const spoke = svgEl('line', {
+      x1: mx + Math.cos(angle) * r1, y1: my + Math.sin(angle) * r1,
+      x2: mx + Math.cos(angle) * r2, y2: my + Math.sin(angle) * r2,
+      stroke: '#e8e840', 'stroke-width': 0.08, 'stroke-linecap': 'round', opacity: 0.9,
+    });
+    const sf = document.createElementNS(NS, 'animate');
+    sf.setAttribute('attributeName', 'opacity');
+    sf.setAttribute('from', '0.9'); sf.setAttribute('to', '0');
+    sf.setAttribute('dur', (dur / 1000) + 's'); sf.setAttribute('fill', 'freeze');
+    spoke.appendChild(sf);
+    g.appendChild(spoke);
+  }
+  const center = svgEl('circle', { cx: mx, cy: my, r: size * 0.18, fill: '#fff', opacity: 0.95 });
+  const cf = document.createElementNS(NS, 'animate');
+  cf.setAttribute('attributeName', 'opacity');
+  cf.setAttribute('from', '0.95'); cf.setAttribute('to', '0');
+  cf.setAttribute('dur', (dur * 0.4 / 1000) + 's'); cf.setAttribute('fill', 'freeze');
+  center.appendChild(cf);
+  g.appendChild(center);
+  parent.appendChild(g);
+  setTimeout(() => { if (parent.contains(g)) parent.removeChild(g); }, dur + 200);
+}
+
+// Brief white flash at operative position on death
+function drawDeathFlash(parent, x, y) {
+  const flash = svgEl('circle', { cx: x, cy: y, r: TOKEN_R * 2.2, fill: '#ffffff', opacity: 1 });
+  const fade  = document.createElementNS(NS, 'animate');
+  fade.setAttribute('attributeName', 'opacity');
+  fade.setAttribute('from', '1'); fade.setAttribute('to', '0');
+  fade.setAttribute('dur', '0.25s'); fade.setAttribute('fill', 'freeze');
+  flash.appendChild(fade);
+  parent.appendChild(flash);
+  setTimeout(() => { if (parent.contains(flash)) parent.removeChild(flash); }, 350);
+}
+
+// Draw a permanent blood splat from splatData entry
+function drawSplat(parent, s) {
+  const age     = Date.now() - (s.bornAt || 0);
+  const isNew   = age < 500;
+
+  // Outer: position + rotation
+  const outer = svgEl('g', { transform: `translate(${s.x},${s.y}) rotate(${s.rotation})` });
+  // Inner: scale (static if old, animated if new)
+  const inner = svgEl('g');
+  inner.appendChild(svgEl('path', { d: SPLAT_PATHS[s.pathIdx], fill: s.color, opacity: 0.72 }));
+  outer.appendChild(inner);
+  parent.appendChild(outer);
+
+  if (isNew) {
+    const remainS = (Math.max(50, 400 - age) / 1000).toFixed(3);
+    const anim = document.createElementNS(NS, 'animateTransform');
+    anim.setAttribute('attributeName', 'transform');
+    anim.setAttribute('type',  'scale');
+    anim.setAttribute('from',  '0');
+    anim.setAttribute('to',    s.scale);
+    anim.setAttribute('dur',   remainS + 's');
+    anim.setAttribute('fill',  'freeze');
+    inner.appendChild(anim);
+  } else {
+    inner.setAttribute('transform', `scale(${s.scale})`);
+  }
+}
+
+// Push a new death stain into splatData (drawn on next render)
+function addDeathSplat(x, y) {
+  if (x < 0 || y < 0) return;
+  splatData.push({
+    x, y,
+    pathIdx:  Math.floor(Math.random() * SPLAT_PATHS.length),
+    rotation: Math.floor(Math.random() * 360),
+    scale:    0.8 + Math.random() * 0.4,
+    color:    randomSplatColor(),
+    bornAt:   Date.now(),
+  });
+}
+
+// Red screen-edge vignette flash (defender's screen)
+function triggerScreenFlash() {
+  const v = document.getElementById('kt3-vignette');
+  if (!v) return;
+  v.classList.remove('flash');
+  void v.offsetWidth; // force reflow to restart animation
+  v.classList.add('flash');
+}
+
+// Play shoot beam + impact burst + screen flash on all visible boards
+function playShootEffects(pending, attacker, target) {
+  const w = pending.weapon || {};
+  const [nDmg, cDmg] = parseDmgPair(w.profiles?.DMG || '1/1');
+  const tier   = getAnimTier(nDmg, cDmg);
+  const color  = getBeamColor(w.name || '');
+  const hasDmg = (pending.totalDamage || 0) > 0;
+
+  const slots = devMode ? ['player1', 'player2'] : [myPlayer];
+  for (const slot of slots) {
+    const beamG  = document.getElementById(`beam-g-${slot}`);
+    const burstG = document.getElementById(`burst-g-${slot}`);
+    if (!beamG) continue;
+
+    drawBeam(beamG, attacker.x, attacker.y, target.x, target.y, color, tier, hasDmg);
+    if (hasDmg && burstG) drawImpactBurst(burstG, target.x, target.y, tier);
+
+    const isDefender = devMode ? (slot === target.player) : (target.player === myPlayer);
+    if (hasDmg && isDefender) triggerScreenFlash();
+  }
+}
+
+// Play fight clash + per-operative splats + screen flash on all visible boards
+function playFightEffects(pending, attacker, defender) {
+  const atkW = pending.atkWeapon || {};
+  const [nDmg, cDmg] = parseDmgPair(atkW.profiles?.DMG || '1/1');
+  const tier     = getAnimTier(nDmg, cDmg);
+  const totalDmg = (pending.dmgToDefender || 0) + (pending.dmgToAttacker || 0);
+
+  const slots = devMode ? ['player1', 'player2'] : [myPlayer];
+  for (const slot of slots) {
+    const beamG  = document.getElementById(`beam-g-${slot}`);
+    const burstG = document.getElementById(`burst-g-${slot}`);
+    if (!beamG) continue;
+
+    drawClash(beamG, attacker.x, attacker.y, defender.x, defender.y, totalDmg);
+    if (burstG) {
+      if ((pending.dmgToDefender || 0) > 0) drawImpactBurst(burstG, defender.x, defender.y, tier);
+      if ((pending.dmgToAttacker || 0) > 0) drawImpactBurst(burstG, attacker.x, attacker.y, tier);
+    }
+
+    // Each player flashes if their operative took damage
+    const slotPlayer  = devMode ? slot : myPlayer;
+    const tookDamage  = (slotPlayer === defender.player && pending.dmgToDefender > 0)
+                     || (slotPlayer === attacker.player && pending.dmgToAttacker > 0);
+    if (tookDamage) triggerScreenFlash();
+  }
+}
+
+// Inspect Firebase state transition; fire effects for shots, fights, and deaths
+function detectAndPlayEffects(prev, curr) {
+  if (!prev || !curr) return;
+
+  // Shot resolved (pendingShot cleared after 'rolled' phase — damage confirmed)
+  if (prev.pendingShot && !curr.pendingShot && prev.pendingShot.phase === 'rolled') {
+    const p  = prev.pendingShot;
+    const at = (curr.operatives || {})[p.attackerOpId] || (prev.operatives || {})[p.attackerOpId];
+    const tg = (curr.operatives || {})[p.targetOpId]   || (prev.operatives || {})[p.targetOpId];
+    if (at && tg && at.x >= 0 && tg.x >= 0) playShootEffects(p, at, tg);
+  }
+
+  // Fight resolved (pendingFight cleared)
+  if (prev.pendingFight && !curr.pendingFight) {
+    const p  = prev.pendingFight;
+    const at = (curr.operatives || {})[p.attackerOpId] || (prev.operatives || {})[p.attackerOpId];
+    const df = (curr.operatives || {})[p.defenderOpId] || (prev.operatives || {})[p.defenderOpId];
+    if (at && df && at.x >= 0 && df.x >= 0) playFightEffects(p, at, df);
+  }
+
+  // Operative deaths
+  const prevOps = prev.operatives || {};
+  const currOps = curr.operatives || {};
+  for (const [id, op] of Object.entries(currOps)) {
+    const prevOp = prevOps[id];
+    if (prevOp && prevOp.wounds > 0 && op.wounds <= 0 && prevOp.x >= 0) {
+      addDeathSplat(prevOp.x, prevOp.y);
+      const slots = devMode ? ['player1', 'player2'] : [myPlayer];
+      for (const slot of slots) {
+        const beamG = document.getElementById(`beam-g-${slot}`);
+        if (beamG) drawDeathFlash(beamG, prevOp.x, prevOp.y);
+      }
+    }
+  }
+}
+
 // Global Escape key: cancel activation if no AP spent.
 // Registered once; safe to call multiple times (idempotent via flag).
 if (!window._ktEscBound) {
@@ -2999,10 +3510,45 @@ async function devNewGame() {
   fightWeapon   = null;
   fightState    = null;
   terrainActive = false;
+  expandedOps   = new Set();
+  splatData     = [];
   const url = new URL(window.location.href);
   url.searchParams.delete('game');
   window.history.replaceState({}, '', url.toString());
   bootDev();
+}
+
+async function autoPlaceDev() {
+  const status = gameData?.meta?.status;
+  if (status !== 'terrain' && status !== 'deployment') return;
+
+  const ops    = Object.entries(gameData.operatives || {});
+  const updates = {};
+
+  for (const slot of ['player1', 'player2']) {
+    const isP1  = slot === 'player1';
+    const myOps = ops.filter(([, o]) => o.player === slot && o.x < 0);
+    if (!myOps.length) continue;
+
+    const count = myOps.length;
+    const cols  = Math.min(count, 10);
+    const xStep = BOARD_W / (cols + 1);
+    // P1: bottom zone — start near y=29, step upward
+    // P2: top zone    — start near y=1,  step downward
+    const yStart = isP1 ? BOARD_H - 1 : 1;
+    const yDir   = isP1 ? -1 : 1;
+
+    let col = 0, row = 0;
+    for (const [opId] of myOps) {
+      updates[`operatives/${opId}/x`] = Math.round(xStep * (col + 1));
+      updates[`operatives/${opId}/y`] = yStart + yDir * row * 2;
+      col++;
+      if (col >= cols) { col = 0; row++; }
+    }
+  }
+
+  updates['meta/status'] = 'initiative';
+  await db.ref(`games-kt/${gameId}`).update(updates);
 }
 
 // ═══════════════════════════════════════════════════════════
