@@ -288,29 +288,31 @@ from Firebase project settings (`warhammer-5f2f4`).
 6. When all dice resolved → "Apply Damage" button appears (attacker triggers)
 7. Both operatives take their wounds in a single Firebase write; `pendingFight` cleared
 
-**Rules implemented:**
-- Attacker initiates fight from within 1" (control range)
-- Both sides roll their own melee weapon's ATK dice
-- Crit die (6): can Strike (deal crit DMG) or Block any opponent die
-- Normal hit die: can Strike (deal normal DMG) or Block a non-crit opponent die
-- Miss die: auto-resolved, no effect
-- Alternating resolution: attacker → defender → attacker… until all dice resolved
-- If one side runs out of active dice early, the other side resolves all remaining
+**Rules implemented (RAW):**
+- Attacker initiates fight from within 1" (control range) — Fight button greyed out with "No enemies in control range" when no valid targets
+- Fight works regardless of Engage/Conceal order (no order restriction)
+- Both sides roll their own melee weapon's ATK dice simultaneously
 - Injured penalty applied: HIT threshold +1 for injured operative (wounds ≤ half maxWounds)
+- Defender's retaliation is NOT a separate action — no AP cost to defender
+- Both operatives can be incapacitated; all damage applied simultaneously after resolution
 - `hasFought` flag prevents fighting twice in same activation
-- Defender's retaliation is NOT a separate action — it's part of attacker's Fight action at no AP cost to defender
-- Both operatives can be incapacitated in the same fight (all dice resolve before wounds applied)
 
-**Firebase:** `pendingFight` node at `games-kt/{gameId}/pendingFight` syncs state across both clients. Updated once per die click. Cleared atomically when damage is confirmed.
+**Auto-resolve (flagged per KT2_PART3_BRIEF.md):** Player-choice alternating resolution deferred to KT-3.
+- Attacker: all hit/crit dice Strike (deal damage to defender)
+- Defender: crit dice Block attacker crits first, then normals; remaining hits Block attacker normals; unblocked defender dice Strike attacker
+- Miss dice: no effect
 
-**Defender weapon auto-pick:** defender's `isDefault: true` melee weapon is selected automatically (or first melee weapon if no default). Defender cannot choose a different weapon.
+**Firebase:** `pendingFight` node at `games-kt/{gameId}/pendingFight`. Written once on target confirmation with fully-resolved state (`atkAnnotated`/`defAnnotated` arrays + final `dmgToDefender`/`dmgToAttacker`). Single Firebase write per fight. Attacker clicks "Apply Damage" to commit wounds.
 
-**Interactive resolution used** (not auto-resolve). The brief's auto-resolve fallback was not needed — the alternating click-per-die pattern maps cleanly to the Firebase sync model.
+**Drag visual:** red dashed line; "FIGHT" label when hovering valid target within 1"; distance + "out of reach" for invalid.
 
-**VDT name fix:** Firebase `gameData/kill-team/factions/void-dancer-troupe/units/player/name` and all 5 Player entries in the dev export patched to "Troupe Player". Deduplication will now produce "Troupe Player #1–5" instead of "Player #1–5". Scraped data file also fixed.
+**Defender weapon auto-pick:** defender's `isDefault: true` melee weapon selected automatically (or first melee weapon if no default).
+
+**VDT name fix:** Firebase `gameData/kill-team/factions/void-dancer-troupe/units/player/name` and all 5 Player entries in the dev export patched to "Troupe Player". Scraped data file also fixed.
 
 **Known limitations:**
-- `hasFought` only blocks fighting again; RAW allows fighting multiple times per activation with enough AP — revisit if this matters.
+- Auto-resolve only — player-choice alternating Strike/Block deferred to KT-3.
+- `hasFought` only blocks fighting once; RAW allows multiple fights per activation with enough AP.
 - Defender weapon selection is always the first default melee weapon; no choice given to defender.
 
 ---

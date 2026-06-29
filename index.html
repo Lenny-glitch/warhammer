@@ -339,15 +339,6 @@
     .fight-die.used { opacity:0.42; }
     .fight-die.blocked-out { opacity:0.28;border-style:dashed; }
     .fight-die-result { font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--text-dim); }
-    .fight-die-btns { display:flex;gap:2px;width:100%; }
-    .fight-die-btns button {
-      flex:1;font-size:8px;padding:2px 3px;border-radius:3px;
-      background:var(--surface2);border:1px solid var(--border);color:var(--text);
-      cursor:pointer;line-height:1.2;font-family:inherit;
-    }
-    .fight-die-btns .strike-btn:not(:disabled):hover { border-color:var(--red);color:var(--red); }
-    .fight-die-btns .block-btn:not(:disabled):hover { border-color:var(--green);color:var(--green); }
-    .fight-die-btns button:disabled { opacity:0.3;cursor:default; }
     .fight-pool-total { font-size:10px;font-weight:700; }
 
     /* ── ERROR ── */
@@ -1420,7 +1411,7 @@ function renderActivationBar(playerSlot, turn) {
   const hasShot       = activation.hasShot;
   const hasFought     = activation.hasFought;
   const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal;
-  const fightDisabled = ap < 1 || !melee.length  || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
+  const fightDisabled = ap < 1 || !melee.length  || !hasFightTarget(op) || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
   const dragActive    = !!shootState || !!fightState || !!dragState;
   const moveDisabled  = ap < 1 || dragActive || hasMoved;
   const dashDisabled  = ap < 1 || dragActive || hasDashed;
@@ -1455,7 +1446,7 @@ function renderActivationBar(playerSlot, turn) {
         <button class="action-btn" onclick="startMove('${playerSlot}',false)" ${moveDisabled ? 'disabled' : ''} title="${hasMoved ? 'Already moved this activation' : ''}">Move (1AP)</button>
         <button class="action-btn" onclick="startMove('${playerSlot}',true)"  ${dashDisabled ? 'disabled' : ''} title="${hasDashed ? 'Already dashed' : '3&quot; — combine with Move for max distance'}">Dash (1AP)</button>
         <button class="action-btn" onclick="startShoot('${playerSlot}')" ${shootDisabled ? 'disabled' : ''} title="${conceal ? 'Locked: Conceal order' : ''}">Shoot (1AP)</button>
-        <button class="action-btn" onclick="startFight('${playerSlot}')" ${fightDisabled ? 'disabled' : ''} title="${hasFought ? 'Already fought this activation' : !melee.length ? 'No melee weapons' : ''}">Fight (1AP)</button>
+        <button class="action-btn" onclick="startFight('${playerSlot}')" ${fightDisabled ? 'disabled' : ''} title="${hasFought ? 'Already fought this activation' : !hasFightTarget(op) ? 'No enemies in control range (1&quot;)' : !melee.length ? 'No melee weapons' : ''}">Fight (1AP)</button>
         <button class="action-btn stub" ${conceal ? 'title="Locked: Conceal order"' : 'title="Coming in KT-3"'} disabled>Charge (1AP)</button>
       </div>
       <button class="btn" onclick="endActivation('${playerSlot}')" style="margin-left:auto;">End Activation</button>
@@ -2131,7 +2122,7 @@ function showRadialMenu(opId, playerSlot) {
   const hasFought = activation?.hasFought || false;
 
   const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal;
-  const fightDisabled = ap < 1 || !melee.length  || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
+  const fightDisabled = ap < 1 || !melee.length  || !hasFightTarget(op) || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
   const moveDisabled  = ap < 1 || hasMoved;
   const dashDisabled  = ap < 1 || hasDashed;
   const orderDisabled = hasShot;
@@ -2162,7 +2153,7 @@ function showRadialMenu(opId, playerSlot) {
       title: conceal ? 'Locked: Conceal order' : '' },
     { id: 'fight',  label: 'Fight',  ap: 1, angle: 150, cls: 'r-fight',
       fn: `startFight('${playerSlot}')`, disabled: fightDisabled, locks: '',
-      title: hasFought ? 'Already fought this activation' : !melee.length ? 'No melee weapons' : '' },
+      title: hasFought ? 'Already fought this activation' : !hasFightTarget(op) ? 'No enemies in control range (1")' : !melee.length ? 'No melee weapons' : '' },
     { id: 'charge', label: 'Charge', ap: 1, angle: 210, cls: '', fn: '',
       disabled: true, locks: 'shoot',
       title: conceal ? 'Locked: Conceal order' : 'Coming in KT-3' },
@@ -2238,6 +2229,12 @@ function getMeleeWeapons(op) {
 function getDefaultMeleeWeapon(op) {
   const melee = getMeleeWeapons(op);
   return melee.find(w => w.isDefault) || melee[0] || null;
+}
+function hasFightTarget(op) {
+  return Object.values(gameData.operatives || {}).some(o =>
+    o.player !== op.player && o.wounds > 0 && o.x >= 0 &&
+    Math.hypot(o.x - op.x, o.y - op.y) <= 1
+  );
 }
 
 // Returns { valid, reason, inCover }
@@ -2731,14 +2728,15 @@ function updateFightOverlay(p) {
     overlay.appendChild(svgEl('circle', {
       cx: hoverTarget.x, cy: hoverTarget.y, r: TOKEN_R * 1.65,
       fill: 'none', stroke: valid ? '#e74c3c' : '#666',
-      'stroke-width': 0.14, opacity: '0.85',
+      'stroke-width': valid ? 0.18 : 0.1, opacity: '0.85',
     }));
-    overlay.appendChild(svgEl('line', {
+    const lineAttrs = {
       x1: attacker.x, y1: attacker.y, x2: hoverTarget.x, y2: hoverTarget.y,
-      stroke: valid ? 'rgba(200,80,80,0.5)' : 'rgba(100,100,100,0.35)',
-      'stroke-width': 0.1,
-    }));
-    const dTxt = dist.toFixed(1) + '"' + (valid ? '' : ' — out of reach');
+      stroke: valid ? '#e74c3c' : 'rgba(100,100,100,0.35)',
+      'stroke-width': 0.12, 'stroke-dasharray': '0.35 0.2',
+    };
+    overlay.appendChild(svgEl('line', lineAttrs));
+    const dTxt = valid ? 'FIGHT' : dist.toFixed(1) + '" — out of reach';
     const midX = (attacker.x + hoverTarget.x) / 2;
     const midY = (attacker.y + hoverTarget.y) / 2 - 0.55;
     const lblW = Math.max(1.4, dTxt.length * 0.165 + 0.4);
@@ -2758,8 +2756,8 @@ async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
   activation.apSpent      = true;
   activation.apRemaining -= 1;
 
-  const atkHitStat     = parseHit(atkWeapon.profiles.HIT);
-  const defHitStat     = defWeapon ? parseHit(defWeapon.profiles.HIT) : 4;
+  const atkHitStat      = parseHit(atkWeapon.profiles.HIT);
+  const defHitStat      = defWeapon ? parseHit(defWeapon.profiles.HIT) : 4;
   const effectiveAtkHit = isInjuredOp(attacker) ? Math.min(atkHitStat + 1, 6) : atkHitStat;
   const effectiveDefHit = isInjuredOp(target)   ? Math.min(defHitStat + 1, 6) : defHitStat;
   const [atkNDmg, atkCDmg] = parseDmgPair(atkWeapon.profiles.DMG);
@@ -2771,13 +2769,53 @@ async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
   const atkRolls = Array.from({ length: atkCount }, () => Math.ceil(Math.random() * 6));
   const defRolls = Array.from({ length: defCount }, () => Math.ceil(Math.random() * 6));
 
-  // Pre-mark misses — auto-resolved with no effect; only hits/crits are interactive
-  const atkActions = atkRolls.map(d => (d === 1 || d < effectiveAtkHit) ? 'miss' : '');
-  const defActions = defRolls.map(d => (d === 1 || d < effectiveDefHit) ? 'miss' : '');
+  // Classify attacker dice
+  const atkAnnotated = atkRolls.map(d => {
+    if (d === 6)                            return 'crit';
+    if (d !== 1 && d >= effectiveAtkHit)   return 'hit';
+    return 'miss';
+  });
 
-  const atkHasActive = atkActions.some(a => a === '');
-  const defHasActive = defActions.some(a => a === '');
-  const firstTurn    = atkHasActive ? 'attacker' : (defHasActive ? 'defender' : 'done');
+  // Classify defender dice (before blocking)
+  const defRaw = defRolls.map(d => {
+    if (d === 6)                            return 'crit';
+    if (d !== 1 && d >= effectiveDefHit)   return 'hit';
+    return 'miss';
+  });
+
+  // Auto-resolve: attacker always strikes; defender blocks optimally then strikes with remainder
+  let rAtkCrits = atkAnnotated.filter(c => c === 'crit').length;
+  let rAtkHits  = atkAnnotated.filter(c => c === 'hit').length;
+  let rDefCrits = defRaw.filter(c => c === 'crit').length;
+  let rDefHits  = defRaw.filter(c => c === 'hit').length;
+
+  // Defender crits block attacker crits first, then normals
+  const dCritBlockC = Math.min(rDefCrits, rAtkCrits);
+  rDefCrits -= dCritBlockC; rAtkCrits -= dCritBlockC;
+  const dCritBlockH = Math.min(rDefCrits, rAtkHits);
+  rDefCrits -= dCritBlockH; rAtkHits -= dCritBlockH;
+  // Defender hits block attacker normals
+  const dHitBlockH = Math.min(rDefHits, rAtkHits);
+  rDefHits -= dHitBlockH; rAtkHits -= dHitBlockH;
+
+  // Remaining defender dice strike attacker
+  const defStrikeCrits = rDefCrits;
+  const defStrikeHits  = rDefHits;
+
+  const dmgToDefender = (atkAnnotated.filter(c=>c==='crit').length - dCritBlockC) * atkCDmg +
+                        (atkAnnotated.filter(c=>c==='hit').length  - dCritBlockH - dHitBlockH) * atkNDmg;
+  const dmgToAttacker = defStrikeCrits * defCDmg + defStrikeHits * defNDmg;
+
+  // Annotate defender dice for display
+  let defCritBlockLeft = dCritBlockC + dCritBlockH;
+  let defHitBlockLeft  = dHitBlockH;
+  const defAnnotated = defRaw.map(c => {
+    if (c === 'crit' && defCritBlockLeft > 0) { defCritBlockLeft--; return 'crit-block'; }
+    if (c === 'hit'  && defHitBlockLeft  > 0) { defHitBlockLeft--;  return 'hit-block'; }
+    if (c === 'crit') return 'crit-strike';
+    if (c === 'hit')  return 'hit-strike';
+    return 'miss';
+  });
 
   await db.ref(`games-kt/${gameId}/pendingFight`).set({
     attackerOpId: attacker.id,
@@ -2789,118 +2827,30 @@ async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
     defHitStat: effectiveDefHit,
     atkNDmg, atkCDmg,
     defNDmg, defCDmg,
-    phase: firstTurn === 'done' ? 'confirm' : 'resolving',
+    phase: 'confirm',
     atkRolls,
     defRolls,
-    atkActions,
-    defActions,
-    atkDmgDealt: 0,
-    defDmgDealt: 0,
-    whoseTurn: firstTurn,
+    atkAnnotated,
+    defAnnotated,
+    dmgToDefender,
+    dmgToAttacker,
   });
 
   fightWeapon = null;
   reRenderPhaseBar();
 }
 
-async function useFightDie(side, idx, action, playerSlot) {
-  const p = gameData.pendingFight;
-  if (!p || p.phase !== 'resolving') return;
-
-  const iAmAttacker = p.attackerSlot === playerSlot;
-  const iAmDefender = (gameData.operatives || {})[p.defenderOpId]?.player === playerSlot;
-  if (side === 'atk' && (!iAmAttacker || p.whoseTurn !== 'attacker')) return;
-  if (side === 'def' && (!iAmDefender || p.whoseTurn !== 'defender')) return;
-
-  const atkLen = (p.atkRolls || []).length;
-  const defLen = (p.defRolls || []).length;
-  const atkActions = Array.from({ length: atkLen }, (_, i) => (p.atkActions || {})[i] || '');
-  const defActions = Array.from({ length: defLen }, (_, j) => (p.defActions || {})[j] || '');
-
-  const myActions  = side === 'atk' ? atkActions : defActions;
-  const oppActions = side === 'atk' ? defActions  : atkActions;
-  const myRolls    = side === 'atk' ? (p.atkRolls || []) : (p.defRolls || []);
-  const oppRolls   = side === 'atk' ? (p.defRolls || []) : (p.atkRolls || []);
-  const myHitStat  = side === 'atk' ? p.atkHitStat : p.defHitStat;
-
-  if (myActions[idx] !== '') return;
-
-  let dmgDelta = 0;
-  const newMy  = [...myActions];
-  const newOpp = [...oppActions];
-
-  if (action === 'strike') {
-    const val    = myRolls[idx];
-    const isCrit = val === 6;
-    const nDmg   = side === 'atk' ? p.atkNDmg : p.defNDmg;
-    const cDmg   = side === 'atk' ? p.atkCDmg : p.defCDmg;
-    dmgDelta = isCrit ? cDmg : nDmg;
-    newMy[idx] = 'strike';
-  } else if (action === 'block') {
-    const myDieVal = myRolls[idx];
-    const isMyCrit = myDieVal === 6;
-    const myIsHit  = myDieVal !== 1 && myDieVal >= myHitStat;
-    if (!isMyCrit && !myIsHit) return; // miss die can't block
-
-    const oppHitStat = side === 'atk' ? p.defHitStat : p.atkHitStat;
-    let bestIdx = -1, bestPriority = -1;
-    for (let j = 0; j < oppRolls.length; j++) {
-      if (newOpp[j] !== '') continue;
-      const v = oppRolls[j];
-      const isOppCrit = v === 6;
-      if (!isMyCrit && isOppCrit) continue; // normal die can't block crit
-      const priority = isOppCrit ? 2 : (v !== 1 && v >= oppHitStat ? 1 : 0);
-      if (priority > bestPriority) { bestPriority = priority; bestIdx = j; }
-    }
-    if (bestIdx === -1) return; // nothing to block
-
-    newMy[idx]      = 'block';
-    newOpp[bestIdx] = 'blocked';
-  }
-
-  const updAtkActions = side === 'atk' ? newMy  : newOpp;
-  const updDefActions = side === 'atk' ? newOpp : newMy;
-
-  const atkDone = updAtkActions.every(a => a !== '');
-  const defDone = updDefActions.every(a => a !== '');
-  const allDone = atkDone && defDone;
-
-  let nextTurn;
-  if (allDone) {
-    nextTurn = 'done';
-  } else {
-    const idealNext        = p.whoseTurn === 'attacker' ? 'defender' : 'attacker';
-    const idealNextActions = idealNext === 'attacker' ? updAtkActions : updDefActions;
-    nextTurn = idealNextActions.some(a => a === '') ? idealNext : p.whoseTurn;
-    // If current side also has no more: done
-    const myCurrentActions = p.whoseTurn === 'attacker' ? updAtkActions : updDefActions;
-    if (nextTurn === p.whoseTurn && !myCurrentActions.some(a => a === '')) nextTurn = 'done';
-  }
-
-  const atkDmg = (p.atkDmgDealt || 0) + (side === 'atk' ? dmgDelta : 0);
-  const defDmg = (p.defDmgDealt || 0) + (side === 'def' ? dmgDelta : 0);
-
-  await db.ref(`games-kt/${gameId}/pendingFight`).update({
-    atkActions: updAtkActions,
-    defActions: updDefActions,
-    atkDmgDealt: atkDmg,
-    defDmgDealt: defDmg,
-    whoseTurn: nextTurn,
-    phase: (allDone || nextTurn === 'done') ? 'confirm' : 'resolving',
-  });
-}
-
 async function confirmFightDamage(playerSlot) {
   const p = gameData.pendingFight;
   if (!p || p.phase !== 'confirm') return;
-  if (p.attackerSlot !== playerSlot) return; // only attacker confirms
+  if (p.attackerSlot !== playerSlot) return;
 
   const attacker = (gameData.operatives || {})[p.attackerOpId];
   const defender = (gameData.operatives || {})[p.defenderOpId];
   if (!attacker || !defender) return;
 
-  const newAtkWounds = Math.max(0, (attacker.wounds || 0) - (p.defDmgDealt || 0));
-  const newDefWounds = Math.max(0, (defender.wounds || 0) - (p.atkDmgDealt || 0));
+  const newAtkWounds = Math.max(0, (attacker.wounds || 0) - (p.dmgToAttacker || 0));
+  const newDefWounds = Math.max(0, (defender.wounds || 0) - (p.dmgToDefender || 0));
 
   await db.ref(`games-kt/${gameId}`).update({
     [`operatives/${attacker.id}/wounds`]: newAtkWounds,
@@ -2915,111 +2865,62 @@ async function confirmFightDamage(playerSlot) {
   }
 }
 
-// ── Fight resolution render ────────────────────────────────
+// ── Fight resolution render (auto-resolve) ─────────────────
 
 function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp, defOp) {
-  const atkRolls   = p.atkRolls || [];
-  const defRolls   = p.defRolls || [];
-  const atkActions = Array.from({ length: atkRolls.length }, (_, i) => (p.atkActions || {})[i] || '');
-  const defActions = Array.from({ length: defRolls.length }, (_, j) => (p.defActions || {})[j] || '');
+  const atkRolls    = p.atkRolls    || [];
+  const defRolls    = p.defRolls    || [];
+  const atkAnnot    = p.atkAnnotated || [];
+  const defAnnot    = p.defAnnotated || [];
 
-  const attName     = escHtml(attOp?.name || '?');
-  const defName     = escHtml(defOp?.name || '?');
-  const atkTotalDmg = p.atkDmgDealt || 0;
-  const defTotalDmg = p.defDmgDealt || 0;
-  const isMyAtkTurn = iAmAttacker && p.whoseTurn === 'attacker';
-  const isMyDefTurn = iAmDefender && p.whoseTurn === 'defender';
+  const attName = escHtml(attOp?.name || '?');
+  const defName = escHtml(defOp?.name || '?');
 
-  function canBlock(side, myIdx) {
-    const myDieVal  = side === 'atk' ? atkRolls[myIdx] : defRolls[myIdx];
-    const isCrit    = myDieVal === 6;
-    const myHitStat = side === 'atk' ? p.atkHitStat : p.defHitStat;
-    const isHit     = myDieVal !== 1 && myDieVal >= myHitStat;
-    if (!isCrit && !isHit) return false;
-    const oppAct  = side === 'atk' ? defActions  : atkActions;
-    const oppRolls = side === 'atk' ? defRolls    : atkRolls;
-    const oppHit  = side === 'atk' ? p.defHitStat : p.atkHitStat;
-    return oppRolls.some((v, j) => {
-      if (oppAct[j] !== '') return false;
-      if (!isCrit && v === 6) return false;
-      return true;
-    });
-  }
+  const ATK_STYLE = {
+    crit:  { label: 'CRIT STRIKE', color: '#e74c3c' },
+    hit:   { label: 'STRIKE',      color: '#27ae60' },
+    miss:  { label: 'MISS',        color: 'var(--text-dim)' },
+  };
+  const DEF_STYLE = {
+    'crit-block':   { label: 'CRIT BLOCK ✓',  color: '#27ae60' },
+    'hit-block':    { label: 'BLOCK ✓',        color: '#27ae60' },
+    'crit-strike':  { label: 'CRIT STRIKE',    color: '#e74c3c' },
+    'hit-strike':   { label: 'STRIKE',         color: '#e67e22' },
+    'miss':         { label: 'MISS',           color: 'var(--text-dim)' },
+  };
 
-  function renderDie(side, idx, roll, actionState) {
-    const hitStat   = side === 'atk' ? p.atkHitStat : p.defHitStat;
-    const isCrit    = roll === 6;
-    const isHit     = roll !== 1 && roll >= hitStat;
-    const isMyTurn  = side === 'atk' ? isMyAtkTurn : isMyDefTurn;
-    const isActive  = actionState === '' && isMyTurn && (isCrit || isHit);
-
-    let stateClass = '', resultLabel = '', resultColor = 'var(--text-dim)';
-    if (actionState === 'miss') {
-      stateClass = 'used'; resultLabel = 'MISS';
-    } else if (actionState === 'strike') {
-      const nDmg = side === 'atk' ? p.atkNDmg : p.defNDmg;
-      const cDmg = side === 'atk' ? p.atkCDmg : p.defCDmg;
-      stateClass = 'used';
-      resultLabel = isCrit ? `CRIT +${cDmg}` : `STRUCK +${nDmg}`;
-      resultColor = isCrit ? '#e74c3c' : '#27ae60';
-    } else if (actionState === 'block') {
-      stateClass = 'used'; resultLabel = 'BLOCKED ✓'; resultColor = 'var(--green)';
-    } else if (actionState === 'blocked') {
-      stateClass = 'blocked-out'; resultLabel = 'BLOCKED'; resultColor = 'var(--red)';
-    } else {
-      if (isCrit)       { resultLabel = 'CRIT'; resultColor = '#e74c3c'; }
-      else if (isHit)   { resultLabel = 'HIT';  resultColor = '#27ae60'; }
-      else              { resultLabel = 'MISS';  resultColor = 'var(--text-dim)'; stateClass = 'used'; }
-      if (isActive) stateClass = 'available';
-    }
-
-    const nDmg = side === 'atk' ? p.atkNDmg : p.defNDmg;
-    const cDmg = side === 'atk' ? p.atkCDmg : p.defCDmg;
-    const strikeDmg = isCrit ? cDmg : nDmg;
-    let btns = '';
-    if (isActive) {
-      const blockOk = canBlock(side, idx);
-      btns = `<div class="fight-die-btns">
-        <button class="strike-btn" onclick="useFightDie('${side}',${idx},'strike','${playerSlot}')">⚔ ${strikeDmg}dmg</button>
-        <button class="block-btn" ${!blockOk ? 'disabled' : ''} onclick="useFightDie('${side}',${idx},'block','${playerSlot}')">🛡 Block</button>
-      </div>`;
-    }
-
-    return `<div class="fight-die ${stateClass}">
-      <span style="color:${resultColor}">${dieFaceSVG(roll, 20)}</span>
-      <div class="fight-die-result" style="color:${resultColor}">${resultLabel}</div>
-      ${btns}
+  function renderDie(roll, style) {
+    const isActive = style.label !== 'MISS';
+    return `<div class="fight-die${isActive ? '' : ' used'}">
+      <span style="color:${style.color}">${dieFaceSVG(roll, 20)}</span>
+      <div class="fight-die-result" style="color:${style.color}">${style.label}</div>
     </div>`;
   }
 
-  const atkDice = atkRolls.map((r, i) => renderDie('atk', i, r, atkActions[i])).join('') || '<span style="font-size:11px;color:var(--text-dim)">No dice</span>';
-  const defDice = defRolls.map((r, j) => renderDie('def', j, r, defActions[j])).join('') || '<span style="font-size:11px;color:var(--text-dim)">No dice</span>';
+  const atkDice = atkRolls.map((r, i) => renderDie(r, ATK_STYLE[atkAnnot[i] || 'miss'])).join('') ||
+    '<span style="font-size:11px;color:var(--text-dim)">No dice</span>';
+  const defDice = defRolls.map((r, j) => renderDie(r, DEF_STYLE[defAnnot[j] || 'miss'])).join('') ||
+    '<span style="font-size:11px;color:var(--text-dim)">No dice</span>';
 
-  let statusMsg = '';
-  if (p.phase === 'confirm') {
-    statusMsg = `<div class="fight-status">All dice resolved.</div>`;
-  } else if (p.whoseTurn === 'attacker') {
-    statusMsg = `<div class="fight-status">${iAmAttacker ? 'Your turn' : 'Attacker\'s turn'} — pick a die to Strike (deal damage) or Block (cancel opponent\'s die).</div>`;
-  } else if (p.whoseTurn === 'defender') {
-    statusMsg = `<div class="fight-status">${iAmDefender ? 'Your turn' : 'Defender\'s turn'} — pick a die.</div>`;
-  }
+  const dmgAtk = p.dmgToDefender || 0;
+  const dmgDef = p.dmgToAttacker || 0;
+
+  const summaryParts = [
+    dmgAtk > 0 ? `${attName} deals <strong>${dmgAtk}</strong> wounds to ${defName}` : null,
+    dmgDef > 0 ? `${defName} deals <strong>${dmgDef}</strong> wounds to ${attName}` : null,
+    dmgAtk === 0 && dmgDef === 0 ? 'No damage dealt.' : null,
+  ].filter(Boolean);
+
+  const confirmHtml = iAmAttacker
+    ? `<div class="shoot-result">${summaryParts.join(' &nbsp;|&nbsp; ')}</div>
+       <button class="btn btn-primary" onclick="confirmFightDamage('${playerSlot}')">Apply Damage</button>`
+    : `<div class="shoot-result">${summaryParts.join(' &nbsp;|&nbsp; ')}</div>
+       <span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`;
 
   const atkWpn = escHtml(p.atkWeapon?.name || '?');
   const defWpn = escHtml(p.defWeapon?.name || '?');
+  const label  = iAmAttacker ? 'Close Combat' : 'Incoming Fight!';
 
-  let confirmHtml = '';
-  if (p.phase === 'confirm') {
-    const parts = [
-      atkTotalDmg > 0 ? `${attName} deals ${atkTotalDmg} dmg to ${defName}` : null,
-      defTotalDmg > 0 ? `${defName} deals ${defTotalDmg} dmg to ${attName}` : null,
-    ].filter(Boolean);
-    const summary = parts.length ? parts.join(' &nbsp;|&nbsp; ') : 'No damage dealt.';
-    confirmHtml = `<div class="shoot-result">${summary}</div>` + (iAmAttacker
-      ? `<button class="btn btn-primary" onclick="confirmFightDamage('${playerSlot}')">Apply Damage</button>`
-      : `<span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`);
-  }
-
-  const label = iAmAttacker ? 'Close Combat' : 'Incoming Fight!';
   return `
     <span class="phase-bar-label">${label}</span>
     <div class="phase-bar-body">
@@ -3028,17 +2929,17 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
           <strong style="font-size:13px;">${attName} ⚔ ${defName}</strong>
           <span style="font-size:11px;color:var(--text-dim);">${atkWpn} vs ${defWpn}</span>
         </div>
-        ${statusMsg}
+        <div class="fight-status">Auto-resolved — attacker strikes, defender blocks crits first then normals, remainder retaliates.</div>
         <div class="fight-pools">
           <div class="fight-pool fight-pool-atk">
-            <div class="fight-pool-label">${attName} — ${atkWpn} (ATK ${p.atkWeapon?.profiles?.ATK||'?'}, ${p.atkHitStat}+)</div>
+            <div class="fight-pool-label">${attName} — ${atkWpn} (ATK ${p.atkWeapon?.profiles?.ATK||'?'}, hit on ${p.atkHitStat}+)</div>
             <div class="fight-dice">${atkDice}</div>
-            <div class="fight-pool-total" style="color:${atkTotalDmg>0?'var(--red)':'var(--text-dim)'}">Dealt: ${p.atkDmgDealt || 0} wounds</div>
+            <div class="fight-pool-total" style="color:${dmgAtk>0?'var(--red)':'var(--text-dim)'}">Deals: ${dmgAtk} wounds</div>
           </div>
           <div class="fight-pool fight-pool-def">
-            <div class="fight-pool-label">${defName} — ${defWpn} (ATK ${p.defWeapon?.profiles?.ATK||'?'}, ${p.defHitStat}+)</div>
+            <div class="fight-pool-label">${defName} — ${defWpn} (ATK ${p.defWeapon?.profiles?.ATK||'?'}, hit on ${p.defHitStat}+)</div>
             <div class="fight-dice">${defDice}</div>
-            <div class="fight-pool-total" style="color:${defTotalDmg>0?'var(--red)':'var(--text-dim)'}">Dealt: ${p.defDmgDealt || 0} wounds</div>
+            <div class="fight-pool-total" style="color:${dmgDef>0?'var(--red)':'var(--text-dim)'}">Deals: ${dmgDef} wounds</div>
           </div>
         </div>
         ${confirmHtml}
