@@ -1,0 +1,28 @@
+Phase 14 Scrape Report
+======================
+Date: 2026-06-25T02:41:02.447Z
+
+## Astra Militarum
+URL: https://wahapedia.ru/wh40k10ed/factions/astra-militarum/datasheets.html
+Page size: 5464 KB
+Units found: 134
+Units parsed: 134
+Points missing: 0
+Stats missing: 0
+Weapons missing: 2
+Parse errors: 0
+Warnings per unit:
+  Aegis Defence Line: no weapons parsed
+  Cyclops Demolition Vehicle: no weapons parsed
+
+## Craftworlds Eldar
+URL: https://wahapedia.ru/wh40k10ed/factions/aeldari/datasheets.html
+Page size: 3929 KB
+Units found: 97
+Units parsed: 97
+Points missing: 0
+Stats missing: 0
+Weapons missing: 1
+Parse errors: 0
+Warnings per unit:
+  Webway Gate: no weapons parsed
