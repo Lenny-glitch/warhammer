@@ -267,6 +267,54 @@ from Firebase project settings (`warhammer-5f2f4`).
 
 ---
 
+### KT-2 Part 3 — Drag-to-Fight (2026-06-29)
+
+**Fight button** enabled. Operatives with melee weapons (`type: 'melee'`) can now fight.
+
+**Flow:**
+1. Player clicks Fight (1AP) in activation panel or radial menu
+2. If multiple melee weapons → weapon picker panel appears inline
+3. Click-drag from active token toward an enemy:
+   - 1" control range ring shown around attacker
+   - Red ring on target if within 1" (valid), grey if out of reach
+   - Distance label shown on drag
+4. Release on valid target (≤1" away) → AP spent, `pendingFight` written to Firebase
+5. Both panels switch to **Fight Resolution** view:
+   - Both sides' dice rolled simultaneously; misses auto-resolved with no effect
+   - Attacker goes first — interactive die-picking: click a hit/crit die, then Strike or Block
+   - Block auto-cancels the best available opponent die (crit blocks anything; normal only blocks non-crits)
+   - Sides alternate until all dice are resolved
+   - Running damage tallies shown live for both sides
+6. When all dice resolved → "Apply Damage" button appears (attacker triggers)
+7. Both operatives take their wounds in a single Firebase write; `pendingFight` cleared
+
+**Rules implemented:**
+- Attacker initiates fight from within 1" (control range)
+- Both sides roll their own melee weapon's ATK dice
+- Crit die (6): can Strike (deal crit DMG) or Block any opponent die
+- Normal hit die: can Strike (deal normal DMG) or Block a non-crit opponent die
+- Miss die: auto-resolved, no effect
+- Alternating resolution: attacker → defender → attacker… until all dice resolved
+- If one side runs out of active dice early, the other side resolves all remaining
+- Injured penalty applied: HIT threshold +1 for injured operative (wounds ≤ half maxWounds)
+- `hasFought` flag prevents fighting twice in same activation
+- Defender's retaliation is NOT a separate action — it's part of attacker's Fight action at no AP cost to defender
+- Both operatives can be incapacitated in the same fight (all dice resolve before wounds applied)
+
+**Firebase:** `pendingFight` node at `games-kt/{gameId}/pendingFight` syncs state across both clients. Updated once per die click. Cleared atomically when damage is confirmed.
+
+**Defender weapon auto-pick:** defender's `isDefault: true` melee weapon is selected automatically (or first melee weapon if no default). Defender cannot choose a different weapon.
+
+**Interactive resolution used** (not auto-resolve). The brief's auto-resolve fallback was not needed — the alternating click-per-die pattern maps cleanly to the Firebase sync model.
+
+**VDT name fix:** Firebase `gameData/kill-team/factions/void-dancer-troupe/units/player/name` and all 5 Player entries in the dev export patched to "Troupe Player". Deduplication will now produce "Troupe Player #1–5" instead of "Player #1–5". Scraped data file also fixed.
+
+**Known limitations:**
+- `hasFought` only blocks fighting again; RAW allows fighting multiple times per activation with enough AP — revisit if this matters.
+- Defender weapon selection is always the first default melee weapon; no choice given to defender.
+
+---
+
 ## Things The Next AI Should Know
 
 - **`firebase-config.js`** is gitignored but required. It's the same credentials as the
