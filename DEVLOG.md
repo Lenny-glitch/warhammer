@@ -240,6 +240,33 @@ from Firebase project settings (`warhammer-5f2f4`).
 
 ---
 
+### KT-3 Part 1 — Radial Action Menu + Deployment Fix (2026-06-28)
+
+**What shipped (uncommitted changes to `index.html`):**
+
+**Radial action menu:**
+- During firefight activation, action buttons are now presented as a circular radial menu centred on the active operative's token rather than as a flat list in the activation panel.
+- 7 buttons arranged radially: Move, Dash, Shoot, Fight, Charge, Engage/Conceal (order toggle), End.
+- `showRadialMenu(opId, playerSlot)` / `hideRadialMenu()` / `refreshRadialIfActive()` — new functions. `refreshRadialIfActive()` is called from `reRender()` so the menu tracks operative position when the board re-renders.
+- `<div id="radial-menu"></div>` added to body; wired via CSS absolute positioning.
+- `let radialSlot = null` added to module state.
+
+**Deployment fix (simultaneous):**
+- Deployment is no longer gated on `turn.activePlayer === viewerSlot`. Both players can now deploy simultaneously instead of alternating. This removes a friction point when one player is slow to place — the other can keep going.
+
+**Shoot confirmation flag:**
+- `activation.hasShot = true` now set alongside `apSpent` on `confirmShootTarget`. Prevents double-shoot within the same activation.
+
+**Cover UI text:**
+- Defender cover prompt clarified to: "You are in cover — use it? Convert one defence die to an automatic normal save."
+
+**Dead operative opacity:**
+- Expended token opacity changed from `0.25` → `0.55`. Operatives were becoming too hard to see on the board when expended.
+
+**Out of scope:** Fight, Charge mechanics (KT-3 Part 2+).
+
+---
+
 ## Things The Next AI Should Know
 
 - **`firebase-config.js`** is gitignored but required. It's the same credentials as the

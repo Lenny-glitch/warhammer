@@ -182,7 +182,7 @@
     .op-row.clickable:hover { background: var(--surface2); }
     .op-row.active-op { background: rgba(201,168,76,0.08); }
     .op-row.expended  { opacity: 0.42; }
-    .op-row.dead      { opacity: 0.25; }
+    .op-row.dead      { opacity: 0.55; }
     .op-name    { font-size: 12px; font-weight: 600; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .op-role    { font-size: 10px; color: var(--text-dim); margin-bottom: 3px; }
     .op-status-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
@@ -282,6 +282,41 @@
     .cp-row { display: flex; gap: 1rem; align-items: center; font-size: 13px; }
     .cp-p1  { color: var(--p1); font-weight: 700; }
     .cp-p2  { color: var(--p2); font-weight: 700; }
+
+    /* ── RADIAL MENU ── */
+    #radial-menu {
+      position: fixed; width: 0; height: 0; overflow: visible;
+      pointer-events: none; z-index: 200;
+      opacity: 0; transition: opacity 0.12s ease;
+    }
+    #radial-menu.visible { opacity: 1; }
+    .radial-item, .radial-end {
+      position: absolute;
+      width: 50px; height: 50px; border-radius: 50%;
+      border: 1px solid var(--border-hi); background: var(--surface2); color: var(--text);
+      font-size: 10px; font-weight: 600; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; text-align: center; padding: 4px; line-height: 1.15;
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+      pointer-events: auto;
+    }
+    .radial-item:hover:not([disabled]) { background: var(--surface); border-color: var(--gold); color: var(--gold); }
+    .radial-item[disabled] { opacity: 0.35; cursor: default; border-style: dashed; }
+    .radial-end { width: 44px; height: 44px; border-color: var(--border); color: var(--text-dim); }
+    .radial-end:hover { background: var(--red-dim); border-color: var(--red); color: var(--red); }
+    .r-order  { border-color: var(--gold); color: var(--gold); }
+    .r-engage { border-color: var(--green); color: var(--green); }
+    .r-conceal { border-color: var(--border-hi); color: var(--text-dim); }
+    .r-shoot:not([disabled]) { border-color: var(--p1); color: var(--p1); }
+    .ri-ap { font-size: 9px; color: var(--text-dim); font-weight: 400; }
+    .radial-item.restriction-target { border-color: var(--red) !important; }
+    .radial-item.restriction-target::after {
+      content: '✕';
+      position: absolute; top: -5px; right: -5px;
+      width: 14px; height: 14px; font-size: 8px; font-weight: 900; line-height: 14px;
+      text-align: center; background: var(--red); color: #fff; border-radius: 50%;
+      pointer-events: none;
+    }
 
     /* ── ERROR ── */
     .error-box {
@@ -543,6 +578,7 @@ let deploySelId   = null;  // selected operative ID during deployment
 let dragState     = null;  // { opId, startX, startY, maxMove, svg, moveOverlay, arrowOverlay }
 let shootWeapon   = null;  // null | 'picking' | weapon object — during shoot action
 let shootState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } — during drag
+let radialSlot    = null;  // playerSlot whose radial is currently showing
 let rosterPreviewTimers = {};
 
 // ═══════════════════════════════════════════════════════════
@@ -1089,8 +1125,8 @@ function renderOpRow(op, opPlayer, viewerSlot, status, phase, turn, isDead) {
   const myTurn      = turn.activatingPlayer === viewerSlot;
   const canAct      = isMe && op.ready && isDeployed && myTurn && phase === 'firefight' && status === 'active' && !activation;
   const canDeselect = isActive && activation && !activation.apSpent;
-  // Clickable during deployment: my undeployed ops
-  const canDeploy   = isMe && !isDeployed && status === 'deployment' && turn.activePlayer === viewerSlot;
+  // Clickable during deployment: my undeployed ops (simultaneous — no activePlayer gating)
+  const canDeploy   = isMe && !isDeployed && status === 'deployment';
 
   const woundsPct  = op.maxWounds > 0 ? op.wounds / op.maxWounds : 1;
   const isWounded  = op.wounds < op.maxWounds && op.wounds > op.maxWounds / 2;
@@ -1108,11 +1144,11 @@ function renderOpRow(op, opPlayer, viewerSlot, status, phase, turn, isDead) {
                        canAct      ? `onclick="activateOperative('${op.id}','${viewerSlot}')"` :
                        canDeploy   ? `onclick="selectForDeploy('${op.id}')"` : '';
 
-  const woundsColor = isInjured ? 'var(--red)' : isWounded ? 'var(--orange)' : 'var(--green)';
+  const woundsColor = isDead || isInjured ? 'var(--red)' : isWounded ? 'var(--orange)' : 'var(--green)';
 
   return `
     <div class="${rowClass}" ${clickHandler} data-op-id="${op.id}">
-      <div class="op-name">${escHtml(op.name)}</div>
+      <div class="op-name">${isDead ? '✕ ' : ''}${escHtml(op.name)}</div>
       ${op.role ? `<div class="op-role">${escHtml(op.role)}</div>` : ''}
       <div class="op-status-row">
         <span class="op-wounds" style="color:${woundsColor}">${op.wounds}/${op.maxWounds}W</span>
@@ -1136,7 +1172,7 @@ function renderPhaseBar(status, phase, playerSlot, turn) {
   const myTurn    = turn.activatingPlayer === playerSlot;
 
   if (status === 'terrain') return renderTerrainBar(playerSlot, iAmActive);
-  if (status === 'deployment') return renderDeployBar(playerSlot, iAmActive);
+  if (status === 'deployment') return renderDeployBar(playerSlot);
   if (status === 'initiative') return renderInitiativeBar(playerSlot);
   if (phase === 'strategy')    return renderStrategyBar(playerSlot, turn);
   if (phase === 'firefight')   return renderFirefightBar(playerSlot, turn, myTurn);
@@ -1197,7 +1233,7 @@ function renderTerrainBar(playerSlot, iAmActive) {
 
 // ── Deployment Phase ──
 
-function renderDeployBar(playerSlot, iAmActive) {
+function renderDeployBar(playerSlot) {
   const ops         = Object.values(gameData.operatives || {});
   const myUndeployed = ops.filter(o => o.player === playerSlot && o.x < 0);
   const allDeployed  = ops.every(o => o.x >= 0);
@@ -1207,15 +1243,13 @@ function renderDeployBar(playerSlot, iAmActive) {
   return `
     <span class="phase-bar-label">Deploy</span>
     <div class="phase-bar-body">
-      ${iAmActive && myUndeployed.length > 0
+      ${myUndeployed.length > 0
         ? `${deploySelId
             ? `<span style="font-size:12px;">Click your deployment zone to place the selected operative.</span>
                <button class="btn btn-ghost" onclick="cancelDeploy()">Cancel</button>`
             : `<span style="font-size:12px;">Select an operative from your sidebar, then click your drop zone to place it.</span>`
           }`
-        : myUndeployed.length === 0
-          ? `<span style="font-size:12px;color:var(--text-dim);">All your operatives deployed. Waiting for opponent…</span>`
-          : `<span style="font-size:12px;color:var(--text-dim);">Waiting for opponent to deploy…</span>`
+        : `<span style="font-size:12px;color:var(--text-dim);">All your operatives deployed. Waiting for opponent…</span>`
       }
     </div>
   `;
@@ -1332,23 +1366,29 @@ function renderActivationBar(playerSlot, turn) {
       </div>`;
   }
 
-  const ranged       = getRangedWeapons(op);
-  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!gameData.pendingShot;
-  const dragActive   = !!shootState || !!dragState;
+  const ranged        = getRangedWeapons(op);
+  const conceal       = op.order === 'conceal';
+  const hasMoved      = activation.hasMoved;
+  const hasDashed     = activation.hasDashed;
+  const hasShot       = activation.hasShot;
+  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!gameData.pendingShot || conceal;
+  const dragActive    = !!shootState || !!dragState;
+  const moveDisabled  = ap < 1 || dragActive || hasMoved;
+  const dashDisabled  = ap < 1 || dragActive || hasDashed;
 
   return `
     <div class="activation-wrap">
       <span class="activation-name">${escHtml(op.name)}</span>
       <span class="activation-ap">${ap} AP</span>
-      <button class="order-btn ${op.order}" onclick="toggleOrder('${activation.opId}','${playerSlot}')">
+      <button class="order-btn ${op.order}" ${hasShot ? 'disabled title="Cannot switch to Conceal after shooting"' : `onclick="toggleOrder('${activation.opId}','${playerSlot}')"`}>
         ${op.order === 'engage' ? 'Engage' : 'Conceal'}
       </button>
       <div class="activation-actions">
-        <button class="action-btn" onclick="startMove('${playerSlot}',false)" ${ap < 1 || dragActive ? 'disabled' : ''}>Move (1AP)</button>
-        <button class="action-btn" onclick="startMove('${playerSlot}',true)"  ${ap < 1 || dragActive ? 'disabled' : ''}>Dash (1AP)</button>
-        <button class="action-btn" onclick="startShoot('${playerSlot}')" ${shootDisabled ? 'disabled' : ''}>Shoot (1AP)</button>
+        <button class="action-btn" onclick="startMove('${playerSlot}',false)" ${moveDisabled ? 'disabled' : ''} title="${hasMoved ? 'Already moved this activation' : ''}">Move (1AP)</button>
+        <button class="action-btn" onclick="startMove('${playerSlot}',true)"  ${dashDisabled ? 'disabled' : ''} title="${hasDashed ? 'Already dashed' : '3&quot; — combine with Move for max distance'}">Dash (1AP)</button>
+        <button class="action-btn" onclick="startShoot('${playerSlot}')" ${shootDisabled ? 'disabled' : ''} title="${conceal ? 'Locked: Conceal order' : ''}">Shoot (1AP)</button>
         <button class="action-btn stub" title="Coming in KT-3" disabled>Fight (1AP)</button>
-        <button class="action-btn stub" title="Coming in KT-3" disabled>Charge (1AP)</button>
+        <button class="action-btn stub" ${conceal ? 'title="Locked: Conceal order"' : 'title="Coming in KT-3"'} disabled>Charge (1AP)</button>
       </div>
       <button class="btn" onclick="endActivation('${playerSlot}')" style="margin-left:auto;">End Activation</button>
     </div>
@@ -1455,14 +1495,28 @@ function drawOperativeToken(parent, op, viewerSlot, status, phase) {
   const rimColor  = isP1 ? '#4a9eff' : '#c97af7';
   const isExpended = !op.ready;
   const isActive   = activation?.opId === op.id;
+  const isDead     = op.wounds <= 0;
 
   const g = svgEl('g', { 'data-op-id': op.id, class: 'op-token' });
+
+  // ── Dead / incapacitated token ──
+  if (isDead) {
+    g.style.opacity = '0.65';
+    g.appendChild(svgEl('circle', { cx: op.x, cy: op.y, r: TOKEN_R, fill: 'rgba(20,20,36,0.8)', stroke: '#444460', 'stroke-width': 0.1 }));
+    const xSz = TOKEN_R * 0.52;
+    const xOpt = { stroke: '#cc6060', 'stroke-width': 0.16, 'stroke-linecap': 'round', 'pointer-events': 'none' };
+    g.appendChild(svgEl('line', { x1: op.x - xSz, y1: op.y - xSz, x2: op.x + xSz, y2: op.y + xSz, ...xOpt }));
+    g.appendChild(svgEl('line', { x1: op.x + xSz, y1: op.y - xSz, x2: op.x - xSz, y2: op.y + xSz, ...xOpt }));
+    parent.appendChild(g);
+    return;
+  }
+
   if (isExpended) g.style.opacity = '0.45';
 
   // Token body
   g.appendChild(svgEl('circle', { cx: op.x, cy: op.y, r: TOKEN_R, fill: baseColor + '60', stroke: rimColor, 'stroke-width': isActive ? 0.18 : 0.12 }));
 
-  // Health arc — replaces old pie sector; color shift IS the injured visual cue
+  // Health arc
   drawHealthArc(g, op);
 
   // Abbreviation label
@@ -1475,13 +1529,15 @@ function drawOperativeToken(parent, op, viewerSlot, status, phase) {
   abbr.textContent = (op.name || '?')[0].toUpperCase();
   g.appendChild(abbr);
 
-  // Conceal indicator: dashed outer ring
-  if (op.order === 'conceal') {
-    g.appendChild(svgEl('circle', {
-      cx: op.x, cy: op.y, r: TOKEN_R * 1.55,
-      fill: 'none', stroke: rimColor + '55', 'stroke-width': 0.1, 'stroke-dasharray': '0.3 0.2',
-    }));
-  }
+  // Order status pip — top-right corner; green = Engage, muted = Conceal; readable by both players
+  const orderFill   = op.order === 'engage' ? '#4caf74' : '#2a2a42';
+  const orderStroke = op.order === 'engage' ? '#2a6a44' : '#505070';
+  g.appendChild(svgEl('circle', {
+    cx: op.x + TOKEN_R * 0.75, cy: op.y - TOKEN_R * 0.75,
+    r: TOKEN_R * 0.28,
+    fill: orderFill, stroke: orderStroke, 'stroke-width': 0.06,
+    'pointer-events': 'none',
+  }));
 
   // Active activation glow (behind everything)
   if (isActive) {
@@ -1644,17 +1700,12 @@ function cancelDeploy() {
 }
 
 function setupDeployClick(svg, playerSlot) {
-  const iAmActive = gameData.turn?.activePlayer === playerSlot;
-  if (!iAmActive) return;
-
   const isP1 = playerSlot === 'player1';
   const minY  = isP1 ? BOARD_H - DEPLOY_DEPTH : 0;
   const maxY  = isP1 ? BOARD_H : DEPLOY_DEPTH;
 
   svg.style.cursor = 'crosshair';
 
-  // No { once: true } — SVG is replaced on every reRender so old listeners die naturally.
-  // Guard on deploySelId inside the handler so non-selection clicks are ignored.
   svg.addEventListener('click', async e => {
     if (!deploySelId) return;
     const pt = svg.createSVGPoint();
@@ -1662,10 +1713,8 @@ function setupDeployClick(svg, playerSlot) {
     const p  = pt.matrixTransform(svg.getScreenCTM().inverse());
     const sp = snapToGrid(p.x, p.y);
 
-    // snapToGrid clamps to 0.5…BOARD_H-0.5; treat anything within the zone as valid.
     if (sp.y < minY || sp.y > maxY) return;
 
-    // Check not on top of another operative
     const ops = Object.values(gameData.operatives || {});
     const blocked = ops.some(o => o.x >= 0 && Math.hypot(o.x - sp.x, o.y - sp.y) < TOKEN_R * 2);
     if (blocked) return;
@@ -1675,20 +1724,12 @@ function setupDeployClick(svg, playerSlot) {
 
     await db.ref(`games-kt/${gameId}/operatives/${opId}`).update({ x: sp.x, y: sp.y });
 
-    // Check if we should pass to other player or advance to initiative.
-    // Unequal team sizes: skip a player's turn if they have nothing left to place.
+    // Advance to initiative once every operative from both players is placed.
     const updated = (await db.ref(`games-kt/${gameId}/operatives`).once('value')).val() || {};
-    const otherSlot      = playerSlot === 'player1' ? 'player2' : 'player1';
-    const myRemaining    = Object.values(updated).filter(o => o.player === playerSlot && o.x < 0);
-    const otherRemaining = Object.values(updated).filter(o => o.player === otherSlot  && o.x < 0);
-
-    if (myRemaining.length === 0 && otherRemaining.length === 0) {
+    const anyUndeployed = Object.values(updated).some(o => o.x < 0);
+    if (!anyUndeployed) {
       await db.ref(`games-kt/${gameId}`).update({ 'meta/status': 'initiative' });
-    } else if (otherRemaining.length > 0) {
-      // Opponent still has ops → give them the turn (normal alternation).
-      await db.ref(`games-kt/${gameId}/turn/activePlayer`).set(otherSlot);
     }
-    // else: opponent is done, I still have ops → activePlayer stays on me, I keep placing.
   });
 }
 
@@ -1771,7 +1812,7 @@ async function endStrategyPhase(playerSlot) {
 function activateOperative(opId, playerSlot) {
   const op = (gameData.operatives || {})[opId];
   if (!op || !op.ready || op.wounds <= 0) return;
-  activation = { opId, apRemaining: op.apl, playerSlot, apSpent: false };
+  activation = { opId, apRemaining: op.apl, playerSlot, apSpent: false, hasMoved: false, hasDashed: false, hasShot: false };
   reRenderPhaseBar();
   reRender();
 }
@@ -1846,6 +1887,7 @@ async function endTurningPoint() {
 function startMove(playerSlot, isDash) {
   if (!activation) return;
   if (shootState || gameData.pendingShot) return;
+  hideRadialMenu();
   const op     = (gameData.operatives || {})[activation.opId];
   if (!op || op.x < 0) return;
 
@@ -1900,7 +1942,11 @@ function startMove(playerSlot, isDash) {
     const clamped = clampVec(dragState.startX, dragState.startY, p.x, p.y, maxMove);
     const snapped = snapToGrid(clamped.x, clamped.y);
 
-    commitMove(snapped.x, snapped.y, isDash ? 1 : 1, playerSlot);
+    if (activation) {
+      if (isDash) activation.hasDashed = true;
+      else        activation.hasMoved  = true;
+    }
+    commitMove(snapped.x, snapped.y, 1, playerSlot);
     dragState = null;
   }
 
@@ -1961,6 +2007,143 @@ function setupDragMove(svg, playerSlot, unitG, overlay) {
     e.preventDefault();
     cancelActivation();
   });
+
+  svg.addEventListener('click', e => {
+    if (dragState || shootState) return;
+    // Walk up from event target to find an op-token group.
+    let node = e.target;
+    while (node && node !== svg) {
+      if (node.classList?.contains('op-token')) break;
+      node = node.parentElement;
+    }
+    const opId = node?.classList?.contains('op-token') ? node.getAttribute('data-op-id') : null;
+
+    if (opId) {
+      const op = (gameData.operatives || {})[opId];
+      // Already selected with no AP spent — deselect on second click.
+      if (activation?.opId === opId && !activation.apSpent) { cancelActivation(); return; }
+      // My ready operative, my turn to activate, nothing currently active.
+      const myTurn = gameData.turn?.activatingPlayer === playerSlot;
+      if (op?.player === playerSlot && op.ready && op.wounds > 0 && myTurn && !activation) {
+        activateOperative(opId, playerSlot);
+      }
+    } else if (activation && !activation.apSpent) {
+      // Empty-space click — deselect with no AP cost.
+      cancelActivation();
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RADIAL ACTION MENU
+// ═══════════════════════════════════════════════════════════
+
+function showRadialMenu(opId, playerSlot) {
+  const op = (gameData.operatives || {})[opId];
+  if (!op || op.x < 0) { hideRadialMenu(); return; }
+
+  const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
+  const svg = boardWrap?.querySelector('svg.board-svg');
+  if (!svg) { hideRadialMenu(); return; }
+
+  const pt = svg.createSVGPoint();
+  pt.x = op.x; pt.y = op.y;
+  const screen = pt.matrixTransform(svg.getScreenCTM());
+
+  const menu = document.getElementById('radial-menu');
+  if (!menu) return;
+
+  const ap        = activation?.apRemaining ?? 0;
+  const ranged    = getRangedWeapons(op);
+  const conceal   = op.order === 'conceal';
+  const hasMoved  = activation?.hasMoved  || false;
+  const hasDashed = activation?.hasDashed || false;
+  const hasShot   = activation?.hasShot   || false;
+
+  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!gameData.pendingShot || conceal;
+  const moveDisabled  = ap < 1 || hasMoved;
+  const dashDisabled  = ap < 1 || hasDashed;
+  const orderDisabled = hasShot;
+
+  const R    = 72;
+  const bSz  = 50;
+  const bOff = -Math.round(bSz / 2);
+  const eSz  = 44;
+  const eOff = -Math.round(eSz / 2);
+
+  const orderLabel = op.order === 'engage' ? 'Conceal' : 'Engage';
+  const orderCls   = op.order === 'engage' ? 'r-conceal' : 'r-engage';
+
+  // locks: comma-sep data-action ids that become restricted if this action is taken
+  const actions = [
+    { id: 'order',  label: orderLabel, ap: null, angle: -90,
+      cls: `r-order ${orderCls}`, fn: `toggleOrder('${opId}','${playerSlot}')`,
+      disabled: orderDisabled, locks: '',
+      title: orderDisabled ? 'Cannot switch to Conceal after shooting' : '' },
+    { id: 'move',   label: 'Move', ap: 1, angle: -30, cls: '',
+      fn: `startMove('${playerSlot}',false)`, disabled: moveDisabled, locks: '',
+      title: hasMoved ? 'Already moved this activation' : '' },
+    { id: 'dash',   label: 'Dash', ap: 1, angle: 30, cls: '',
+      fn: `startMove('${playerSlot}',true)`, disabled: dashDisabled, locks: 'charge',
+      title: hasDashed ? 'Already dashed' : '3″ — combine with Move for max distance' },
+    { id: 'shoot',  label: 'Shoot', ap: 1, angle: 90, cls: 'r-shoot',
+      fn: `startShoot('${playerSlot}')`, disabled: shootDisabled, locks: 'order',
+      title: conceal ? 'Locked: Conceal order' : '' },
+    { id: 'fight',  label: 'Fight',  ap: 1, angle: 150, cls: '', fn: '',
+      disabled: true, locks: '', title: 'Coming in KT-3' },
+    { id: 'charge', label: 'Charge', ap: 1, angle: 210, cls: '', fn: '',
+      disabled: true, locks: 'shoot',
+      title: conceal ? 'Locked: Conceal order' : 'Coming in KT-3' },
+  ];
+
+  const items = actions.map(a => {
+    const rad = a.angle * Math.PI / 180;
+    const ix  = Math.round(R * Math.cos(rad)) + bOff;
+    const iy  = Math.round(R * Math.sin(rad)) + bOff;
+    const handler = !a.disabled && a.fn ? `onclick="${a.fn}"` : '';
+    const titleAttr = a.title ? `title="${a.title}"` : '';
+    return `<button class="radial-item ${a.cls}" style="left:${ix}px;top:${iy}px;" ${a.disabled ? 'disabled' : ''} ${handler} data-action="${a.id}" data-locks="${a.locks}" ${titleAttr}>
+      <span class="ri-label">${a.label}</span>${a.ap != null ? `<span class="ri-ap">${a.ap}AP</span>` : ''}
+    </button>`;
+  }).join('');
+
+  menu.innerHTML = `
+    <button class="radial-end" style="left:${eOff}px;top:${eOff}px;width:${eSz}px;height:${eSz}px;" onclick="endActivation('${playerSlot}')">End</button>
+    ${items}
+  `;
+
+  // Hover restriction display: show red X badge on buttons that would be locked
+  menu.querySelectorAll('.radial-item[data-locks]').forEach(btn => {
+    const lockIds = (btn.dataset.locks || '').split(',').filter(Boolean);
+    if (!lockIds.length) return;
+    btn.addEventListener('mouseenter', () => {
+      lockIds.forEach(id => {
+        menu.querySelectorAll(`[data-action="${id}"]`).forEach(b => b.classList.add('restriction-target'));
+      });
+    });
+    btn.addEventListener('mouseleave', () => {
+      menu.querySelectorAll('.restriction-target').forEach(b => b.classList.remove('restriction-target'));
+    });
+  });
+
+  menu.style.left = screen.x + 'px';
+  menu.style.top  = screen.y + 'px';
+  menu.classList.add('visible');
+}
+
+function hideRadialMenu() {
+  const menu = document.getElementById('radial-menu');
+  if (!menu) return;
+  menu.classList.remove('visible');
+  menu.innerHTML = '';
+}
+
+function refreshRadialIfActive() {
+  if (activation && !dragState && !shootState) {
+    showRadialMenu(activation.opId, activation.playerSlot);
+  } else {
+    hideRadialMenu();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2007,6 +2190,7 @@ function startShoot(playerSlot) {
   if (!op || op.x < 0) return;
   const ranged = getRangedWeapons(op);
   if (!ranged.length) return;
+  hideRadialMenu();
   if (ranged.length === 1) { beginShootDrag(playerSlot, ranged[0]); return; }
   shootWeapon = 'picking';
   reRenderPhaseBar();
@@ -2154,8 +2338,8 @@ function updateShootOverlay(p) {
 
 async function confirmShootTarget(attacker, target, weapon, playerSlot, inCover) {
   if (!activation) return;
-  // Spend 1 AP on target confirmation
-  activation.apSpent = true;
+  activation.hasShot      = true;
+  activation.apSpent      = true;
   activation.apRemaining -= 1;
 
   await db.ref(`games-kt/${gameId}/pendingShot`).set({
@@ -2287,10 +2471,12 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
   if (pending.inCover) {
     if (!pending.coverDecided) {
       coverHtml = !iAmAttacker
-        ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-             <span style="font-size:11px;color:var(--gold);">Target in cover — use it?</span>
-             <button class="action-btn" onclick="decideCover(true)">Use Cover</button>
-             <button class="action-btn" onclick="decideCover(false)">Don't Use</button>
+        ? `<div style="display:flex;flex-direction:column;gap:6px;">
+             <span style="font-size:11px;color:var(--gold);">You are in cover — use it? Convert one defence die to an automatic normal success, or roll all dice normally.</span>
+             <div style="display:flex;gap:8px;">
+               <button class="action-btn" onclick="decideCover(true)" style="border-color:var(--green);color:var(--green);">Use Cover (+1 auto save)</button>
+               <button class="action-btn" onclick="decideCover(false)">Roll Normally</button>
+             </div>
            </div>`
         : `<span style="font-size:11px;color:var(--text-dim);">Cover: waiting for defender's choice…</span>`;
     } else {
@@ -2365,6 +2551,7 @@ if (!window._ktEscBound) {
 function reRender() {
   if (devMode) renderDev();
   else { showScreen('game'); renderGame(myPlayer); }
+  refreshRadialIfActive();
 }
 
 function reRenderPhaseBar() {
@@ -2436,5 +2623,6 @@ function el(tag, props = {}) {
   return node;
 }
 </script>
+<div id="radial-menu"></div>
 </body>
 </html>
