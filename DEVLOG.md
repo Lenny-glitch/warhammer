@@ -871,6 +871,50 @@ killteam/index.html
 
 ---
 
+### Data Pipeline — Phase A/B/C (2026-06-29)
+
+Standalone BSData XML → Firebase pipeline at `~/projects/data-pipeline/`.
+
+**Phase A — Rule glossary extractor (`extract-glossary.js`):**
+- Reads `.gst` files from both BSData repos, extracts all `<sharedRules>` entries
+- Output: `rules-glossary-kt.json` (22 KT weapon rules), `rules-glossary-40k.json` (33 40k rules)
+- Each entry: `id`, `name`, `description`, `aliases`, `category`
+
+**Phase B — Kill Team parser (`parse-kt.js`):**
+- Parses all 47 KT 2024 faction `.cat` files → one JSON per faction
+- Handles two storage patterns: operatives in `selectionEntries` OR `sharedSelectionEntries`
+- Stats via inline Operative profiles OR `infoLink type="profile"` → sharedProfiles
+- Weapon rules resolved: exact match → alias match → parametric fallback (`Limited 1` → `Limited x`)
+- DF hardcoded to `"3"` (universal KT3 value, absent from BSData)
+- Slug lookup table preserves all 6 existing Firebase faction slugs exactly
+- All warnings resolved: 47 factions, 0 unknown weapon keywords
+
+**Phase C — 40k parser (`parse-40k.js`):**
+- Parses `Imperium - Astra Militarum - Library.cat` and `Aeldari - Aeldari Library.cat`
+- All unit entries in `sharedSelectionEntries` (Library cats have no top-level selectionEntries)
+- DFS traversal handles 3+ nesting patterns for model/weapon discovery
+- Weapons found via inline selectionEntries (Aeldari) and entryLinks (AM)
+- Keyword matching: exact, stripped numeric suffix, parametric-x, anti-prefix, hyphen-normalized
+- AP 0 / numeric-zero fix: `charText` now uses `=== null/undefined` guard not falsy check
+- AM: 36 units, 34 with stats; Aeldari: 47 units, 35 with stats
+- Missing stats are cross-file references (Drukhari units in Aeldari Library, one Legends entry)
+- Points modifier detected → `_pointsNote` flag added
+
+**Phase E — Upload script (`upload.js`):**
+- Reads `databaseURL` from `~/projects/roster/firebase-config.js` at runtime (no hardcoded creds)
+- `--dry-run` flag for safe testing; `--force` required to overwrite existing data
+- Per-faction YES confirmation prompt before every write
+- Uploads: KT factions, KT ploys, KT rules, 40k factions, 40k stratagems, 40k rules
+- **Not yet run** — awaiting Nox review of output JSON and hand-authored ploy/stratagem files
+
+**Pending (Nox):**
+- Review `output/kt-*.json` and `output/40k-*.json`
+- Author `ploys/tau-pathfinders.json`, `ploys/void-dancer-troupe.json`, `ploys/ork-kommandos.json`, `ploys/kasrkin.json`
+- Author `stratagems/astra-militarum.json`, `stratagems/craftworlds-eldar.json`
+- Run `node parsers/upload.js` once satisfied
+
+---
+
 ### KT-3 Part 2 — Combat Feel Refinements (2026-06-29)
 
 **Beam timing rework:**
