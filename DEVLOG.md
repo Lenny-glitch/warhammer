@@ -72,8 +72,9 @@ games-kt/{gameId}/
       y:                  number  (-1 = undeployed)
       activatedThisTurn:  bool
 
-  terrain:      { "x,y": 'rough' | 'chestHigh' | 'tall' }
-  terrainOwner: { "x,y": 'player1' | 'player2' }
+  terrain:       { "x,y": 'rough' | 'chestHigh' | 'tall' }
+  terrainOwner:  { "x,y": 'player1' | 'player2' }
+  terrainPassed: { player1: bool, player2: bool }  — simultaneous pass tracking
 
   turn/
     turningPoint:     number (1–4)
@@ -180,9 +181,8 @@ Both player perspectives shown side by side.
 - Objectives / Tac Ops
 
 **Known limitations:**
-- `passTerrainTurn` advances directly to deployment — no budget-exhaustion auto-detect.
-  The current pattern: first player to press "Pass Turn" ends terrain for both. This is
-  a simplification; could be made stricter if needed.
+- ~~`passTerrainTurn` advances directly to deployment — first player to press ends terrain for both~~
+  **Fixed KT-3 Part 2 (2026-06-29):** terrain is now simultaneous; both players pass independently.
 - ~~Deployment alternation deadlock on unequal team sizes~~ — **fixed 2026-06-26**.
   Post-placement logic now checks `otherRemaining.length > 0` (not `myRemaining.length > 0`)
   to decide whose turn it is. If the opponent has nothing left to place their turn is skipped;
@@ -557,21 +557,23 @@ refreshRadialIfActive()  (line ~2228)  Re-positions radial menu after re-render.
 
 ### Terrain Phase (line ~1208 phase bar, ~1623 interaction)
 
-**Bar:** `renderTerrainBar()` — shows tier buttons (Rough/Chest-High/Tall), budget bars for
-both players, "Pass Turn" button (only active player). Tier selection updates local `terrainTier`
-variable and re-renders phase bar only.
+**Bar:** `renderTerrainBar(playerSlot)` — shows tier buttons (Rough/Chest-High/Tall), budget bars for
+both players, "Pass Turn" button. Both players see controls simultaneously. Once a player passes,
+their panel shows "Turn passed — waiting for opponent…". Tier selection updates local `terrainTier`.
 
 **Interaction:** `setupTerrainPaint(svg, playerSlot)` (line ~1623):
+- Returns early if `gameData.terrainPassed[playerSlot]` (passed players can't paint).
 - `mousedown`: determine paint vs erase mode (erase if clicking own square with same tier)
 - `mousemove`: accumulate squares in `strokes` Map and `erases` Set; check budget on each square
 - `mouseup`/`mouseleave`: `commitStroke()` → single `db.update()` with all `terrain/{x,y}` and
   `terrainOwner/{x,y}` changes
 
 Budget tracking uses a running projection across the current stroke to prevent overspend.
-Only the active player can paint; can't paint opponent's squares.
+Can't paint opponent's squares.
 
-`passTerrainTurn()` (line ~1738): writes `meta/status: 'deployment'` — whichever player
-presses first ends terrain for both. No double-confirm.
+`passTerrainTurn(playerSlot)` (line ~1738): writes `terrainPassed/{playerSlot}: true`. If the
+other player has already passed, also writes `meta/status: 'deployment'`. Deployment only starts
+when both players have passed.
 
 ---
 
@@ -866,6 +868,56 @@ killteam/index.html
 - Adapt `buildOperatives` for system-specific stats (AoS uses different stat names)
 - The `rayResult()` / `segmentsIntersect()` / `dieFaceSVG()` utilities are pure math —
   copy them directly; they have zero KT-specific logic
+
+---
+
+### KT-3 Part 2 — Combat Feel Refinements (2026-06-29)
+
+**Beam timing rework:**
+
+Old sequence: beam fired when `pendingShot` was *cleared* (i.e. on damage confirm).
+New sequence: beam fires when attacker clicks **Roll Dice**, simultaneously with dice tumble.
+
+- `rollShot()` now calls `playBeamOnly(p, attacker, target)` synchronously before the Firebase write.
+- `detectAndPlayEffects` no longer triggers a beam on target confirmation.
+- On damage confirm, only impact burst + screen flash fire (`playBurstAndFlash`).
+- Beam always travels full distance (hasDamage=true) — it's announcing the shot, not confirming the outcome.
+
+**Multi-beam per ATK die (partially working):**
+
+- `playBeamOnly` fires one beam per ATK die (capped at 6).
+- Per-beam duration = `DURS[tier] / atkCount` so the full volley takes the same total time as a single beam.
+- `drawBeam` accepts optional `durOverride` (8th param) to override tier-derived duration.
+- **Known issue:** only one beam visually appears. Suspected cause: Firebase's local optimistic write fires `render()` almost immediately, wiping the SVG and any in-flight beam from the i=0 setTimeout. Subsequent beams draw to the rebuilt SVG but overlap on identical paths. Tabled for now — the speed-scaling change (faster beams for more ATK dice) is visible and feels correct.
+
+**Dice tumble animation:**
+
+When `pendingShot.phase` transitions from `coverChoice` → `rolled`, each die cycles through random pip faces before landing on its real value.
+
+- Module-level `diceAnimState` tracks display values, stop times, and the animation timer.
+- `startDiceAnimation(pending)` called from `detectAndPlayEffects` on phase transition.
+- Each die gets a stop time: `baseTumble + (dieIdx × stagger)`. ATK dice settle first, then DEF.
+- `auto` cover-save dice appear immediately (they're not rolled, no tumble).
+- `renderShotResolutionBar` reads `diceAnimState.displayAtk/displayDef` while animating; result summary and Apply Damage button hidden until all dice land.
+- Timing by tier:
+
+| Tier | Tumble | Stagger | Max total (6 dice) |
+|------|--------|---------|-------------------|
+| subtle | 300ms | 30ms | ~450ms |
+| dramatic | 500ms | 60ms | ~800ms |
+| cinematic | 700ms | 80ms | ~1100ms |
+
+**Simultaneous terrain placement:**
+
+Terrain was alternating (only `activePlayer` could place). Now both players place simultaneously, matching deployment behaviour.
+
+- `terrainPassed: { player1: false, player2: false }` added to Firebase schema (both init paths).
+- `renderTerrainBar(playerSlot)` — `iAmActive` param removed. Now reads `gameData.terrainPassed[playerSlot]`.
+  - Both players always see tier buttons + Pass Turn button.
+  - Once passed: "Turn passed — waiting for opponent…" replaces controls.
+  - Tier buttons disabled when budget exhausted OR player has passed.
+- `passTerrainTurn(playerSlot)` — writes `terrainPassed/{playerSlot}: true`; advances to deployment only when the other player has also passed.
+- `setupTerrainPaint` — `iAmActive` guard removed. Guards on `hasPassed` instead (passed players can't continue painting).
 
 ---
 

@@ -670,6 +670,7 @@ let fightState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } 
 let radialSlot    = null;  // playerSlot whose radial is currently showing
 let expandedOps   = new Set(); // op IDs whose sidebar cards are expanded
 let splatData     = []; // { x, y, pathIdx, rotation, scale, color, bornAt } — permanent death stains
+let diceAnimState = null; // { atkRolls, defRolls, atkStopAt, defStopAt, t0, totalDur, displayAtk, displayDef, _timer }
 let rosterPreviewTimers = {};
 
 // ═══════════════════════════════════════════════════════════
@@ -858,8 +859,9 @@ async function createGame(playerName, rosterId) {
         },
       },
       operatives:   ops,
-      terrain:      {},
-      terrainOwner: {},
+      terrain:       {},
+      terrainOwner:  {},
+      terrainPassed: { player1: false, player2: false },
       turn: {
         turningPoint:      1,
         phase:             'strategy',
@@ -952,8 +954,9 @@ async function bootDev() {
         player2: { name: 'P2 Dev', faction: exp2.meta.factionId, factionName: exp2.meta.factionName, rosterId: DEV_ROSTER_P2, token: 'dev2' },
       },
       operatives:   allOps,
-      terrain:      {},
-      terrainOwner: {},
+      terrain:       {},
+      terrainOwner:  {},
+      terrainPassed: { player1: false, player2: false },
       turn: {
         turningPoint:     1,
         phase:            'strategy',
@@ -1330,7 +1333,7 @@ function renderPhaseBar(status, phase, playerSlot, turn) {
   const iAmActive = turn.activePlayer === playerSlot;
   const myTurn    = turn.activatingPlayer === playerSlot;
 
-  if (status === 'terrain') return renderTerrainBar(playerSlot, iAmActive);
+  if (status === 'terrain') return renderTerrainBar(playerSlot);
   if (status === 'deployment') return renderDeployBar(playerSlot);
   if (status === 'initiative') return renderInitiativeBar(playerSlot);
   if (phase === 'strategy')    return renderStrategyBar(playerSlot, turn);
@@ -1340,9 +1343,10 @@ function renderPhaseBar(status, phase, playerSlot, turn) {
 
 // ── Terrain Phase ──
 
-function renderTerrainBar(playerSlot, iAmActive) {
+function renderTerrainBar(playerSlot) {
   const terrain      = gameData.terrain || {};
   const terrainOwner = gameData.terrainOwner || {};
+  const hasPassed    = !!(gameData.terrainPassed || {})[playerSlot];
 
   const mySpent    = Object.entries(terrainOwner).filter(([,v]) => v === playerSlot)
                        .reduce((s, [k]) => s + (TERRAIN_COSTS[terrain[k]] || 0), 0);
@@ -1354,7 +1358,7 @@ function renderTerrainBar(playerSlot, iAmActive) {
 
   const tierBtns = tiers.map(t => {
     const cost      = TERRAIN_COSTS[t];
-    const disabled  = !iAmActive || myRemain < cost;
+    const disabled  = hasPassed || myRemain < cost;
     const isSel     = terrainTier === t;
     const swatchCol = t === 'rough' ? '#5a4830' : t === 'chestHigh' ? '#3a5028' : '#30384a';
     return `
@@ -1377,10 +1381,10 @@ function renderTerrainBar(playerSlot, iAmActive) {
   return `
     <span class="phase-bar-label">Terrain</span>
     <div class="phase-bar-body">
-      ${iAmActive
-        ? `<div class="terrain-tier-row">${tierBtns}</div>
+      ${hasPassed
+        ? `<span style="font-size:12px;color:var(--text-dim);">Turn passed — waiting for opponent…</span>`
+        : `<div class="terrain-tier-row">${tierBtns}</div>
            <button class="btn" onclick="passTerrainTurn('${playerSlot}')" style="flex-shrink:0;">Pass Turn</button>`
-        : `<span style="font-size:12px;color:var(--text-dim);">Waiting for opponent to place terrain…</span>`
       }
       <div style="margin-left:auto;display:flex;flex-direction:column;gap:3px;min-width:120px;">
         ${budgetBar('player1', playerSlot === 'player1' ? mySpent : otherSpent, 'p1')}
@@ -1760,8 +1764,7 @@ function setTerrainTier(tier) {
 }
 
 function setupTerrainPaint(svg, playerSlot) {
-  const iAmActive = gameData.turn?.activePlayer === playerSlot;
-  if (!iAmActive) return;
+  if ((gameData.terrainPassed || {})[playerSlot]) return;
 
   const terrain      = gameData.terrain || {};
   const terrainOwner = gameData.terrainOwner || {};
@@ -1875,13 +1878,12 @@ function setupTerrainPaint(svg, playerSlot) {
 }
 
 function passTerrainTurn(playerSlot) {
-  // Switch activePlayer; if both have passed, advance to deployment
   const other = playerSlot === 'player1' ? 'player2' : 'player1';
-  // Simple: just switch. Deployment starts after terrain owner manually finishes.
-  // We detect "both done" when budget is exhausted or they press pass twice.
-  const ops = gameData.operatives || {};
-  // Move to deployment phase
-  db.ref(`games-kt/${gameId}`).update({ 'meta/status': 'deployment', 'turn/activePlayer': 'player1' });
+  const updates = { [`terrainPassed/${playerSlot}`]: true };
+  if ((gameData.terrainPassed || {})[other]) {
+    updates['meta/status'] = 'deployment';
+  }
+  db.ref(`games-kt/${gameId}`).update(updates);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2657,6 +2659,8 @@ async function rollShot(playerSlot) {
 
   const totalDamage = rC * critDmg + rN * normalDmg;
 
+  playBeamOnly(p, attacker, target);
+
   await db.ref(`games-kt/${gameId}/pendingShot`).update({
     phase: 'rolled', atkRolls, defRolls,
     remainingCritHits: rC, remainingNormalHits: rN,
@@ -2749,22 +2753,28 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
 
   let diceHtml = '', resultHtml = '';
   if (pending.phase === 'rolled' && pending.atkRolls) {
+    const animating  = !!diceAnimState;
+    const displayAtk = animating ? (diceAnimState.displayAtk || pending.atkRolls) : pending.atkRolls;
+    const displayDef = animating ? (diceAnimState.displayDef || pending.defRolls) : pending.defRolls;
+
     diceHtml = `
       <div style="display:flex;flex-direction:column;gap:6px;width:100%;">
         <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;">Attack (${w.profiles?.ATK || '?'} dice, hit on ${hitStat}+${isInjuredOp(attOp) ? ' — Injured' : ''})</div>
-        <div class="dice-pool">${renderDicePool(pending.atkRolls, true, hitStat, saveStat)}</div>
+        <div class="dice-pool">${renderDicePool(displayAtk, true, hitStat, saveStat)}</div>
         <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;">Defence (${tgtOp?.def || 3} dice, save on ${saveStat}+${pending.useCover ? ' + cover' : ''})</div>
-        <div class="dice-pool">${renderDicePool(pending.defRolls, false, hitStat, saveStat)}</div>
+        <div class="dice-pool">${renderDicePool(displayDef, false, hitStat, saveStat)}</div>
       </div>`;
 
-    const parts = [];
-    if (pending.remainingCritHits > 0)   parts.push(`${pending.remainingCritHits}× crit (${pending.critDmg} dmg)`);
-    if (pending.remainingNormalHits > 0) parts.push(`${pending.remainingNormalHits}× hit (${pending.normalDmg} dmg)`);
-    const dmgStr = parts.length ? parts.join(' + ') + ` = ${pending.totalDamage} wound${pending.totalDamage !== 1 ? 's' : ''}` : 'All hits saved — 0 damage';
-    resultHtml = `<div class="shoot-result">${dmgStr}</div>`;
-    resultHtml += iAmAttacker
-      ? `<button class="btn btn-primary" onclick="confirmShotDamage('${playerSlot}')">Apply ${pending.totalDamage} Damage to ${escHtml(tgtName)}</button>`
-      : `<span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`;
+    if (!animating) {
+      const parts = [];
+      if (pending.remainingCritHits > 0)   parts.push(`${pending.remainingCritHits}× crit (${pending.critDmg} dmg)`);
+      if (pending.remainingNormalHits > 0) parts.push(`${pending.remainingNormalHits}× hit (${pending.normalDmg} dmg)`);
+      const dmgStr = parts.length ? parts.join(' + ') + ` = ${pending.totalDamage} wound${pending.totalDamage !== 1 ? 's' : ''}` : 'All hits saved — 0 damage';
+      resultHtml = `<div class="shoot-result">${dmgStr}</div>`;
+      resultHtml += iAmAttacker
+        ? `<button class="btn btn-primary" onclick="confirmShotDamage('${playerSlot}')">Apply ${pending.totalDamage} Damage to ${escHtml(tgtName)}</button>`
+        : `<span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`;
+    }
   }
 
   const label = iAmAttacker ? 'Shooting' : 'Incoming Shot';
@@ -3180,12 +3190,12 @@ function appendBeamAnims(el, len, dur, initOpacity) {
 }
 
 // Draw a weapon beam from attacker to target (or 80% for misses)
-function drawBeam(parent, ax, ay, tx, ty, color, tier, hasDamage) {
+function drawBeam(parent, ax, ay, tx, ty, color, tier, hasDamage, durOverride) {
   const DURS = { subtle: 350, dramatic: 700, cinematic: 1200 };
   const LW   = { subtle: 0.07, dramatic: 0.11, cinematic: 0.16 };
   if (!hasDamage && tier === 'subtle') return;
 
-  const dur  = DURS[tier];
+  const dur  = durOverride !== undefined ? durOverride : DURS[tier];
   const lw   = LW[tier];
   const frac = hasDamage ? 1 : 0.8;
   const endX = ax + (tx - ax) * frac;
@@ -3395,6 +3405,94 @@ function playShootEffects(pending, attacker, target) {
   }
 }
 
+// Beam fires on Roll Dice — one beam per ATK die, chained sequentially
+// Each beam's duration = totalDur / atkCount so the full volley takes the same time as one beam
+function playBeamOnly(pending, attacker, target) {
+  const w = pending.weapon || {};
+  const [nDmg, cDmg] = parseDmgPair(w.profiles?.DMG || '1/1');
+  const tier     = getAnimTier(nDmg, cDmg);
+  const color    = getBeamColor(w.name || '');
+  const atkCount = Math.min(parseInt(w.profiles?.ATK || 1), 6);
+  const DURS     = { subtle: 350, dramatic: 700, cinematic: 1200 };
+  const beamDur  = Math.max(60, Math.floor(DURS[tier] / atkCount));
+  const slots    = devMode ? ['player1', 'player2'] : [myPlayer];
+  for (let i = 0; i < atkCount; i++) {
+    setTimeout(() => {
+      for (const slot of slots) {
+        const beamG = document.getElementById(`beam-g-${slot}`);
+        if (!beamG) continue;
+        drawBeam(beamG, attacker.x, attacker.y, target.x, target.y, color, tier, true, beamDur);
+      }
+    }, i * beamDur);
+  }
+}
+
+// Impact burst + screen flash fires at damage confirm
+function playBurstAndFlash(pending, attacker, target) {
+  const w = pending.weapon || {};
+  const [nDmg, cDmg] = parseDmgPair(w.profiles?.DMG || '1/1');
+  const tier   = getAnimTier(nDmg, cDmg);
+  const hasDmg = (pending.totalDamage || 0) > 0;
+  const slots  = devMode ? ['player1', 'player2'] : [myPlayer];
+  for (const slot of slots) {
+    const burstG = document.getElementById(`burst-g-${slot}`);
+    if (!burstG) continue;
+    if (hasDmg) {
+      drawImpactBurst(burstG, target.x, target.y, tier);
+      const isDefender = devMode ? (slot === target.player) : (target.player === myPlayer);
+      if (isDefender) triggerScreenFlash();
+    }
+  }
+}
+
+// Dice tumble animation: cycles through random faces, staggered reveals per tier
+function startDiceAnimation(pending) {
+  if (diceAnimState?._timer) clearTimeout(diceAnimState._timer);
+
+  const w = pending.weapon || {};
+  const [nDmg, cDmg] = parseDmgPair(w.profiles?.DMG || '1/1');
+  const tier = getAnimTier(nDmg, cDmg);
+
+  const TUMBLE   = { subtle: 300, dramatic: 500, cinematic: 700 }[tier];
+  const STAGGER  = { subtle: 30,  dramatic: 60,  cinematic: 80  }[tier];
+  const INTERVAL = 60;
+
+  const atkRolls = pending.atkRolls || [];
+  const defRolls = pending.defRolls || [];
+
+  let dieIdx = 0;
+  const atkStopAt = atkRolls.map(() => TUMBLE + dieIdx++ * STAGGER);
+  const defStopAt = defRolls.map(d => d === 'auto' ? 0 : TUMBLE + dieIdx++ * STAGGER);
+  const totalDur  = dieIdx > 0 ? TUMBLE + (dieIdx - 1) * STAGGER : TUMBLE;
+
+  diceAnimState = { atkRolls, defRolls, atkStopAt, defStopAt, t0: Date.now(), totalDur,
+                    displayAtk: null, displayDef: null, _timer: null };
+
+  const tick = () => {
+    if (!diceAnimState) return;
+    const elapsed = Date.now() - diceAnimState.t0;
+
+    diceAnimState.displayAtk = diceAnimState.atkRolls.map((real, i) =>
+      elapsed >= diceAnimState.atkStopAt[i] ? real : Math.ceil(Math.random() * 6)
+    );
+    diceAnimState.displayDef = diceAnimState.defRolls.map((real, i) => {
+      if (real === 'auto') return 'auto';
+      return elapsed >= diceAnimState.defStopAt[i] ? real : Math.ceil(Math.random() * 6);
+    });
+
+    reRenderPhaseBar();
+
+    if (elapsed >= diceAnimState.totalDur) {
+      diceAnimState = null;
+      reRenderPhaseBar();
+    } else {
+      diceAnimState._timer = setTimeout(tick, INTERVAL);
+    }
+  };
+
+  diceAnimState._timer = setTimeout(tick, INTERVAL);
+}
+
 // Play fight clash + per-operative splats + screen flash on all visible boards
 function playFightEffects(pending, attacker, defender) {
   const atkW = pending.atkWeapon || {};
@@ -3426,12 +3524,18 @@ function playFightEffects(pending, attacker, defender) {
 function detectAndPlayEffects(prev, curr) {
   if (!prev || !curr) return;
 
-  // Shot resolved (pendingShot cleared after 'rolled' phase — damage confirmed)
+  // Dice tumble animation when dice are rolled
+  if (prev.pendingShot && curr.pendingShot &&
+      prev.pendingShot.phase !== 'rolled' && curr.pendingShot.phase === 'rolled') {
+    startDiceAnimation(curr.pendingShot);
+  }
+
+  // Burst + flash when damage is confirmed (pendingShot cleared after 'rolled' phase)
   if (prev.pendingShot && !curr.pendingShot && prev.pendingShot.phase === 'rolled') {
     const p  = prev.pendingShot;
     const at = (curr.operatives || {})[p.attackerOpId] || (prev.operatives || {})[p.attackerOpId];
     const tg = (curr.operatives || {})[p.targetOpId]   || (prev.operatives || {})[p.targetOpId];
-    if (at && tg && at.x >= 0 && tg.x >= 0) playShootEffects(p, at, tg);
+    if (at && tg && at.x >= 0 && tg.x >= 0) playBurstAndFlash(p, at, tg);
   }
 
   // Fight resolved (pendingFight cleared)
@@ -3512,6 +3616,8 @@ async function devNewGame() {
   terrainActive = false;
   expandedOps   = new Set();
   splatData     = [];
+  if (diceAnimState?._timer) clearTimeout(diceAnimState._timer);
+  diceAnimState = null;
   const url = new URL(window.location.href);
   url.searchParams.delete('game');
   window.history.replaceState({}, '', url.toString());
