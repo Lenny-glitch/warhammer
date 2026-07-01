@@ -1,0 +1,14 @@
+{
+  "name": "data-pipeline",
+  "version": "1.0.0",
+  "description": "BSData XML parser and Firebase uploader for KT and 40k",
+  "scripts": {
+    "glossary": "node parsers/extract-glossary.js",
+    "parse-kt": "node parsers/parse-kt.js",
+    "parse-40k": "node parsers/parse-40k.js",
+    "upload": "node parsers/upload.js"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.3.6"
+  }
+}
