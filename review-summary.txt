@@ -1,0 +1,338 @@
+
+======================================================================
+SECTION 1: KILL TEAM FACTIONS
+======================================================================
+
+Angels of Death (angels-of-death)  [kt-angels-of-death.json]
+  operative count: 9
+  issues: none
+
+Battleclade (battleclade)  [kt-battleclade.json]
+  operative count: 7
+  issues: none
+
+Blades of Khaine (blades-of-khaine)  [kt-blades-of-khaine.json]
+  operative count: 6
+  issues: none
+
+Blooded (blooded)  [kt-blooded.json]
+  operative count: 14
+  issues: none
+
+Brood Brothers (brood-brothers)  [kt-brood-brothers.json]
+  operative count: 16
+  issues: none
+
+Canoptek Circle (canoptek-circle)  [kt-canoptek-circle.json]
+  operative count: 5
+  issues: none
+
+Celestian Insidiants (celestian-insidiants)  [kt-celestian-insidiants.json]
+  operative count: 8
+  issues: none
+
+Chaos Cult (chaos-cult)  [kt-chaos-cult.json]
+  operative count: 7
+  issues: none
+
+Corsair Voidscarred (corsair-voidscarred)  [kt-corsair-voidscarred.json]
+  operative count: 11
+  issues: none
+
+Death Korps (death-korps)  [kt-death-korps.json]
+  operative count: 12
+  issues: none
+
+Deathwatch (deathwatch)  [kt-deathwatch.json]
+  operative count: 11
+  issues: none
+
+Elucidian Starstriders (elucidian-starstriders)  [kt-elucidian-starstriders.json]
+  operative count: 8
+  issues: none
+
+Exaction Squad (exaction-squad)  [kt-exaction-squad.json]
+  operative count: 12
+  issues: none
+
+Farstalker Kinband (farstalker-kinband)  [kt-farstalker-kinband.json]
+  operative count: 11
+  issues: none
+
+Fellgor Ravagers (fellgor-ravagers)  [kt-fellgor-ravagers.json]
+  operative count: 12
+  issues: none
+
+Gellerpox Infected (gellerpox-infected)  [kt-gellerpox-infected.json]
+  operative count: 10
+  issues: none
+
+Goremonger (goremonger)  [kt-goremonger.json]
+  operative count: 7
+  issues: none
+
+Hand of the Archon (hand-of-the-archon)  [kt-hand-of-the-archon.json]
+  operative count: 9
+  issues: none
+
+Hearthkyn Salvagers (hearthkyn-salvagers)  [kt-hearthkyn-salvagers.json]
+  operative count: 11
+  issues: none
+
+Hernkyn Yaegirs (hernkyn-yaegirs)  [kt-hernkyn-yaegirs.json]
+  operative count: 8
+  issues: none
+
+Hierotek Circle (hierotek-circle)  [kt-hierotek-circle.json]
+  operative count: 9
+  issues: none
+
+Hunter Clade (hunter-clade)  [kt-hunter-clade.json]
+  operative count: 14
+  issues: none
+
+Imperial Navy Breachers (imperial-navy-breachers)  [kt-imperial-navy-breachers.json]
+  operative count: 11
+  issues: none
+
+Inquisitorial Agents (inquisitorial-agents)  [kt-inquisitorial-agents.json]
+  operative count: 56
+  issues: none
+
+Kasrkin (kasrkin)  [kt-kasrkin.json]
+  operative count: 12
+  issues: none
+
+Legionaries (legionary)  [kt-legionary.json]
+  operative count: 10
+  issues: none
+
+Mandrakes (mandrakes)  [kt-mandrakes.json]
+  operative count: 6
+  issues: none
+
+Murderwing (murderwing)  [kt-murderwing.json]
+  operative count: 9
+  issues: none
+
+Nemesis Claw (nemesis-claw)  [kt-nemesis-claw.json]
+  operative count: 9
+  issues: none
+
+Novitiates (novitiates)  [kt-novitiates.json]
+  operative count: 12
+  issues: none
+
+Kommandos (ork-kommandos)  [kt-ork-kommandos.json]
+  operative count: 11
+  issues: none
+
+Phobos Strike Team (phobos-strike-team)  [kt-phobos-strike-team.json]
+  operative count: 13
+  issues: none
+
+Plague Marines (plague-marines)  [kt-plague-marines.json]
+  operative count: 7
+  issues: none
+
+Ratling (ratlings)  [kt-ratlings.json]
+  operative count: 13
+  issues: none
+
+Raveners (raveners)  [kt-raveners.json]
+  operative count: 6
+  issues: none
+
+Sanctifier (sanctifier)  [kt-sanctifier.json]
+  operative count: 12
+  issues: none
+
+Scout Squad (scout-squad)  [kt-scout-squad.json]
+  operative count: 6
+  issues: none
+
+Strike Force Variel (strike-force-variel)  [kt-strike-force-variel.json]
+  operative count: 7
+  issues: none
+
+Pathfinders (tau-pathfinders)  [kt-tau-pathfinders.json]
+  operative count: 16
+  issues: none
+
+Tempestus Aquilons (tempestus-aquilons)  [kt-tempestus-aquilons.json]
+  operative count: 8
+  issues: none
+
+Vespid Stingwings (vespid-stingwings)  [kt-vespid-stingwings.json]
+  operative count: 7
+  issues: none
+
+Void-dancer Troupe (void-dancer-troupe)  [kt-void-dancer-troupe.json]
+  operative count: 4
+  issues: none
+
+Warpcoven (warpcoven)  [kt-warpcoven.json]
+  operative count: 10
+  issues: none
+
+Wolf Scouts (wolf-scouts)  [kt-wolf-scouts.json]
+  operative count: 8
+  issues: none
+
+Wrecka Krew (wrecka-krew)  [kt-wrecka-krew.json]
+  operative count: 7
+  issues: none
+
+Wyrmblade (wyrmblade)  [kt-wyrmblade.json]
+  operative count: 9
+  issues: none
+
+XV26 Battlesuits (xv26-battlesuits)  [kt-xv26-battlesuits.json]
+  operative count: 8
+  issues: none
+
+======================================================================
+SECTION 2: 40K UNIT CHECKS (Astra Militarum, Craftworlds Eldar)
+======================================================================
+
+--- Astra Militarum (40k-astra-militarum.json) ---
+unit count: 36
+  Armoured Sentinels: points=None, stats=6/6, weapons=3, loadout_slots=0
+  Attilan Rough Riders: points=60, stats=6/6, weapons=7, loadout_slots=0
+  Bullgryn Squad: points=100, stats=6/6, weapons=3, loadout_slots=0
+  Cadian Command Squad: points=65, stats=6/6, weapons=15, loadout_slots=0
+  Cadian Shock Troops: points=65, stats=6/6, weapons=8, loadout_slots=0
+  Catachan Jungle Fighters: points=65, stats=6/6, weapons=4, loadout_slots=0
+  Death Korps of Krieg: points=65, stats=6/6, weapons=2, loadout_slots=0
+  Field Ordnance Battery: points=110, stats=6/6, weapons=6, loadout_slots=0
+  Gaunt’s Ghosts: points=100, stats=6/6, weapons=9, loadout_slots=0
+  Cadian Heavy Weapons Squad: points=65, stats=6/6, weapons=8, loadout_slots=0
+  Kasrkin: points=110, stats=6/6, weapons=9, loadout_slots=0
+  Militarum Tempestus Command Squad: points=85, stats=6/6, weapons=11, loadout_slots=0
+  Munitorum Servitors [Legends]: points=35, stats=6/6, weapons=5, loadout_slots=0
+  Ogryn Squad: points=60, stats=6/6, weapons=1, loadout_slots=0
+  Regimental Attachés [Legends]: points=40, stats=6/6, weapons=3, loadout_slots=0
+  Scout Sentinels: points=None, stats=6/6, weapons=3, loadout_slots=0
+  Tempestus Scions: points=70, stats=6/6, weapons=9, loadout_slots=0
+  Death Riders: points=60, stats=6/6, weapons=4, loadout_slots=0
+  Tarantula Battery [Legends]: points=None, stats=6/6, weapons=3, loadout_slots=0
+  Rapier Laser Destroyer Battery [Legends]: points=None, stats=6/6, weapons=2, loadout_slots=0
+  Death Korps Grenadier Squad [Legends]: points=110, stats=6/6, weapons=5, loadout_slots=0
+  Rein and Raus [Legends]: points=50, stats=6/6, weapons=4, loadout_slots=0
+  Quartermaster Cadre Squad [Legends]: points=45, stats=6/6, weapons=3, loadout_slots=0
+  Sabre Weapons Battery [Legends]: points=None, stats=6/6, weapons=5, loadout_slots=0
+  Elysian Sniper Squad [Legends]: points=65, stats=6/6, weapons=3, loadout_slots=0
+  Mukaali Riders [Legends]: points=110, stats=6/6, weapons=13, loadout_slots=0
+  Tempestus Aquilons: points=100, stats=6/6, weapons=14, loadout_slots=0
+  Ratlings: points=60, stats=6/6, weapons=3, loadout_slots=0
+  Krieg Command Squad: points=65, stats=6/6, weapons=16, loadout_slots=0
+  Catachan Command Squad: points=65, stats=6/6, weapons=3, loadout_slots=0
+  Krieg Combat Engineers: points=60, stats=6/6, weapons=5, loadout_slots=0
+  Catachan Heavy Weapons Squad: points=65, stats=6/6, weapons=8, loadout_slots=0
+  Krieg Heavy Weapons Squad: points=75, stats=6/6, weapons=5, loadout_slots=0
+  Hell's Last [Legends]: points=80, stats=6/6, weapons=7, loadout_slots=0
+  Hippogriff AFV: points=None, stats=6/6, weapons=1, loadout_slots=0
+  Cadian Recon Squad: points=80, stats=6/6, weapons=7, loadout_slots=0
+  ** FLAGGED: none
+
+--- Craftworlds Eldar (40k-craftworlds-eldar.json) ---
+unit count: 47
+  Corsair Voidreavers: points=65, stats=6/6, weapons=7, loadout_slots=0
+  Corsair Voidscarred: points=80, stats=6/6, weapons=8, loadout_slots=0
+  Dark Reapers: points=90, stats=6/6, weapons=7, loadout_slots=0
+  Dire Avengers: points=75, stats=6/6, weapons=4, loadout_slots=0
+  Fire Dragons: points=120, stats=6/6, weapons=5, loadout_slots=0
+  Guardian Defenders: points=100, stats=6/6, weapons=8, loadout_slots=0
+  Howling Banshees: points=95, stats=6/6, weapons=3, loadout_slots=0
+  Rangers: points=55, stats=6/6, weapons=3, loadout_slots=0
+  Shining Spears: points=110, stats=6/6, weapons=5, loadout_slots=0
+  Shroud Runners: points=80, stats=6/6, weapons=4, loadout_slots=0
+  Skyweavers: points=95, stats=6/6, weapons=5, loadout_slots=0
+  Storm Guardians: points=110, stats=6/6, weapons=5, loadout_slots=0
+  Striking Scorpions: points=85, stats=6/6, weapons=3, loadout_slots=0
+  Swooping Hawks: points=95, stats=6/6, weapons=5, loadout_slots=0
+  Troupe: points=85, stats=6/6, weapons=5, loadout_slots=0
+  Warlock Conclave: points=55, stats=6/6, weapons=4, loadout_slots=0
+  Warp Spiders: points=105, stats=6/6, weapons=4, loadout_slots=0
+  Windriders: points=80, stats=6/6, weapons=4, loadout_slots=0
+  Wraithguard: points=160, stats=6/6, weapons=3, loadout_slots=0
+  Wraithblades: points=150, stats=6/6, weapons=2, loadout_slots=0
+  Beastmaster [Legends]: points=135, stats=6/6, weapons=5, loadout_slots=0
+  Court of the Archon [Legends]: points=95, stats=6/6, weapons=7, loadout_slots=0
+  Cronos: points=55, stats=6/6, weapons=3, loadout_slots=0
+  Grotesques [Legends]: points=80, stats=6/6, weapons=3, loadout_slots=0
+  Hellions: points=85, stats=6/6, weapons=2, loadout_slots=0
+  Incubi: points=90, stats=6/6, weapons=3, loadout_slots=0
+  Kabalite Warriors: points=115, stats=6/6, weapons=9, loadout_slots=0
+  Mandrakes: points=75, stats=6/6, weapons=2, loadout_slots=0
+  Reavers: points=70, stats=6/6, weapons=5, loadout_slots=0
+  Scourges with Heavy Weapons: points=130, stats=6/6, weapons=8, loadout_slots=0
+  Talos: points=80, stats=6/6, weapons=0, loadout_slots=0
+  Wracks: points=60, stats=6/6, weapons=5, loadout_slots=0
+  Wyches: points=90, stats=6/6, weapons=5, loadout_slots=0
+  Shadow Spectres [Legends]: points=115, stats=6/6, weapons=3, loadout_slots=0
+  Corsair Cloud Dancer Band [Legends]: points=105, stats=0/6, weapons=9, loadout_slots=0
+  Corsair Reaver Band [Legends]: points=125, stats=0/6, weapons=15, loadout_slots=0
+  Corsair Skyreaver Band [Legends]: points=125, stats=0/6, weapons=17, loadout_slots=0
+  Warlock Skyrunners: points=45, stats=6/6, weapons=5, loadout_slots=0
+  War Walkers: points=None, stats=6/6, weapons=7, loadout_slots=0
+  Vypers: points=None, stats=6/6, weapons=1, loadout_slots=0
+  Ynnari Kabalite Warriors: points=110, stats=6/6, weapons=9, loadout_slots=0
+  Ynnari Wyches: points=90, stats=6/6, weapons=3, loadout_slots=0
+  Ynnari Incubi: points=85, stats=6/6, weapons=3, loadout_slots=0
+  Ynnari Reavers: points=65, stats=6/6, weapons=6, loadout_slots=0
+  Scourges with Shardcarbines: points=75, stats=6/6, weapons=4, loadout_slots=0
+  Starfangs: points=None, stats=6/6, weapons=3, loadout_slots=0
+  Corsair Skyreavers: points=75, stats=6/6, weapons=4, loadout_slots=0
+  ** FLAGGED (0 weapons or 0 stats): ['Talos', 'Corsair Cloud Dancer Band [Legends]', 'Corsair Reaver Band [Legends]', 'Corsair Skyreaver Band [Legends]']
+
+======================================================================
+SECTION 3: KT FACTION SLUG LOOKUP TABLE
+======================================================================
+  angels-of-death                -> Angels of Death                     (kt-angels-of-death.json)
+  battleclade                    -> Battleclade                         (kt-battleclade.json)
+  blades-of-khaine               -> Blades of Khaine                    (kt-blades-of-khaine.json)
+  blooded                        -> Blooded                             (kt-blooded.json)
+  brood-brothers                 -> Brood Brothers                      (kt-brood-brothers.json)
+  canoptek-circle                -> Canoptek Circle                     (kt-canoptek-circle.json)
+  celestian-insidiants           -> Celestian Insidiants                (kt-celestian-insidiants.json)
+  chaos-cult                     -> Chaos Cult                          (kt-chaos-cult.json)
+  corsair-voidscarred            -> Corsair Voidscarred                 (kt-corsair-voidscarred.json)
+  death-korps                    -> Death Korps                         (kt-death-korps.json)
+  deathwatch                     -> Deathwatch                          (kt-deathwatch.json)
+  elucidian-starstriders         -> Elucidian Starstriders              (kt-elucidian-starstriders.json)
+  exaction-squad                 -> Exaction Squad                      (kt-exaction-squad.json)
+  farstalker-kinband             -> Farstalker Kinband                  (kt-farstalker-kinband.json)
+  fellgor-ravagers               -> Fellgor Ravagers                    (kt-fellgor-ravagers.json)
+  gellerpox-infected             -> Gellerpox Infected                  (kt-gellerpox-infected.json)
+  goremonger                     -> Goremonger                          (kt-goremonger.json)
+  hand-of-the-archon             -> Hand of the Archon                  (kt-hand-of-the-archon.json)
+  hearthkyn-salvagers            -> Hearthkyn Salvagers                 (kt-hearthkyn-salvagers.json)
+  hernkyn-yaegirs                -> Hernkyn Yaegirs                     (kt-hernkyn-yaegirs.json)
+  hierotek-circle                -> Hierotek Circle                     (kt-hierotek-circle.json)
+  hunter-clade                   -> Hunter Clade                        (kt-hunter-clade.json)
+  imperial-navy-breachers        -> Imperial Navy Breachers             (kt-imperial-navy-breachers.json)
+  inquisitorial-agents           -> Inquisitorial Agents                (kt-inquisitorial-agents.json)
+  kasrkin                        -> Kasrkin                             (kt-kasrkin.json)
+  ork-kommandos                  -> Kommandos                           (kt-ork-kommandos.json)
+  legionary                      -> Legionaries                         (kt-legionary.json)
+  mandrakes                      -> Mandrakes                           (kt-mandrakes.json)
+  murderwing                     -> Murderwing                          (kt-murderwing.json)
+  nemesis-claw                   -> Nemesis Claw                        (kt-nemesis-claw.json)
+  novitiates                     -> Novitiates                          (kt-novitiates.json)
+  tau-pathfinders                -> Pathfinders                         (kt-tau-pathfinders.json)
+  phobos-strike-team             -> Phobos Strike Team                  (kt-phobos-strike-team.json)
+  plague-marines                 -> Plague Marines                      (kt-plague-marines.json)
+  ratlings                       -> Ratling                             (kt-ratlings.json)
+  raveners                       -> Raveners                            (kt-raveners.json)
+  sanctifier                     -> Sanctifier                          (kt-sanctifier.json)
+  scout-squad                    -> Scout Squad                         (kt-scout-squad.json)
+  strike-force-variel            -> Strike Force Variel                 (kt-strike-force-variel.json)
+  tempestus-aquilons             -> Tempestus Aquilons                  (kt-tempestus-aquilons.json)
+  vespid-stingwings              -> Vespid Stingwings                   (kt-vespid-stingwings.json)
+  void-dancer-troupe             -> Void-dancer Troupe                  (kt-void-dancer-troupe.json)
+  warpcoven                      -> Warpcoven                           (kt-warpcoven.json)
+  wolf-scouts                    -> Wolf Scouts                         (kt-wolf-scouts.json)
+  wrecka-krew                    -> Wrecka Krew                         (kt-wrecka-krew.json)
+  wyrmblade                      -> Wyrmblade                           (kt-wyrmblade.json)
+  xv26-battlesuits               -> XV26 Battlesuits                    (kt-xv26-battlesuits.json)

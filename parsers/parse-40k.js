@@ -123,26 +123,31 @@ function parseWeaponKeywords(kwString, glossary) {
 
 // ── Stat extraction ────────────────────────────────────────────────────────────
 
-function extractUnitStats(modelEntry, sharedProfiles) {
-  // First: infoLink type="profile" → Unit profile in sharedProfiles
-  for (const link of asArray(modelEntry.infoLinks?.infoLink)) {
-    if (attrStr(link, '@_type') !== 'profile') continue;
-    const p = sharedProfiles[attrStr(link, '@_targetId')];
-    if (!p || attrStr(p, '@_typeName') !== 'Unit') continue;
-    const chars = {};
-    for (const c of asArray(p.characteristics?.characteristic)) {
-      chars[attrStr(c, '@_name')] = charText(c);
+function extractUnitStats(primaryModel, unitEntry, sharedProfiles) {
+  // Check the model entry first, then fall back to the parent unit-level
+  // entry — some catalogues (e.g. Aeldari Library "Kabalite Warriors")
+  // put the Unit-typeName profile inline on the unit entry, not the model.
+  for (const modelEntry of [primaryModel, unitEntry].filter(Boolean)) {
+    // First: infoLink type="profile" → Unit profile in sharedProfiles
+    for (const link of asArray(modelEntry.infoLinks?.infoLink)) {
+      if (attrStr(link, '@_type') !== 'profile') continue;
+      const p = sharedProfiles[attrStr(link, '@_targetId')];
+      if (!p || attrStr(p, '@_typeName') !== 'Unit') continue;
+      const chars = {};
+      for (const c of asArray(p.characteristics?.characteristic)) {
+        chars[attrStr(c, '@_name')] = charText(c);
+      }
+      if (chars.M || chars.T) return chars;
     }
-    if (chars.M || chars.T) return chars;
-  }
-  // Fallback: inline profile with typeName="Unit"
-  for (const p of asArray(modelEntry.profiles?.profile)) {
-    if (attrStr(p, '@_typeName') !== 'Unit') continue;
-    const chars = {};
-    for (const c of asArray(p.characteristics?.characteristic)) {
-      chars[attrStr(c, '@_name')] = charText(c);
+    // Fallback: inline profile with typeName="Unit"
+    for (const p of asArray(modelEntry.profiles?.profile)) {
+      if (attrStr(p, '@_typeName') !== 'Unit') continue;
+      const chars = {};
+      for (const c of asArray(p.characteristics?.characteristic)) {
+        chars[attrStr(c, '@_name')] = charText(c);
+      }
+      if (chars.M || chars.T) return chars;
     }
-    if (chars.M || chars.T) return chars;
   }
   return null;
 }
@@ -226,6 +231,27 @@ function collectWeapons(modelEntry, byId, glossary) {
   for (const se of asArray(modelEntry.selectionEntries?.selectionEntry)) {
     for (const w of extractWeaponsFromEntry(se, glossary, true)) {
       addWeapon(w);
+    }
+  }
+
+  // Weapon options wrapped one level deeper in a named selectionEntryGroup
+  // on the model (e.g. Wraithblades "Weapon" group — Ghostswords vs Ghostaxe)
+  for (const grp of asArray(modelEntry.selectionEntryGroups?.selectionEntryGroup)) {
+    const defaultId = attrStr(grp, '@_defaultSelectionEntryId');
+    for (const se of asArray(grp.selectionEntries?.selectionEntry)) {
+      const isDefault = defaultId ? attrStr(se, '@_id') === defaultId : false;
+      for (const w of extractWeaponsFromEntry(se, glossary, isDefault)) {
+        addWeapon(w);
+      }
+    }
+    for (const link of asArray(grp.entryLinks?.entryLink)) {
+      const constraints = asArray(link.constraints?.constraint);
+      const isDefault   = constraints.some(c =>
+        attrStr(c, '@_type') === 'min' && Number(attrStr(c, '@_value')) >= 1
+      );
+      for (const w of resolveLink(link, byId, glossary, isDefault)) {
+        addWeapon(w);
+      }
     }
   }
 
@@ -439,8 +465,8 @@ function parseUnit(unitEntry, byId, sharedProfiles, glossary, factionSlug) {
   // Stats — from first model's Unit profile
   const primaryModel = findPrimaryModel(unitEntry, byId);
   let stats = null;
-  if (primaryModel) {
-    const rawStats = extractUnitStats(primaryModel, sharedProfiles);
+  {
+    const rawStats = extractUnitStats(primaryModel, unitEntry, sharedProfiles);
     if (rawStats) {
       stats = {
         M:  rawStats.M  || '',
