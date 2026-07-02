@@ -972,3 +972,26 @@ parses `/Range\s+(\d+)/i` from `WR`. Returns max range in inches; 0 if no ranged
 
 Fired from `updateDragOverlay` (line ~2051) during Move/Dash drag only.
 Not fired during Shoot, Fight, or Charge drags (those use `shootState`/`fightState`, not `dragState`).
+
+---
+
+## BON-1 — Generic Bonus Engine landed in data-pipeline (2026-07-02)
+
+data-pipeline built a shared modifier resolver for ploys/stratagems/weapon
+keywords across all three game systems — see `data-pipeline/DEVLOG.md` for
+the full writeup. Relevant here:
+
+- `shared/bonus-resolver.js` (master copy lives in data-pipeline) is meant
+  to be vendored by hand into `killteam/js/bonus-resolver.js` — no copy
+  exists yet (that's BON-2 work). Run `node parsers/check-resolver-sync.js`
+  from data-pipeline after copying it in, and again after any future edit
+  to the master, to catch drift.
+- `games-kt/` was confirmed (again) as the correct live-game collection
+  name while cross-checking Firebase paths for that work — no change here,
+  just a cross-repo confirmation.
+- Weapon-keyword bonuses for all 47 KT factions are compiled and sitting in
+  `data-pipeline/output/bonuses-catalog.json` and embedded per-weapon in
+  the parsed faction JSON, but nothing has been written to
+  `gameData/kill-team/bonuses/` yet — pending review.
+- Faction ploy/stratagem replacement-as-bonuses is explicitly BON-3, not
+  done yet. Nothing in `killteam/js/` needs to change for BON-1 itself.
