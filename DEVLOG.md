@@ -129,3 +129,22 @@ Full 8th edition Movement Phase. Ghost preview pattern (preview before commit), 
 - **Shooting-after-reform restriction** is not enforced. Noted for WHF-4.
 - **Character stats (General of the Empire, Empire Captain)** are from training knowledge, not verified against 8th.whfb.app. Unblocks at WHF-5 before character combat is implemented.
 - **Firebase credentials** are in `firebase-config.js` (gitignored). Shape: same as `warhammer40k/firebase-config.js`.
+
+---
+
+## BON-1 — Generic Bonus Engine landed in data-pipeline (2026-07-02)
+
+data-pipeline built the cross-system bonus/modifier schema referenced in
+the BON-1 roadmap ("WHF adopts resolver via its own stat mapping"). Nothing
+to do here yet — noting for whenever WHF picks this up:
+
+- `system: "warhammer-fantasy"` and the Firebase path
+  `gameData/warhammer-fantasy/bonuses/{bonusId}` are already reserved in
+  the schema and in data-pipeline's `upload.js`, matching this repo's
+  existing `gameData/warhammer-fantasy/{factionId}/...` convention.
+- The condition-token machinery (stackable named tokens, e.g. Markerlight
+  in KT) is explicitly designed to carry WHF psychology (Fear, Panic)
+  later — see the `shared/bonus-resolver.js` header in data-pipeline.
+- Adopting the resolver means extending its abstract stat vocabulary (WS,
+  BS, Ld, etc.) — additive only, per the schema's own rule: extend by
+  adding, never renaming existing stats.
