@@ -1,0 +1,100 @@
+{
+  "faction": "tau-pathfinders",
+  "system": "kill-team",
+  "strategicPloys": [
+    {
+      "id": "recon-sweep",
+      "name": "Recon Sweep",
+      "cp": 1,
+      "phase": "strategy",
+      "timing": "Strategy phase",
+      "description": "Select one killzone edge (excluding your own). Each friendly PATHFINDER operative that is wholly within 6\" of that edge can immediately perform a free Dash action in an order of your choice, but each that does so must end that move wholly within 6\" of a killzone edge (excluding your own). You cannot use this ploy during the first Turning Point.",
+      "restrictions": ["Cannot use during Turning Point 1"],
+      "oncePer": "game"
+    },
+    {
+      "id": "suppressing-fire",
+      "name": "Suppressing Fire",
+      "cp": 1,
+      "phase": "strategy",
+      "timing": "Strategy phase",
+      "description": "Until the end of the Turning Point, whenever an enemy operative is performing the Shoot action, if the target (the primary target if the weapon has the Blast or Torrent weapon rules) is not the closest valid target, your opponent cannot re-roll their attack dice. Ignore friendly PATHFINDER operatives that have a Conceal order or are obscured when determining this.",
+      "restrictions": []
+    },
+    {
+      "id": "bonded",
+      "name": "Bonded",
+      "cp": 1,
+      "phase": "strategy",
+      "timing": "Strategy phase",
+      "description": "Until the end of the Turning Point, whenever a friendly PATHFINDER operative (excluding DRONE) is shooting or retaliating with a ranged weapon (see Point-Blank Fusillade firefight ploy), if it is within 3\" of another friendly PATHFINDER operative (excluding DRONE), that first friendly operative's ranged weapons have the Accurate 1 weapon rule.",
+      "restrictions": []
+    },
+    {
+      "id": "take-cover",
+      "name": "Take Cover",
+      "cp": 1,
+      "phase": "strategy",
+      "timing": "Strategy phase",
+      "description": "Until the end of the Turning Point, whenever an operative is shooting a friendly PATHFINDER operative, if you can retain any cover saves, improve that friendly operative's Save characteristic by 1.",
+      "restrictions": []
+    },
+    {
+      "id": "veterans-cunning",
+      "name": "Veteran's Cunning",
+      "cp": 1,
+      "phase": "strategy",
+      "timing": "Strategy phase",
+      "description": "If a friendly SHAS'UI PATHFINDER operative is in the killzone and it used its Art of War ability in the previous Turning Point, you can use this Strategic Ploy. Until the end of the Turning Point, while a friendly PATHFINDER operative is within 6\" of and Visible to a friendly SHAS'UI operative, it treats the same Art of War that was in effect for your kill team in the previous Turning Point as being in effect for this Turning Point.",
+      "restrictions": ["Requires SHAS'UI to have used Art of War in previous Turning Point"],
+      "oncePer": "game"
+    }
+  ],
+  "tacticalPloys": [
+    {
+      "id": "a-worthy-cause",
+      "name": "A Worthy Cause",
+      "cp": 1,
+      "phase": "firefight",
+      "timing": "Start of the Firefight phase",
+      "description": "One friendly PATHFINDER operative (excluding DRONE) can immediately perform a free mission action.",
+      "restrictions": []
+    },
+    {
+      "id": "supporting-fire",
+      "name": "Supporting Fire",
+      "cp": 1,
+      "phase": "firefight",
+      "timing": "When a friendly PATHFINDER operative is performing the Shoot action",
+      "description": "When a friendly PATHFINDER operative is performing the Shoot action and you are selecting a valid target within 6\" of it, you can select an enemy operative that is within Engagement Range of a friendly operative as the target, even if that enemy operative is in Cover as a result of friendly operatives' bases.",
+      "restrictions": []
+    },
+    {
+      "id": "saviour-protocols",
+      "name": "Saviour Protocols",
+      "cp": 1,
+      "phase": "firefight",
+      "timing": "When a friendly PATHFINDER operative is selected as target of a shooting attack",
+      "description": "When a friendly PATHFINDER operative (excluding DRONE) is selected as the target of a shooting attack (excluding attacks with Blast or Torrent weapons), if a friendly DRONE operative is Visible to and within 3\" of that operative, you can select that DRONE operative as the new target instead. This ploy costs 0CP if used by a DRONE CONTROLLER PATHFINDER operative.",
+      "restrictions": ["Cannot be used against Blast or Torrent weapons"]
+    },
+    {
+      "id": "point-blank-fusillade",
+      "name": "Point-Blank Fusillade",
+      "cp": 1,
+      "phase": "firefight",
+      "timing": "When a friendly PATHFINDER operative is retaliating",
+      "description": "When a friendly PATHFINDER operative (excluding DRONE) is retaliating, if it was not within control range of enemy operatives at the start of that activation. You can use one of its ranged weapons as a melee weapon (excluding a weapon with the word 'grenade' in its name) during that sequence. If you do, you cannot block during that sequence, and Devastating, Piercing, and Torrent weapon rules have no effect on its weapons until the end of that sequence. If that operative is ready, has an Engage order and is retaliating with a pulse weapon, you resolve the first attack dice.",
+      "restrictions": ["Cannot use grenades", "Cannot block during sequence"]
+    },
+    {
+      "id": "group-activation",
+      "name": "Group Activation",
+      "cp": 1,
+      "phase": "firefight",
+      "timing": "Start of the Firefight phase",
+      "description": "Select one ready friendly PATHFINDER operative (excluding a DRONE operative) that is within 2\" of any enemy operatives or within 2\" of the centre of an objective marker and activate it.",
+      "restrictions": []
+    }
+  ]
+}
