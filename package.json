@@ -6,6 +6,9 @@
     "glossary": "node parsers/extract-glossary.js",
     "parse-kt": "node parsers/parse-kt.js",
     "parse-40k": "node parsers/parse-40k.js",
+    "compile-keywords": "node parsers/compile-keywords.js",
+    "check-resolver-sync": "node parsers/check-resolver-sync.js",
+    "test-resolver": "node shared/bonus-resolver.test.js",
     "upload": "node parsers/upload.js"
   },
   "dependencies": {

@@ -220,6 +220,48 @@ async function upload40kStratagems(dbUrl, file) {
   return { slug };
 }
 
+async function uploadBonusesCatalog(dbUrl) {
+  const file = path.join(OUT_DIR, 'bonuses-catalog.json');
+  if (!fs.existsSync(file)) { console.warn('  WARN: bonuses-catalog.json not found (run npm run compile-keywords first)'); return; }
+  const catalog = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+  // gameData/{system}/bonuses/{bonusId} — system-first, matching every other
+  // path in this pipeline (gameData/kill-team/rules, gameData/warhammer-40k/
+  // factions/..., etc). A bonus with system:"any" isn't a storage location —
+  // it's a source property that gets fanned out to every real system's path
+  // at write time (writers fan out, readers never look in two places). The
+  // per-game snapshot rule makes the duplication harmless.
+  const REAL_SYSTEMS = ['kill-team', 'warhammer-40k', 'warhammer-fantasy'];
+  const bySystem = {};
+  for (const sys of REAL_SYSTEMS) bySystem[sys] = {};
+  for (const bonus of catalog) {
+    const targets = bonus.system === 'any' ? REAL_SYSTEMS : [bonus.system];
+    for (const sys of targets) {
+      if (!bySystem[sys]) { console.warn(`  WARN: unknown system "${sys}" on bonus ${bonus.id}, skipping`); continue; }
+      bySystem[sys][bonus.id] = bonus;
+    }
+  }
+
+  console.log(`\nBonuses catalog — ${catalog.length} entries`);
+  for (const sys of REAL_SYSTEMS) {
+    const entries = bySystem[sys];
+    const count = Object.keys(entries).length;
+    if (count === 0) { console.log(`  ${sys}: nothing to write, skipping`); continue; }
+
+    const fbPath = `gameData/${sys}/bonuses`;
+    if (!FORCE && await exists(dbUrl, fbPath)) {
+      console.log(`  SKIP: ${sys} bonuses already exist (use --force to overwrite)`);
+      continue;
+    }
+
+    const answer = await confirm(`  About to write ${count} bonuses to ${fbPath}. Type YES to continue: `);
+    if (answer !== 'YES') { console.log('  Aborted.'); continue; }
+
+    await put(dbUrl, fbPath, entries);
+    console.log(`  ✓ Wrote ${count} bonuses for ${sys}`);
+  }
+}
+
 async function upload40kRules(dbUrl) {
   const file = path.join(OUT_DIR, 'rules-glossary-40k.json');
   if (!fs.existsSync(file)) { console.warn('  WARN: rules-glossary-40k.json not found'); return; }
@@ -293,6 +335,9 @@ async function main() {
       await upload40kStratagems(databaseURL, path.join(STRATS_DIR, f));
     }
   }
+
+  // ── Bonus engine catalog (BON-1) ──────────────────────────────────────────
+  await uploadBonusesCatalog(databaseURL);
 
   console.log('\n=== Done ===');
 }
