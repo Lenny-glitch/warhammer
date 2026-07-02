@@ -295,3 +295,24 @@ When merged, the lobby will offer game mode selection (40K / Kill Team), and the
 - **No TypeScript, no bundler, no linting config.** Keep it that way unless the user explicitly asks.
 - **Phase numbers** are informal labels from planning docs, not reflected in code. Don't add phase comments to source files.
 - **The board is in inches**, not pixels. The canvas renderer scales inches to pixels internally.
+
+---
+
+## BON-1 — Generic Bonus Engine landed in data-pipeline (2026-07-02)
+
+Same bonus-resolver work noted in killteam/DEVLOG.md. Specific to this repo:
+
+- `shared/bonus-resolver.js` (master copy lives in data-pipeline) needs to
+  be vendored into `warhammer40k/js/bonus-resolver.js` when BON-4 (40k
+  integration) starts. `data-pipeline`'s `check-resolver-sync.js` currently
+  reports it ABSENT — expected until that copy step happens.
+- Confirmed while cross-checking Firebase paths for that work: this repo's
+  live-game collection is `games/`, not `games-40k/`. killteam/DEVLOG.md
+  has a noted someday-plan to rename to `games-{system}/` — that hasn't
+  happened. Don't assume `games-40k/` exists anywhere yet.
+- Flagged a real gap in the bonus schema's abstract stat vocabulary that
+  will matter when BON-4 wires this up: it has a single `hit` roll-target
+  stat with no separate `wound` stat, so Twin-linked, Anti-, Sustained
+  Hits, and Lance (all of which modify the Wound roll specifically) came
+  back unmapped in `data-pipeline/output/_unmapped_keywords.txt`. Worth a
+  vocab decision before BON-4, not something to guess into place then.
