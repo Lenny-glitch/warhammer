@@ -513,3 +513,16 @@ Added a **Draft Cleaner** maintenance utility to the roster app at `#clean-draft
 
 ---
 
+## BON-1 — Generic Bonus Engine landed in data-pipeline (2026-07-02)
+
+data-pipeline replaced the "get ploys/stratagems card-exact" effort with a
+generic bonus/modifier schema (see data-pipeline/DEVLOG.md). Relevant here:
+
+- Roster currently reads ploys from `gameData/.../ploys` purely for display
+  (DATA_MIGRATION_PLAN.md: "displays them as reference"). That data source
+  doesn't change yet — BON-1 only compiled weapon-keyword bonuses, not
+  faction ploys/stratagems as bonuses (that's BON-3).
+- When BON-3 lands, the ploy/stratagem reference display in the roster
+  builder will have a second, more structured source it could pull from
+  (`gameData/{system}/bonuses/`) — no action needed until then.
+
