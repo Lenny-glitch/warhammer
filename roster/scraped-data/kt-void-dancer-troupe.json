@@ -1,0 +1,416 @@
+{
+  "faction": "void-dancer-troupe",
+  "operatives": {
+    "lead-player": {
+      "id": "lead-player",
+      "name": "Lead Player",
+      "gameSystem": "kill-team",
+      "faction": "Void-dancer Troupe",
+      "factionId": "void-dancer-troupe",
+      "role": "Lead Player",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "9"
+      },
+      "weapons": [
+        {
+          "id": "fusion-pistol",
+          "name": "Fusion pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "5/3",
+            "WR": "Range 3\" , Devastating 3 , Piercing 2"
+          }
+        },
+        {
+          "id": "neuro-disruptor",
+          "name": "Neuro disruptor",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Range 8\" , Piercing 1 , Stun"
+          }
+        },
+        {
+          "id": "shuriken-pistol",
+          "name": "Shuriken pistol",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\" , Rending"
+          }
+        },
+        {
+          "id": "blade",
+          "name": "Blade",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/6",
+            "WR": ""
+          }
+        },
+        {
+          "id": "caress",
+          "name": "Caress",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Rending"
+          }
+        },
+        {
+          "id": "embrace",
+          "name": "Embrace",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Brutal"
+          }
+        },
+        {
+          "id": "kiss",
+          "name": "Kiss",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "3/7",
+            "WR": ""
+          }
+        },
+        {
+          "id": "power-weapon",
+          "name": "Power weapon",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/6",
+            "WR": "Lethal 5+"
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Lead the Performance",
+          "type": "passive",
+          "description": "Once per battle STRATEGIC GAMBIT . If this operative is in the killzone , change the ALLEGORY you selected for your kill team. Note that the ACCOLADE rule friendly operatives have will also change."
+        }
+      ],
+      "keywords": [
+        "VOID-DANCER TROUPE",
+        "AELDARI",
+        "HARLEQUIN",
+        "LEADER",
+        "LEAD PLAYER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Lead-Player"
+    },
+    "death-jester": {
+      "id": "death-jester",
+      "name": "Death Jester",
+      "gameSystem": "kill-team",
+      "faction": "Void-dancer Troupe",
+      "factionId": "void-dancer-troupe",
+      "role": "Death Jester",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "9"
+      },
+      "weapons": [
+        {
+          "id": "shrieker-cannon-focused",
+          "name": "Shrieker cannon (focused)",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Rending , Heavy ( Reposition only), Humbling Cruelty *"
+          }
+        },
+        {
+          "id": "shrieker-cannon-sweeping",
+          "name": "Shrieker cannon (sweeping)",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Rending , Heavy ( Dash only), Torrent 2\" , Humbling Cruelty *"
+          }
+        },
+        {
+          "id": "shrieker-blade",
+          "name": "Shrieker blade",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Rending"
+          }
+        }
+      ],
+      "abilities": [],
+      "keywords": [
+        "VOID-DANCER TROUPE",
+        "AELDARI",
+        "HARLEQUIN",
+        "DEATH JESTER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Death-Jester"
+    },
+    "player": {
+      "id": "player",
+      "name": "Troupe Player",
+      "gameSystem": "kill-team",
+      "faction": "Void-dancer Troupe",
+      "factionId": "void-dancer-troupe",
+      "role": "Player",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "8"
+      },
+      "weapons": [
+        {
+          "id": "fusion-pistol",
+          "name": "Fusion pistol",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "5/3",
+            "WR": "Range 3\" , Devastating 3 , Piercing 2"
+          }
+        },
+        {
+          "id": "neuro-disruptor",
+          "name": "Neuro disruptor",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Range 8\" , Piercing 1 , Stun"
+          }
+        },
+        {
+          "id": "shuriken-pistol",
+          "name": "Shuriken pistol",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\" , Rending"
+          }
+        },
+        {
+          "id": "blade",
+          "name": "Blade",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/6",
+            "WR": ""
+          }
+        },
+        {
+          "id": "caress",
+          "name": "Caress",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Rending"
+          }
+        },
+        {
+          "id": "embrace",
+          "name": "Embrace",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Brutal"
+          }
+        },
+        {
+          "id": "kiss",
+          "name": "Kiss",
+          "type": "melee",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "5",
+            "HIT": "3+",
+            "DMG": "3/7",
+            "WR": ""
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "Luck of the Laughing God",
+          "type": "passive",
+          "description": "Once per turning point, you can use this rule. If you do, you can use a firefight ploy for 0CP if this is the specified VOID-DANCER TROUPE operative (including Command Re-roll if the attack or defence dice was rolled for this operative). You cannot select the same firefight ploy for this rule more than once per battle."
+        }
+      ],
+      "keywords": [
+        "VOID-DANCER TROUPE",
+        "AELDARI",
+        "HARLEQUIN",
+        "PLAYER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Player"
+    },
+    "shadowseer": {
+      "id": "shadowseer",
+      "name": "Shadowseer",
+      "gameSystem": "kill-team",
+      "faction": "Void-dancer Troupe",
+      "factionId": "void-dancer-troupe",
+      "role": "Shadowseer",
+      "points": null,
+      "countsAs": 1,
+      "stats": {
+        "APL": "3",
+        "MOVE": "7\"",
+        "DF": "3",
+        "SAVE": "4+",
+        "WOUNDS": "9"
+      },
+      "weapons": [
+        {
+          "id": "hallucinogen-grenade",
+          "name": "Hallucinogen grenade",
+          "type": "ranged",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "1/1",
+            "WR": "Range 6\" , Blast 2\" , Lethal 5+ , Seek Light , Silent , Stun"
+          }
+        },
+        {
+          "id": "neuro-disruptor",
+          "name": "Neuro disruptor",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/5",
+            "WR": "Range 8\" , Piercing 1 , Stun"
+          }
+        },
+        {
+          "id": "shuriken-pistol",
+          "name": "Shuriken pistol",
+          "type": "ranged",
+          "isDefault": false,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "3/4",
+            "WR": "Range 8\" , Rending"
+          }
+        },
+        {
+          "id": "miststave",
+          "name": "Miststave",
+          "type": "melee",
+          "isDefault": true,
+          "profiles": {
+            "ATK": "4",
+            "HIT": "3+",
+            "DMG": "4/4",
+            "WR": "Shock"
+          }
+        }
+      ],
+      "abilities": [
+        {
+          "name": "FOG OF DREAMS",
+          "type": "action",
+          "apCost": "1AP",
+          "description": "PSYCHIC . Select one ready enemy operative visible to this operative and roll one D6. Until the end of the turning point, that enemy operative cannot be activated or perform actions until it’s the last enemy operative to be activated, or until your opponent has activated a number of enemy operatives after this action equal to the result of the D6 (whichever comes first). This operative cannot perform this action while within control range of an enemy operative."
+        },
+        {
+          "name": "MIRROR OF MINDS",
+          "type": "action",
+          "apCost": "1AP",
+          "description": "PSYCHIC . Select one enemy operative that’s a valid target for and within 8\" of this operative. Both players roll five D6. Pair your dice with your opponent’s dice based on matching results. For each matching pair, inflict D3 damage on that enemy operative (to a maximum of 8). For example, if you rolled 6 , 5 , 5, 2, 1 and your opponent rolled 6 , 5 , 4, 3, 1 , you would inflict 3D3 damage on that enemy operative. This operative cannot perform this action while within control range of an enemy operative."
+        }
+      ],
+      "keywords": [
+        "VOID-DANCER TROUPE",
+        "AELDARI",
+        "HARLEQUIN",
+        "PSYKER",
+        "SHADOWSEER"
+      ],
+      "baseSize": null,
+      "source": "scraper",
+      "notes": "",
+      "_wahapediaSlug": "Shadowseer"
+    }
+  }
+}

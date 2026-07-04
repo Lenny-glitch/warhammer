@@ -1,0 +1,4631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Roster Manager</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0e0e1a;
+      --surface:    #181828;
+      --surface2:   #1e1e32;
+      --border:     #2e2e50;
+      --border-hi:  #5050a0;
+      --text:       #dcdcf0;
+      --text-dim:   #6a6a90;
+      --accent:     #7c6af7;
+      --accent-dim: #3a3270;
+      --green:      #4caf74;
+      --red:        #cc6060;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── NAV ── */
+    #app-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.875rem 1.5rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    #nav-back {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 0.3rem 0.8rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      display: none;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #nav-back:hover { color: var(--text); border-color: var(--border-hi); }
+    #nav-back.visible { display: block; }
+
+    #nav-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    #nav-crumb {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+
+    /* ── SCREENS ── */
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* ── HOME ── */
+    #screen-home {
+      max-width: 600px;
+      margin: 5rem auto;
+      padding: 0 1.5rem;
+      text-align: center;
+    }
+
+    #screen-home h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+    }
+
+    #screen-home .lead {
+      color: var(--text-dim);
+      font-size: 0.875rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .section-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.875rem;
+      text-align: left;
+    }
+
+    .system-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.875rem;
+      margin-bottom: 2rem;
+    }
+
+    .system-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1rem;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, transform 0.1s;
+      text-align: center;
+      user-select: none;
+    }
+    .system-card:hover {
+      border-color: var(--border-hi);
+      background: var(--surface2);
+      transform: translateY(-1px);
+    }
+    .system-card.selected {
+      border-color: var(--accent);
+      background: var(--surface2);
+    }
+    .system-card .card-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+    .system-card .card-stats {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      letter-spacing: 0.05em;
+    }
+
+    .action-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.875rem;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+    }
+    .action-row.visible {
+      opacity: 1;
+      transform: none;
+      pointer-events: all;
+    }
+
+    /* ── HOME UTIL LINK ── */
+    .home-util {
+      margin-top: 2rem;
+      text-align: center;
+    }
+    .util-link {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      text-decoration: none;
+      letter-spacing: 0.06em;
+      opacity: 0.7;
+      transition: opacity 0.15s;
+    }
+    .util-link:hover { opacity: 1; color: var(--text); }
+
+    /* ── ROSTER CLEANER ── */
+    .cleaner-wrap {
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 5rem;
+    }
+    .cleaner-summary {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      margin-bottom: 1.5rem;
+    }
+    .cleaner-roster {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    .cleaner-roster-header {
+      padding: 0.75rem 1rem;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: flex;
+      gap: 0.5rem;
+      align-items: baseline;
+    }
+    .cleaner-roster-meta {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      font-weight: 400;
+    }
+    .cleaner-unit-row {
+      display: grid;
+      grid-template-columns: 2fr 1.5fr auto;
+      gap: 0.5rem 1rem;
+      align-items: start;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem;
+    }
+    .cleaner-unit-row:last-child { border-bottom: none; }
+    .cleaner-unit-name { color: var(--text); }
+    .cleaner-unit-id   { color: var(--text-dim); font-family: monospace; font-size: 0.72rem; }
+    .cleaner-status    { text-align: right; white-space: nowrap; }
+    .cleaner-note      {
+      grid-column: 1 / -1;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      padding-left: 0.5rem;
+      margin-top: -0.2rem;
+    }
+    .tag-ok     { color: var(--green); }
+    .tag-auto   { color: #7abaff; }
+    .tag-manual { color: #f0c060; }
+    .tag-error  { color: var(--red); }
+    .fix-arrow  { color: var(--text-dim); margin: 0 0.3rem; }
+    .cleaner-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      margin-top: 1.5rem;
+    }
+    .cleaner-apply-btn {
+      padding: 0.7rem 1.5rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter 0.15s;
+    }
+    .cleaner-apply-btn:hover  { filter: brightness(1.15); }
+    .cleaner-apply-btn:disabled { opacity: 0.4; cursor: default; filter: none; }
+    .cleaner-status-msg {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+
+    /* ── BUTTONS ── */
+    .btn {
+      padding: 0.875rem 1rem;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+      transition: filter 0.15s, border-color 0.15s;
+      width: 100%;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .btn-primary:hover { filter: brightness(1.15); }
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .btn-secondary:hover { border-color: var(--border-hi); }
+
+    /* ── PLACEHOLDER ── */
+    .placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      gap: 0.5rem;
+      text-align: center;
+    }
+    .placeholder h2 { font-size: 1rem; }
+    .placeholder p  { font-size: 0.85rem; color: var(--text-dim); }
+
+    /* ── LOADING ── */
+    .loading-text {
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    /* ── UNIT FORM ── */
+    .uf-wrap {
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 7rem;
+    }
+
+    .uf-section {
+      margin-bottom: 2rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .uf-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    @media (max-width: 520px) {
+      .uf-grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .uf-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .uf-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .req { color: var(--red); margin-left: 0.15em; }
+
+    .uf-input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      font-size: 0.875rem;
+      padding: 0.5rem 0.75rem;
+      outline: none;
+      transition: border-color 0.15s;
+      width: 100%;
+      font-family: inherit;
+    }
+    .uf-input:focus { border-color: var(--accent); }
+    .uf-input::placeholder { color: var(--text-dim); }
+
+    .uf-textarea {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      font-size: 0.875rem;
+      padding: 0.5rem 0.75rem;
+      outline: none;
+      resize: vertical;
+      width: 100%;
+      min-height: 80px;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    .uf-textarea:focus { border-color: var(--accent); }
+    .uf-textarea::placeholder { color: var(--text-dim); }
+
+    .uf-error {
+      font-size: 0.72rem;
+      color: var(--red);
+      min-height: 1rem;
+    }
+
+    .has-error .uf-input { border-color: var(--red); }
+
+    /* ── STAT BLOCK ── */
+    .stat-row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .stat-field {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .stat-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .stat-input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      font-size: 0.875rem;
+      padding: 0.4rem 0.35rem;
+      outline: none;
+      width: 62px;
+      text-align: center;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    .stat-input:focus { border-color: var(--accent); }
+    .stat-input::placeholder { color: var(--text-dim); }
+
+    /* ── WEAPON CARDS ── */
+    .weapon-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      margin-bottom: 0.75rem;
+    }
+
+    .weapon-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .weapon-name {
+      flex: 1;
+      min-width: 130px;
+    }
+
+    .type-toggle {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .type-btn {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.3rem 0.65rem;
+      letter-spacing: 0.04em;
+      transition: background 0.12s, color 0.12s;
+      font-family: inherit;
+    }
+    .type-btn.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+    .type-btn:not(.active):hover { background: var(--surface); color: var(--text); }
+
+    .default-check {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .default-check input { accent-color: var(--accent); cursor: pointer; }
+
+    .weapon-arrows {
+      display: flex;
+      gap: 0.2rem;
+      flex-shrink: 0;
+    }
+
+    .arrow-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 0.75rem;
+      line-height: 1;
+      padding: 0.25rem 0.45rem;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .arrow-btn:hover:not(:disabled) { color: var(--text); border-color: var(--border-hi); }
+    .arrow-btn:disabled { opacity: 0.25; cursor: default; }
+
+    .remove-btn {
+      background: none;
+      border: 1px solid transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      transition: color 0.12s, border-color 0.12s;
+      flex-shrink: 0;
+    }
+    .remove-btn:hover { color: var(--red); border-color: var(--red); }
+
+    .weapon-profiles {
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      padding: 0.5rem 0.75rem 0.65rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .wp-field {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .wp-label {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .wp-input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 0.8rem;
+      padding: 0.3rem 0.35rem;
+      width: 60px;
+      text-align: center;
+      outline: none;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    .wp-input:focus { border-color: var(--accent); }
+    .wp-input::placeholder { color: var(--text-dim); }
+
+    /* ── LOADOUT ── */
+    .section-hint {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      font-weight: 400;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .loadout-slot {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      margin-bottom: 0.75rem;
+      padding: 0.75rem;
+    }
+
+    .loadout-header {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 0.65rem;
+    }
+
+    .wcheck-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .wcheck-label {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.78rem;
+      padding: 0.25rem 0.6rem;
+      user-select: none;
+      transition: border-color 0.12s, background 0.12s, color 0.12s;
+    }
+    .wcheck-label.active {
+      border-color: var(--accent-dim);
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+    .wcheck-label input { display: none; }
+
+    .wcheck-empty {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      font-style: italic;
+    }
+
+    /* ── ABILITIES ── */
+    .ability-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      margin-bottom: 0.75rem;
+      padding: 0.75rem;
+    }
+
+    .ability-header {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+
+    /* ── TAGS ── */
+    .tag-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 0.6rem;
+      min-height: 1.5rem;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      background: var(--accent-dim);
+      border-radius: 4px;
+      color: var(--accent);
+      font-size: 0.8rem;
+      padding: 0.2rem 0.5rem 0.2rem 0.6rem;
+    }
+
+    .tag-x {
+      background: none;
+      border: none;
+      color: var(--accent);
+      cursor: pointer;
+      font-size: 0.85rem;
+      line-height: 1;
+      opacity: 0.6;
+      padding: 0;
+      transition: opacity 0.1s;
+    }
+    .tag-x:hover { opacity: 1; }
+
+    .tag-input-row {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .tag-input-row .uf-input { flex: 1; }
+    .tag-input-row .btn { width: auto; padding: 0.5rem 1rem; }
+
+    /* ── ADD BUTTONS ── */
+    .uf-add-btn {
+      margin-top: 0.25rem;
+      width: auto;
+      padding: 0.5rem 1rem;
+    }
+
+    /* ── FORM ACTIONS ── */
+    .uf-actions {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 0.75rem;
+      justify-content: flex-end;
+      padding: 0.875rem 1.5rem;
+      z-index: 9;
+    }
+    .uf-actions .btn { width: auto; padding: 0.75rem 1.5rem; }
+
+    /* ── UNIT CARD ── */
+    .uc-wrap {
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    .uc-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .uc-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1.25rem 1.5rem 1.1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .uc-name {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      line-height: 1.2;
+      margin-bottom: 0.3rem;
+    }
+
+    .uc-meta {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      letter-spacing: 0.03em;
+    }
+
+    .uc-points {
+      flex-shrink: 0;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      border-radius: 5px;
+      color: var(--accent);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      padding: 0.25rem 0.65rem;
+      white-space: nowrap;
+    }
+
+    /* stat block */
+    .uc-stats {
+      display: flex;
+      gap: 1px;
+      background: var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .uc-stat {
+      flex: 1;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0.6rem 0.25rem;
+    }
+
+    .uc-stat-label {
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.35rem;
+    }
+
+    .uc-stat-val {
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+
+    /* sections */
+    .uc-section {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .uc-section-title {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.75rem;
+    }
+
+    /* weapons */
+    .uc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    .uc-table th {
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      padding: 0 0.5rem 0.45rem;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .uc-table th:first-child { text-align: left; padding-left: 0; }
+
+    .uc-table td {
+      padding: 0.5rem 0.5rem;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .uc-table td:first-child { text-align: left; padding-left: 0; }
+    .uc-table tr:last-child td { border-bottom: none; }
+
+    .uc-weapon-name {
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .uc-type-badge {
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--text-dim);
+      padding: 0.1rem 0.35rem;
+    }
+
+    .uc-default-star { color: var(--accent); font-size: 0.7rem; }
+
+    .uc-loadout {
+      margin-top: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      padding-top: 0.6rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .uc-loadout-title {
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.2rem;
+    }
+
+    .uc-loadout-row {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+    .uc-loadout-row strong { color: var(--text); font-weight: 600; }
+
+    /* abilities */
+    .uc-ability { margin-bottom: 0.8rem; }
+    .uc-ability:last-child { margin-bottom: 0; }
+
+    .uc-ability-name {
+      font-size: 0.82rem;
+      font-weight: 700;
+      margin-bottom: 0.2rem;
+    }
+
+    .uc-ability-text {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
+    /* tags read-only */
+    .uc-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+    /* notes */
+    .uc-notes-text {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    /* card actions */
+    .uc-actions {
+      display: flex;
+      gap: 0.6rem;
+      padding: 1rem 1.5rem;
+    }
+    .uc-actions .btn { width: auto; padding: 0.6rem 1.2rem; font-size: 0.82rem; }
+
+    .btn-danger {
+      background: none;
+      border-color: var(--red);
+      color: var(--red);
+      margin-left: auto;
+    }
+    .btn-danger:hover { background: var(--red); color: #fff; filter: none; }
+
+    /* ── LIBRARY ── */
+    .lib-wrap {
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 1.5rem 1.5rem 3rem;
+    }
+
+    .lib-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.1rem;
+    }
+    .lib-toolbar .uf-input { flex: 1; }
+    .lib-add-btn { width: auto; padding: 0.5rem 1rem; flex-shrink: 0; }
+
+    .lib-filters {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+    }
+
+    .lib-filter {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      padding: 0.28rem 0.85rem;
+      transition: border-color 0.12s, color 0.12s, background 0.12s;
+    }
+    .lib-filter:hover { border-color: var(--border-hi); color: var(--text); }
+    .lib-filter.active {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .lib-faction-group { margin-bottom: 1.5rem; }
+
+    .lib-faction-header {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      padding-bottom: 0.45rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0.15rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .lib-build-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      padding: 0.18rem 0.55rem;
+      text-transform: uppercase;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .lib-build-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    .lib-unit-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.6rem 0.6rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .lib-unit-row:hover { background: var(--surface2); }
+
+    .lib-unit-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .lib-unit-name {
+      font-size: 0.875rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .lib-unit-role {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .lib-unit-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-shrink: 0;
+    }
+
+    .lib-unit-pts {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      min-width: 42px;
+      text-align: right;
+    }
+
+    .lib-action-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.72rem;
+      font-weight: 600;
+      opacity: 0;
+      padding: 0.2rem 0.55rem;
+      transition: opacity 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .lib-unit-row:hover .lib-action-btn { opacity: 1; }
+
+    .lib-edit-btn { color: var(--text-dim); }
+    .lib-edit-btn:hover { color: var(--text); border-color: var(--border-hi); }
+
+    .lib-del-btn {
+      border-color: transparent;
+      color: var(--text-dim);
+      font-size: 1rem;
+      padding: 0.15rem 0.4rem;
+    }
+    .lib-del-btn:hover { color: var(--red); border-color: var(--red); }
+
+    .lib-empty {
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      padding: 3.5rem 1rem;
+    }
+
+    /* ── ROSTER BUILDER ── */
+    .rb-wrap {
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 1.5rem 1.5rem 6rem;
+    }
+
+    .rb-header {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .rb-header-top {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .rb-name-input { flex: 1; font-size: 1rem; font-weight: 600; }
+
+    .rb-counter {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .rb-counter.full { color: var(--green); }
+    .rb-counter.over { color: var(--red); }
+
+    .rb-meta { font-size: 0.78rem; color: var(--text-dim); }
+
+    .rb-legality-banner {
+      margin-top: 0.6rem;
+      font-size: 0.8rem;
+      border-radius: 5px;
+      padding: 0.45rem 0.75rem;
+      display: none;
+    }
+    .rb-legality-banner.legal {
+      display: block;
+      background: rgba(76,175,116,0.12);
+      border: 1px solid var(--green);
+      color: var(--green);
+    }
+    .rb-legality-banner.illegal {
+      display: block;
+      background: rgba(204,96,96,0.12);
+      border: 1px solid var(--red);
+      color: var(--red);
+    }
+
+    .rb-section-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+    }
+    .rb-browser-label { margin-top: 1.5rem; }
+
+    .rb-op-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-height: 60px;
+    }
+
+    .rb-op-empty {
+      color: var(--text-dim);
+      font-size: 0.82rem;
+      padding: 1.25rem 1rem;
+      text-align: center;
+    }
+
+    .rb-op-row {
+      border-bottom: 1px solid var(--border);
+    }
+    .rb-op-row:last-child { border-bottom: none; }
+
+    .rb-op-main {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0.75rem;
+      cursor: pointer;
+    }
+    .rb-op-main:hover { background: var(--surface2); }
+    .rb-op-row.expanded > .rb-op-main { background: var(--surface2); }
+
+    .rb-op-info { flex: 1; min-width: 0; }
+    .rb-op-name { font-size: 0.875rem; font-weight: 600; }
+    .rb-op-role { font-size: 0.72rem; color: var(--text-dim); }
+    .rb-op-summary { font-size: 0.7rem; color: var(--text-dim); margin-top: 0.1rem; }
+    .rb-op-pts  { font-size: 0.75rem; color: var(--text-dim); flex-shrink: 0; }
+    .rb-op-controls { display: flex; gap: 0.2rem; flex-shrink: 0; }
+
+    .rb-loadout-panel {
+      padding: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .rb-slot { margin-bottom: 0.75rem; }
+    .rb-slot:last-child { margin-bottom: 0; }
+
+    .rb-slot-label, .rb-fixed-label {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.4rem;
+    }
+
+    .rb-radio-group { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+    .rb-radio-label {
+      display: flex;
+      align-items: center;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.78rem;
+      padding: 0.25rem 0.6rem;
+      user-select: none;
+      transition: border-color 0.12s, background 0.12s, color 0.12s;
+    }
+    .rb-radio-label.active {
+      border-color: var(--accent-dim);
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+    .rb-radio-label input { display: none; }
+
+    .rb-wp-section {
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .rb-wp-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+    .rb-wp-table th {
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      padding: 0 0.4rem 0.35rem;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .rb-wp-table th:first-child { text-align: left; padding-left: 0; }
+    .rb-wp-table td {
+      padding: 0.4rem;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .rb-wp-table td:first-child { text-align: left; padding-left: 0; }
+    .rb-wp-table tr:last-child td { border-bottom: none; }
+    .rb-wp-name { font-weight: 600; }
+
+    .rb-browser {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .rb-unit-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .rb-unit-row:last-child { border-bottom: none; }
+    .rb-unit-row.maxed { opacity: 0.4; }
+
+    .rb-unit-info { flex: 1; min-width: 0; }
+    .rb-unit-name { font-size: 0.85rem; font-weight: 600; }
+    .rb-unit-role { font-size: 0.7rem; color: var(--text-dim); }
+    .rb-unit-pts  { font-size: 0.72rem; color: var(--text-dim); flex-shrink: 0; }
+
+    .rb-add-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.25rem 0.65rem;
+      transition: color 0.1s, border-color 0.1s, background 0.1s;
+      flex-shrink: 0;
+    }
+    .rb-add-btn:hover:not(:disabled) {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .rb-add-btn:disabled { cursor: not-allowed; opacity: 0.4; }
+
+    .rb-actions {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.875rem 1.5rem;
+      z-index: 9;
+    }
+    .rb-actions .btn { width: auto; padding: 0.75rem 1.5rem; }
+
+    .rb-draft-url {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 1;
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      min-width: 0;
+    }
+    .rb-draft-url.visible { display: flex; }
+    .rb-draft-url a {
+      color: var(--accent);
+      overflow: hidden;
+      text-decoration: none;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rb-draft-url a:hover { text-decoration: underline; }
+    .rb-copy-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-dim);
+      cursor: pointer;
+      flex-shrink: 0;
+      font-family: inherit;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .rb-copy-btn:hover { color: var(--text); border-color: var(--border-hi); }
+
+    /* ── ROSTER VIEW ── */
+    .rv-wrap {
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 1.5rem 1.5rem 3rem;
+    }
+
+    .rv-header {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .rv-header-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .rv-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      line-height: 1.2;
+    }
+
+    .rv-legal-badge {
+      flex-shrink: 0;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      border: 1px solid;
+      border-radius: 4px;
+      padding: 0.25rem 0.6rem;
+    }
+    .rv-legal-badge.legal { background: rgba(76,175,116,0.12); border-color: var(--green); color: var(--green); }
+    .rv-legal-badge.draft     { background: rgba(204,96,96,0.12);    border-color: var(--red);    color: var(--red);    }
+    .rv-legal-badge.published { background: rgba(124,106,247,0.12); border-color: var(--accent); color: var(--accent); }
+    .rv-legal-badge.unvalidated { background: rgba(153,153,153,0.12); border-color: var(--text-dim); color: var(--text-dim); }
+
+    .rv-meta { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
+
+    .rv-section-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+    }
+
+    .rv-op-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+    }
+
+    .rv-op-row {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .rv-op-row:last-child { border-bottom: none; }
+
+    .rv-op-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .rv-op-name { font-size: 0.875rem; font-weight: 600; }
+    .rv-op-role { font-size: 0.78rem; color: var(--text-dim); }
+    .rv-op-pts  { font-size: 0.72rem; color: var(--text-dim); flex-shrink: 0; }
+
+    .rv-op-weapons {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-top: 0.1rem;
+    }
+
+    .rv-empty { padding: 1.25rem 1rem; color: var(--text-dim); font-size: 0.85rem; text-align: center; }
+    .rv-edit-btn { width: auto; padding: 0.75rem 1.5rem; }
+
+    /* ── UNIT SEARCH ── */
+    .us-wrap { max-width: 740px; margin: 0 auto; padding: 1.5rem 1.5rem 3rem; }
+
+    .us-search-bar {
+      display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;
+    }
+    .us-search-bar .uf-input { flex: 1; }
+    .us-pool-label { font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; }
+
+    .us-result-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.6rem 1rem; background: var(--surface);
+      border: 1px solid var(--border); border-bottom: none; cursor: pointer;
+      transition: background 0.1s;
+    }
+    .us-result-row:first-child { border-radius: 6px 6px 0 0; }
+    .us-result-row:last-child  { border-bottom: 1px solid var(--border); border-radius: 0 0 6px 6px; }
+    .us-result-row:only-child  { border-radius: 6px; }
+    .us-result-row:hover { background: var(--surface2); }
+    .us-result-info { display: flex; align-items: baseline; gap: 0.6rem; }
+    .us-result-name { font-size: 0.875rem; font-weight: 600; }
+    .us-result-cat  { font-size: 0.72rem; color: var(--text-dim); text-transform: capitalize; }
+    .us-result-pts  { font-size: 0.72rem; color: var(--text-dim); flex-shrink: 0; }
+    .us-empty { padding: 0.75rem 0; color: var(--text-dim); font-size: 0.85rem; }
+
+    .us-preview-panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.5rem; margin-top: 1rem;
+    }
+    .us-section-title {
+      font-size: 1rem; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; margin-bottom: 1.25rem;
+      display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+    }
+    .us-pts-badge {
+      font-size: 0.72rem; font-weight: 600; background: var(--accent-dim);
+      color: var(--accent); border-radius: 4px; padding: 0.2rem 0.5rem;
+    }
+    .us-preview-section {
+      margin-bottom: 1.5rem; padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .us-preview-section:last-of-type { border-bottom: none; }
+    .us-subsection-label {
+      font-size: 0.6rem; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.75rem;
+    }
+    .us-squad-size { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.5rem; }
+
+    .us-weapon-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 0.5rem;
+    }
+    .us-weapon-head {
+      display: flex; align-items: center; gap: 0.6rem;
+      margin-bottom: 0.6rem; flex-wrap: wrap;
+    }
+    .us-weapon-name { font-size: 0.875rem; font-weight: 600; }
+    .us-default-label {
+      display: flex; align-items: center; gap: 0.3rem;
+      font-size: 0.75rem; color: var(--text-dim); cursor: pointer; margin-left: auto;
+    }
+    .us-weapon-profiles { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end; }
+    .us-profile-field { display: flex; flex-direction: column; gap: 0.2rem; }
+    .us-profile-label {
+      font-size: 0.55rem; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--text-dim);
+    }
+    .us-profile-input { padding: 0.3rem 0.5rem; font-size: 0.8rem; width: 5rem; }
+    .us-weapon-kw { font-size: 0.7rem; color: var(--text-dim); margin-top: 0.4rem; }
+
+    .us-wargear-label {
+      font-size: 0.6rem; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.4rem;
+    }
+    .us-wargear-parsed  { margin-bottom: 0.75rem; }
+    .us-wargear-unparsed { margin-top: 0.75rem; }
+    .us-wargear-row {
+      display: flex; gap: 0.75rem; padding: 0.4rem 0;
+      border-bottom: 1px solid var(--border); font-size: 0.8rem;
+      flex-wrap: wrap;
+    }
+    .us-wargear-row:last-child { border-bottom: none; }
+    .us-slot-name { font-weight: 600; }
+    .us-slot-type {
+      color: var(--accent); font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    }
+    .us-slot-options { color: var(--text-dim); }
+    .us-unparsed-row {
+      font-size: 0.77rem; color: var(--text-dim); line-height: 1.5;
+      padding: 0.35rem 0; border-bottom: 1px solid var(--border);
+    }
+    .us-unparsed-row:last-child { border-bottom: none; }
+
+    .us-preview-actions {
+      display: flex; gap: 0.75rem; margin-top: 1.5rem;
+      padding-top: 1.25rem; border-top: 1px solid var(--border);
+    }
+    .us-preview-actions .btn { width: auto; padding: 0.6rem 1.25rem; }
+
+    /* Roster builder source-pool search button */
+    .rb-search-link {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border);
+    }
+    .rb-search-pool-btn { width: auto; padding: 0.35rem 0.75rem; font-size: 0.78rem; }
+    .rb-search-hint { font-size: 0.72rem; color: var(--text-dim); }
+  </style>
+</head>
+<body>
+
+  <nav id="app-nav">
+    <button id="nav-back" onclick="history.back()">← Back</button>
+    <span id="nav-title">Roster Manager</span>
+    <span id="nav-crumb"></span>
+  </nav>
+
+  <!-- SCREEN: HOME -->
+  <div id="screen-home" class="screen">
+    <h1>Roster Manager</h1>
+    <p class="lead">Select a game system to get started</p>
+
+    <div class="section-label">Game System</div>
+    <div class="system-grid" id="system-grid">
+      <div class="loading-text">Loading…</div>
+    </div>
+
+    <div class="action-row" id="action-row">
+      <button class="btn btn-primary"    onclick="App.goToUnitCreator()">Add Unit to Library</button>
+      <button class="btn btn-secondary"  onclick="App.goToRoster()">Browse &amp; Build Roster</button>
+    </div>
+    <div class="home-util">
+      <a href="#clean-drafts" class="util-link">Clean Drafts</a>
+    </div>
+  </div>
+
+  <!-- SCREEN: UNIT FORM -->
+  <div id="screen-unit-form" class="screen"></div>
+
+  <!-- SCREEN: UNIT VIEW (placeholder) -->
+  <div id="screen-unit-view" class="screen">
+    <div class="placeholder">
+      <h2>Unit Card</h2>
+      <p>Coming soon</p>
+    </div>
+  </div>
+
+  <!-- SCREEN: LIBRARY -->
+  <div id="screen-library" class="screen"></div>
+
+  <!-- SCREEN: ROSTER BUILDER -->
+  <div id="screen-roster" class="screen"></div>
+
+  <!-- SCREEN: UNIT SEARCH (40k lazy migration) -->
+  <div id="screen-unit-search" class="screen"></div>
+
+  <!-- SCREEN: ROSTER CLEANER -->
+  <div id="screen-clean-drafts" class="screen"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script>
+
+  // ── SEED DATA ────────────────────────────────────────────────────────────────
+
+  const SCHEMA_SEED = {
+    'kill-team': {
+      name: 'Kill Team',
+      statBlock: ['APL', 'MOVE', 'DF', 'SAVE', 'WOUNDS'],
+      weaponProfiles: ['ATK', 'HIT', 'DMG', 'WR'],
+      hasWeaponType: true
+    },
+    'warhammer-40k': {
+      name: 'Warhammer 40,000',
+      statBlock: ['M', 'T', 'SV', 'W', 'LD', 'OC'],
+      weaponProfiles: ['RANGE', 'A', 'BS/WS', 'S', 'AP', 'D'],
+      hasWeaponType: true
+    }
+  };
+
+  // ── HELPERS ──────────────────────────────────────────────────────────────────
+
+  function toTitleCase(str) {
+    return str.trim().replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  }
+
+  function slugify(str) {
+    return str.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '')
+      .trim()
+      .replace(/\s+/g, '-');
+  }
+
+  // ── APP ──────────────────────────────────────────────────────────────────────
+
+  const App = {
+    db: null,
+    schemas: {},
+    selectedSystem: null,
+
+    async init() {
+      firebase.initializeApp(firebaseConfig);
+      App.db = firebase.database();
+      await App.seedSchemas();
+      App.schemas = await App.loadSchemas();
+      Router.init();
+    },
+
+    async seedSchemas() {
+      const snap = await App.db.ref('rosterSchemas').once('value');
+      const existing = snap.val() || {};
+      const writes = {};
+      for (const [id, schema] of Object.entries(SCHEMA_SEED)) {
+        if (!existing[id]) writes[id] = schema;
+      }
+      if (Object.keys(writes).length) {
+        await App.db.ref('rosterSchemas').update(writes);
+      }
+    },
+
+    async loadSchemas() {
+      const snap = await App.db.ref('rosterSchemas').once('value');
+      return snap.val() || {};
+    },
+
+    selectSystem(id) {
+      App.selectedSystem = id;
+      document.querySelectorAll('.system-card').forEach(c =>
+        c.classList.toggle('selected', c.dataset.id === id)
+      );
+      document.getElementById('action-row').classList.add('visible');
+    },
+
+    goToUnitCreator() {
+      if (App.selectedSystem) location.hash = `#unit/new/${App.selectedSystem}`;
+    },
+
+    goToRoster() {
+      if (App.selectedSystem) location.hash = `#library/${App.selectedSystem}`;
+    }
+  };
+
+  // ── UNIT FORM ────────────────────────────────────────────────────────────────
+
+  const UnitForm = {
+    state: null,
+
+    _fresh(system, mode, factionId, unitId) {
+      return {
+        system,
+        mode,
+        factionId: factionId || null,
+        unitId:    unitId    || null,
+        isDirty: false,
+        wCounter: 0,
+        weapons: [],
+        loadoutSlots: [],
+        abilities: [],
+        equipment: [],
+        keywords: [],
+        originalSource: null,
+      };
+    },
+
+    async render(system, mode, factionId, unitId) {
+      UnitForm.state = UnitForm._fresh(system, mode || 'new', factionId, unitId);
+      const schema = App.schemas[system];
+      if (!schema) {
+        document.getElementById('screen-unit-form').innerHTML =
+          '<div class="placeholder"><h2>Unknown game system</h2></div>';
+        return;
+      }
+      const factions = await UnitForm._loadFactions(system);
+      const el = document.getElementById('screen-unit-form');
+      el.innerHTML = UnitForm._buildPage(schema, factions);
+      UnitForm._bind(el);
+
+      if (mode === 'edit' && factionId && unitId) {
+        await UnitForm._loadForEdit(factionId, unitId);
+      } else {
+        const prefillJSON = sessionStorage.getItem('unitFormPrefill');
+        if (prefillJSON) {
+          sessionStorage.removeItem('unitFormPrefill');
+          UnitForm._populate(JSON.parse(prefillJSON));
+        }
+      }
+    },
+
+    async _loadForEdit(factionId, unitId) {
+      try {
+        const snap = await App.db
+          .ref(`gameData/${UnitForm.state.system}/factions/${factionId}/units/${unitId}`)
+          .once('value');
+        const unit = snap.val();
+        if (unit) UnitForm._populate(unit);
+      } catch (err) {
+        alert(`Could not load unit: ${err.message}`);
+      }
+    },
+
+    _populate(unit) {
+      const s   = UnitForm.state;
+      const arr = v => !v ? [] : Array.isArray(v) ? v : Object.values(v);
+
+      document.getElementById('f-name').value    = unit.name    || '';
+      document.getElementById('f-faction').value = unit.faction || '';
+      document.getElementById('f-role').value    = unit.role    || '';
+      document.getElementById('f-points').value  = unit.points != null ? unit.points : '';
+      document.getElementById('f-notes').value   = unit.notes   || '';
+
+      const stats = unit.stats || {};
+      document.querySelectorAll('.stat-input').forEach(el => {
+        el.value = stats[el.dataset.stat] || '';
+      });
+
+      const weapons = arr(unit.weapons);
+      s.wCounter = weapons.length;
+      s.weapons  = weapons.map((w, i) => ({
+        id:        w.id || `w${i + 1}`,
+        name:      w.name || '',
+        type:      w.type || 'ranged',
+        isDefault: !!w.isDefault,
+        profiles:  { ...(w.profiles || {}) },
+      }));
+      UnitForm._renderWeapons();
+
+      s.loadoutSlots = arr(unit.loadoutOptions).map(slot => ({
+        name:      slot.slot || '',
+        weaponIds: arr(slot.weaponIds),
+      }));
+      UnitForm._renderLoadout();
+
+      s.abilities = arr(unit.abilities).map(a => ({
+        name:        a.name        || '',
+        description: a.description || '',
+      }));
+      UnitForm._renderAbilities();
+
+      s.equipment      = arr(unit.equipment);
+      s.keywords       = arr(unit.keywords);
+      s.originalSource = unit.source || null;  // preserved on edit so scraper units stay tagged
+      UnitForm._renderTags('equipment');
+      UnitForm._renderTags('keywords');
+
+      s.isDirty = false;
+    },
+
+    async _loadFactions(system) {
+      try {
+        const snap = await App.db.ref(`gameData/${system}/factions`).once('value');
+        const val = snap.val() || {};
+        return Object.values(val)
+          .map(f => f.info && f.info.name)
+          .filter(Boolean);
+      } catch { return []; }
+    },
+
+    // ── BUILD PAGE ─────────────────────────────────────────────────────────────
+
+    _buildPage(schema, factions) {
+      return `
+        <div class="uf-wrap">
+          ${UnitForm._sHeader(factions)}
+          ${UnitForm._sStats(schema)}
+          ${UnitForm._sWeapons()}
+          ${UnitForm._sLoadout()}
+          ${UnitForm._sAbilities()}
+          ${UnitForm._sTagSection('equipment', 'Equipment')}
+          ${UnitForm._sTagSection('keywords', 'Keywords')}
+          ${UnitForm._sNotes()}
+        </div>
+        <div class="uf-actions">
+          <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
+          <button class="btn btn-primary"   id="btn-save">Save to Library</button>
+        </div>
+      `;
+    },
+
+    _sHeader(factions) {
+      const opts = factions.map(f => `<option value="${f}">`).join('');
+      return `
+        <div class="uf-section">
+          <div class="uf-grid-2">
+            <div class="uf-field" id="field-name">
+              <label class="uf-label">Unit Name<span class="req">*</span></label>
+              <input class="uf-input" id="f-name" type="text" placeholder="e.g. Kasrkin Trooper">
+              <div class="uf-error" id="err-name"></div>
+            </div>
+            <div class="uf-field" id="field-faction">
+              <label class="uf-label">Faction<span class="req">*</span></label>
+              <input class="uf-input" id="f-faction" type="text" list="faction-list"
+                     placeholder="e.g. Kasrkin" autocomplete="off">
+              <datalist id="faction-list">${opts}</datalist>
+              <div class="uf-error" id="err-faction"></div>
+            </div>
+          </div>
+          <div class="uf-grid-2">
+            <div class="uf-field">
+              <label class="uf-label">Role / Type</label>
+              <input class="uf-input" id="f-role" type="text" placeholder="e.g. Trooper, Leader">
+            </div>
+            <div class="uf-field">
+              <label class="uf-label">Points</label>
+              <input class="uf-input" id="f-points" type="number" min="0" placeholder="—">
+            </div>
+          </div>
+        </div>
+      `;
+    },
+
+    _sStats(schema) {
+      const fields = (schema.statBlock || []).map(stat => `
+        <div class="stat-field">
+          <div class="stat-label">${stat}</div>
+          <input class="stat-input" type="text" data-stat="${stat}" placeholder="—">
+        </div>
+      `).join('');
+      return `
+        <div class="uf-section">
+          <div class="section-label">Stat Block</div>
+          <div class="stat-row">${fields}</div>
+        </div>
+      `;
+    },
+
+    _sWeapons() {
+      return `
+        <div class="uf-section">
+          <div class="section-label">Weapons</div>
+          <div id="weapons-list"></div>
+          <button class="btn btn-secondary uf-add-btn" id="btn-add-weapon">+ Add Weapon</button>
+        </div>
+      `;
+    },
+
+    _sLoadout() {
+      return `
+        <div class="uf-section">
+          <div class="section-label">Loadout Options
+            <span class="section-hint">— leave empty for fixed loadout</span>
+          </div>
+          <div id="loadout-list"></div>
+          <button class="btn btn-secondary uf-add-btn" id="btn-add-loadout">+ Add Loadout Slot</button>
+        </div>
+      `;
+    },
+
+    _sAbilities() {
+      return `
+        <div class="uf-section">
+          <div class="section-label">Abilities</div>
+          <div id="abilities-list"></div>
+          <button class="btn btn-secondary uf-add-btn" id="btn-add-ability">+ Add Ability</button>
+        </div>
+      `;
+    },
+
+    _sTagSection(type, label) {
+      return `
+        <div class="uf-section">
+          <div class="section-label">${label}</div>
+          <div class="tag-wrap" id="tags-${type}"></div>
+          <div class="tag-input-row">
+            <input class="uf-input" id="taginput-${type}" type="text"
+                   placeholder="Add ${label.toLowerCase()}…">
+            <button class="btn btn-secondary" id="tagadd-${type}" style="width:auto;padding:0.5rem 1rem;">Add</button>
+          </div>
+        </div>
+      `;
+    },
+
+    _sNotes() {
+      return `
+        <div class="uf-section" style="border-bottom:none;">
+          <div class="section-label">Notes</div>
+          <textarea class="uf-textarea" id="f-notes" placeholder="Any additional notes…" rows="4"></textarea>
+        </div>
+      `;
+    },
+
+    // ── RENDER SUBSECTIONS ─────────────────────────────────────────────────────
+
+    _renderWeapons() {
+      const schema = App.schemas[UnitForm.state.system];
+      const list = document.getElementById('weapons-list');
+      if (!list) return;
+      const ws = UnitForm.state.weapons;
+      if (!ws.length) { list.innerHTML = ''; return; }
+      list.innerHTML = ws.map((w, i) => {
+        const hasType = schema.hasWeaponType !== false;
+        const profiles = (schema.weaponProfiles || []).map(p => `
+          <div class="wp-field">
+            <div class="wp-label">${p}</div>
+            <input class="wp-input" type="text"
+                   data-wid="${w.id}" data-profile="${p}"
+                   value="${w.profiles[p] || ''}" placeholder="—">
+          </div>
+        `).join('');
+
+        return `
+          <div class="weapon-card" data-wid="${w.id}">
+            <div class="weapon-header">
+              <input class="uf-input weapon-name" type="text"
+                     data-wid="${w.id}" value="${w.name}" placeholder="Weapon name">
+              ${hasType ? `
+                <div class="type-toggle">
+                  <button class="type-btn ${w.type === 'ranged' ? 'active' : ''}"
+                          data-wid="${w.id}" data-type="ranged">Ranged</button>
+                  <button class="type-btn ${w.type === 'melee'  ? 'active' : ''}"
+                          data-wid="${w.id}" data-type="melee">Melee</button>
+                </div>
+              ` : ''}
+              <label class="default-check">
+                <input type="checkbox" class="weapon-default"
+                       data-wid="${w.id}" ${w.isDefault ? 'checked' : ''}>
+                Default
+              </label>
+              <div class="weapon-arrows">
+                <button class="arrow-btn" data-wid="${w.id}" data-dir="up"
+                        ${i === 0 ? 'disabled' : ''}>↑</button>
+                <button class="arrow-btn" data-wid="${w.id}" data-dir="down"
+                        ${i === ws.length - 1 ? 'disabled' : ''}>↓</button>
+              </div>
+              <button class="remove-btn" data-wid="${w.id}" data-target="weapon">×</button>
+            </div>
+            <div class="weapon-profiles">${profiles}</div>
+          </div>
+        `;
+      }).join('');
+
+      UnitForm._renderLoadout();
+    },
+
+    _renderLoadout() {
+      const list = document.getElementById('loadout-list');
+      if (!list) return;
+      const slots = UnitForm.state.loadoutSlots;
+      const weapons = UnitForm.state.weapons;
+      if (!slots.length) { list.innerHTML = ''; return; }
+      list.innerHTML = slots.map((slot, si) => {
+        const checks = weapons.length
+          ? weapons.map(w => `
+              <label class="wcheck-label ${slot.weaponIds.includes(w.id) ? 'active' : ''}">
+                <input type="checkbox" class="wcheck"
+                       data-slot="${si}" data-wid="${w.id}"
+                       ${slot.weaponIds.includes(w.id) ? 'checked' : ''}>
+                ${w.name || '(unnamed)'}
+              </label>
+            `).join('')
+          : '<span class="wcheck-empty">Add weapons above first</span>';
+
+        return `
+          <div class="loadout-slot" data-slot="${si}">
+            <div class="loadout-header">
+              <input class="uf-input slot-name" type="text"
+                     data-slot="${si}" placeholder="e.g. Primary weapon"
+                     value="${slot.name}">
+              <button class="remove-btn" data-slot="${si}" data-target="slot">×</button>
+            </div>
+            <div class="wcheck-wrap">${checks}</div>
+          </div>
+        `;
+      }).join('');
+    },
+
+    _renderAbilities() {
+      const list = document.getElementById('abilities-list');
+      if (!list) return;
+      const abs = UnitForm.state.abilities;
+      if (!abs.length) { list.innerHTML = ''; return; }
+      list.innerHTML = abs.map((a, i) => `
+        <div class="ability-card" data-ability="${i}">
+          <div class="ability-header">
+            <input class="uf-input ability-name" type="text"
+                   data-ability="${i}" placeholder="Ability name" value="${a.name}">
+            <button class="remove-btn" data-ability="${i}" data-target="ability">×</button>
+          </div>
+          <textarea class="uf-textarea ability-desc" data-ability="${i}"
+                    placeholder="Rules text…" rows="3">${a.description || ''}</textarea>
+        </div>
+      `).join('');
+    },
+
+    _renderTags(type) {
+      const wrap = document.getElementById(`tags-${type}`);
+      if (!wrap) return;
+      wrap.innerHTML = UnitForm.state[type].map((t, i) => `
+        <span class="tag">${t}
+          <button class="tag-x" data-type="${type}" data-index="${i}">×</button>
+        </span>
+      `).join('');
+    },
+
+    // ── EVENT BINDING ──────────────────────────────────────────────────────────
+
+    _bind(el) {
+      el.addEventListener('input', () => { UnitForm.state.isDirty = true; });
+
+      document.getElementById('btn-add-weapon').addEventListener('click', () => {
+        const schema = App.schemas[UnitForm.state.system];
+        const id = `w${++UnitForm.state.wCounter}`;
+        const profiles = {};
+        (schema.weaponProfiles || []).forEach(p => { profiles[p] = ''; });
+        UnitForm.state.weapons.push({ id, name: '', type: 'ranged', isDefault: false, profiles });
+        UnitForm._renderWeapons();
+      });
+
+      document.getElementById('btn-add-loadout').addEventListener('click', () => {
+        UnitForm.state.loadoutSlots.push({ name: '', weaponIds: [] });
+        UnitForm._renderLoadout();
+      });
+
+      document.getElementById('btn-add-ability').addEventListener('click', () => {
+        UnitForm.state.abilities.push({ name: '', description: '' });
+        UnitForm._renderAbilities();
+      });
+
+      ['equipment', 'keywords'].forEach(type => {
+        const input = document.getElementById(`taginput-${type}`);
+        const add = () => {
+          const val = input.value.trim();
+          if (!val) return;
+          const lower = val.toLowerCase();
+          if (UnitForm.state[type].some(t => t.toLowerCase() === lower)) {
+            input.value = '';
+            return;
+          }
+          UnitForm.state[type].push(val);
+          UnitForm._renderTags(type);
+          input.value = '';
+          UnitForm.state.isDirty = true;
+        };
+        document.getElementById(`tagadd-${type}`).addEventListener('click', add);
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+      });
+
+      el.addEventListener('click', e => {
+        // Remove buttons
+        if (e.target.classList.contains('remove-btn')) {
+          const { target, wid, slot, ability } = e.target.dataset;
+          if (target === 'weapon') {
+            UnitForm.state.weapons = UnitForm.state.weapons.filter(w => w.id !== wid);
+            UnitForm.state.loadoutSlots.forEach(s => {
+              s.weaponIds = s.weaponIds.filter(id => id !== wid);
+            });
+            UnitForm._renderWeapons();
+          }
+          if (target === 'slot') {
+            UnitForm.state.loadoutSlots.splice(+slot, 1);
+            UnitForm._renderLoadout();
+          }
+          if (target === 'ability') {
+            UnitForm.state.abilities.splice(+ability, 1);
+            UnitForm._renderAbilities();
+          }
+        }
+
+        // Tag remove
+        if (e.target.classList.contains('tag-x')) {
+          const { type, index } = e.target.dataset;
+          UnitForm.state[type].splice(+index, 1);
+          UnitForm._renderTags(type);
+        }
+
+        // Type toggle
+        if (e.target.classList.contains('type-btn')) {
+          const { wid, type } = e.target.dataset;
+          const w = UnitForm.state.weapons.find(w => w.id === wid);
+          if (w) {
+            w.type = type;
+            const card = el.querySelector(`.weapon-card[data-wid="${wid}"]`);
+            if (card) card.querySelectorAll('.type-btn').forEach(b =>
+              b.classList.toggle('active', b.dataset.type === type)
+            );
+          }
+        }
+
+        // Reorder arrows
+        if (e.target.classList.contains('arrow-btn')) {
+          const { wid, dir } = e.target.dataset;
+          const ws = UnitForm.state.weapons;
+          const idx = ws.findIndex(w => w.id === wid);
+          if (dir === 'up'   && idx > 0)              [ws[idx - 1], ws[idx]] = [ws[idx], ws[idx - 1]];
+          if (dir === 'down' && idx < ws.length - 1)  [ws[idx], ws[idx + 1]] = [ws[idx + 1], ws[idx]];
+          UnitForm._renderWeapons();
+        }
+      });
+
+      el.addEventListener('change', e => {
+        // Weapon name → update state + refresh loadout names
+        if (e.target.classList.contains('weapon-name')) {
+          const w = UnitForm.state.weapons.find(w => w.id === e.target.dataset.wid);
+          if (w) { w.name = e.target.value; UnitForm._renderLoadout(); }
+        }
+        // Weapon profile
+        if (e.target.dataset.profile) {
+          const w = UnitForm.state.weapons.find(w => w.id === e.target.dataset.wid);
+          if (w) w.profiles[e.target.dataset.profile] = e.target.value;
+        }
+        // Default checkbox — enforce one maximum
+        if (e.target.classList.contains('weapon-default')) {
+          const wid = e.target.dataset.wid;
+          const checked = e.target.checked;
+          UnitForm.state.weapons.forEach(w => { w.isDefault = w.id === wid && checked; });
+          el.querySelectorAll('.weapon-default').forEach(cb => {
+            cb.checked = cb.dataset.wid === wid && checked;
+          });
+        }
+        // Loadout weapon checkbox
+        if (e.target.classList.contains('wcheck')) {
+          const si = +e.target.dataset.slot;
+          const wid = e.target.dataset.wid;
+          const slot = UnitForm.state.loadoutSlots[si];
+          if (slot) {
+            if (e.target.checked) {
+              if (!slot.weaponIds.includes(wid)) slot.weaponIds.push(wid);
+            } else {
+              slot.weaponIds = slot.weaponIds.filter(id => id !== wid);
+            }
+            e.target.closest('.wcheck-label').classList.toggle('active', e.target.checked);
+          }
+        }
+        // Loadout slot name
+        if (e.target.classList.contains('slot-name')) {
+          const slot = UnitForm.state.loadoutSlots[+e.target.dataset.slot];
+          if (slot) slot.name = e.target.value;
+        }
+        // Ability name
+        if (e.target.classList.contains('ability-name')) {
+          const a = UnitForm.state.abilities[+e.target.dataset.ability];
+          if (a) a.name = e.target.value;
+        }
+        // Ability description
+        if (e.target.classList.contains('ability-desc')) {
+          const a = UnitForm.state.abilities[+e.target.dataset.ability];
+          if (a) a.description = e.target.value;
+        }
+      });
+
+      // Cancel
+      document.getElementById('btn-cancel').addEventListener('click', () => {
+        if (UnitForm.state.isDirty && !confirm('Discard unsaved changes?')) return;
+        location.hash = '#home';
+      });
+
+      // Save — validation only, Firebase not yet wired
+      document.getElementById('btn-save').addEventListener('click', UnitForm._validate);
+    },
+
+    _validate() {
+      const name    = document.getElementById('f-name').value.trim();
+      const faction = document.getElementById('f-faction').value.trim();
+
+      const setErr = (fieldId, errId, msg) => {
+        document.getElementById(errId).textContent = msg;
+        document.getElementById(fieldId).classList.toggle('has-error', !!msg);
+      };
+
+      setErr('field-name',    'err-name',    name    ? '' : 'Unit name is required');
+      setErr('field-faction', 'err-faction', faction ? '' : 'Faction is required');
+
+      if (!name || !faction) {
+        document.querySelector('.has-error .uf-input')?.focus();
+        return;
+      }
+
+      UnitForm._doSave(name, faction);
+    },
+
+    async _doSave(name, factionRaw) {
+      const btn = document.getElementById('btn-save');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+
+      try {
+        const faction   = toTitleCase(factionRaw);
+        const factionId = slugify(faction);
+        const system    = UnitForm.state.system;
+
+        const stats = {};
+        document.querySelectorAll('.stat-input').forEach(el => {
+          stats[el.dataset.stat] = el.value;
+        });
+
+        const isEdit = UnitForm.state.mode === 'edit' && UnitForm.state.unitId;
+        let unitRef, unitId;
+        if (isEdit) {
+          unitId  = UnitForm.state.unitId;
+          unitRef = App.db.ref(`gameData/${system}/factions/${UnitForm.state.factionId}/units/${unitId}`);
+        } else {
+          const pushed = App.db.ref(`gameData/${system}/factions/${factionId}/units`).push();
+          unitRef = pushed;
+          unitId  = pushed.key;
+        }
+
+        const unit = {
+          id:             unitId,
+          name,
+          gameSystem:     system,
+          faction,
+          factionId,
+          role:           document.getElementById('f-role').value.trim()  || null,
+          points:         document.getElementById('f-points').value !== ''
+                            ? parseInt(document.getElementById('f-points').value, 10)
+                            : null,
+          stats,
+          weapons:        UnitForm.state.weapons.map(w => ({
+                            id: w.id, name: w.name, type: w.type,
+                            isDefault: w.isDefault, profiles: w.profiles
+                          })),
+          loadoutOptions: UnitForm.state.loadoutSlots.map(s => ({
+                            slot: s.name, weaponIds: s.weaponIds
+                          })),
+          abilities:      UnitForm.state.abilities,
+          equipment:      UnitForm.state.equipment,
+          keywords:       UnitForm.state.keywords,
+          notes:          document.getElementById('f-notes').value.trim() || '',
+          source:         isEdit ? (UnitForm.state.originalSource || 'user') : 'user',
+        };
+
+        if (!isEdit) {
+          const factionInfoRef = App.db.ref(`gameData/${system}/factions/${factionId}/info`);
+          const fSnap = await factionInfoRef.once('value');
+          if (!fSnap.val()) {
+            await factionInfoRef.set({ name: faction, description: '', compositionRules: '' });
+          }
+        }
+
+        await unitRef.set(unit);
+
+        UnitForm.state.isDirty = false;
+        const viewFactionId = isEdit ? UnitForm.state.factionId : factionId;
+        UnitForm._showSuccess(system, viewFactionId, unitId);
+      } catch (err) {
+        const b = document.getElementById('btn-save');
+        if (b) { b.disabled = false; b.textContent = 'Save to Library'; }
+        alert(`Save failed: ${err.message}`);
+      }
+    },
+
+    _showSuccess(system, factionId, unitId) {
+      document.getElementById('screen-unit-form').innerHTML = `
+        <div class="placeholder" style="gap:1.25rem;">
+          <div style="font-size:2rem;color:var(--green);">&#x2713;</div>
+          <h2>Unit Saved</h2>
+          <p>Unit added to the library successfully.</p>
+          <div style="display:flex;gap:0.75rem;margin-top:0.5rem;flex-wrap:wrap;justify-content:center;">
+            <button class="btn btn-secondary"
+                    onclick="location.hash='#unit-view/${system}/${factionId}/${unitId}'"
+                    style="width:auto;padding:0.75rem 1.5rem;">View Unit</button>
+            <button class="btn btn-secondary"
+                    onclick="UnitForm.render('${system}', 'new', null)"
+                    style="width:auto;padding:0.75rem 1.5rem;">Add Another Unit</button>
+            <button class="btn btn-primary"
+                    onclick="location.hash='#library/${system}'"
+                    style="width:auto;padding:0.75rem 1.5rem;">Go to Library</button>
+          </div>
+        </div>
+      `;
+    }
+  };
+
+  // ── LIBRARY ──────────────────────────────────────────────────────────────────
+
+  const Library = {
+    state: { system: null, filter: 'all', search: '', factions: [] },
+
+    async render(system) {
+      Library.state = { system, filter: 'all', search: '', factions: [] };
+      document.getElementById('screen-library').innerHTML = `
+        <div class="lib-wrap">
+          <div class="lib-toolbar">
+            <input class="uf-input" id="lib-search" type="text" placeholder="Search units…">
+            <button class="btn btn-primary lib-add-btn" id="lib-add">+ Add Unit</button>
+          </div>
+          <div class="lib-filters" id="lib-filters"></div>
+          <div class="lib-list"    id="lib-list"><div class="loading-text">Loading…</div></div>
+        </div>
+      `;
+      Library._bind();
+      await Library._loadFactions(system);
+    },
+
+    async _loadFactions(system) {
+      try {
+        const snap = await App.db.ref(`gameData/${system}/factions`).once('value');
+        const val  = snap.val() || {};
+        Library.state.factions = Object.entries(val)
+          .map(([fid, faction]) => ({
+            id:    fid,
+            name:  faction.info?.name || fid,
+            units: Object.entries(faction.units || {}).map(([uid, u]) => ({
+              id:     uid,
+              name:   u.name,
+              role:   u.role   || null,
+              points: u.points != null ? u.points : null,
+            }))
+          }))
+          .filter(f => f.units.length > 0)
+          .sort((a, b) => a.name.localeCompare(b.name));
+        Library._renderList();
+      } catch (err) {
+        document.getElementById('lib-list').innerHTML =
+          `<div class="lib-empty">Error loading library: ${err.message}</div>`;
+      }
+    },
+
+    _renderFilters() {
+      const { factions, filter } = Library.state;
+      document.getElementById('lib-filters').innerHTML = [
+        `<button class="lib-filter ${filter === 'all' ? 'active' : ''}" data-faction="all">All</button>`,
+        ...factions.map(f =>
+          `<button class="lib-filter ${filter === f.id ? 'active' : ''}" data-faction="${f.id}">${f.name}</button>`
+        )
+      ].join('');
+    },
+
+    _renderList() {
+      Library._renderFilters();
+      const { system, factions, filter, search } = Library.state;
+      const q = search.trim().toLowerCase();
+
+      const groups = factions
+        .filter(f => filter === 'all' || f.id === filter)
+        .map(f => ({
+          ...f,
+          units: f.units.filter(u =>
+            !q ||
+            u.name.toLowerCase().includes(q) ||
+            (u.role || '').toLowerCase().includes(q)
+          )
+        }))
+        .filter(f => f.units.length > 0);
+
+      const list = document.getElementById('lib-list');
+
+      if (!groups.length) {
+        list.innerHTML = `<div class="lib-empty">${
+          q ? 'No units match your search.' : 'No units in this faction yet.'
+        }</div>`;
+        return;
+      }
+
+      list.innerHTML = groups.map(f => `
+        <div class="lib-faction-group" data-faction="${f.id}">
+          <div class="lib-faction-header">
+            <span>${f.name}</span>
+            <button class="lib-build-btn" onclick="event.stopPropagation();location.hash='#roster/new/${system}/${f.id}'">Build Roster</button>
+          </div>
+          ${f.units.map(u => `
+            <div class="lib-unit-row"
+                 onclick="Library._open('${system}','${f.id}','${u.id}')">
+              <div class="lib-unit-info">
+                <span class="lib-unit-name">${u.name}</span>
+                ${u.role ? `<span class="lib-unit-role">${u.role}</span>` : ''}
+              </div>
+              <div class="lib-unit-meta">
+                ${u.points != null ? `<span class="lib-unit-pts">${u.points} pts</span>` : ''}
+                <button class="lib-action-btn lib-edit-btn"
+                        onclick="event.stopPropagation();Library._edit('${system}','${f.id}','${u.id}')">Edit</button>
+                <button class="lib-action-btn lib-del-btn"
+                        onclick="event.stopPropagation();Library._delete('${system}','${f.id}','${u.id}','${u.name.replace(/'/g,"\\'")}')">×</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `).join('');
+    },
+
+    _bind() {
+      document.getElementById('lib-add').addEventListener('click', () => {
+        location.hash = `#unit/new/${Library.state.system}`;
+      });
+      document.getElementById('lib-search').addEventListener('input', e => {
+        Library.state.search = e.target.value;
+        Library._renderList();
+      });
+      document.getElementById('lib-filters').addEventListener('click', e => {
+        const btn = e.target.closest('.lib-filter');
+        if (!btn) return;
+        Library.state.filter = btn.dataset.faction;
+        Library._renderList();
+      });
+    },
+
+    _open(system, factionId, unitId)   { location.hash = `#unit-view/${system}/${factionId}/${unitId}`; },
+    _edit(system, factionId, unitId)   { location.hash = `#unit/edit/${system}/${factionId}/${unitId}`; },
+    async _delete(system, factionId, unitId, name) {
+      if (!confirm(`Delete "${name}"?\n\nThis cannot be undone.`)) return;
+      try {
+        await App.db.ref(`gameData/${system}/factions/${factionId}/units/${unitId}`).remove();
+        const faction = Library.state.factions.find(f => f.id === factionId);
+        if (faction) faction.units = faction.units.filter(u => u.id !== unitId);
+        Library.state.factions = Library.state.factions.filter(f => f.units.length > 0);
+        Library._renderList();
+      } catch (err) {
+        alert(`Delete failed: ${err.message}`);
+      }
+    }
+  };
+
+  // ── UNIT CARD ────────────────────────────────────────────────────────────────
+
+  const UnitCard = {
+    async render(system, factionId, unitId) {
+      const el = document.getElementById('screen-unit-view');
+      el.innerHTML = '<div class="loading-text">Loading…</div>';
+      try {
+        const snap = await App.db
+          .ref(`gameData/${system}/factions/${factionId}/units/${unitId}`)
+          .once('value');
+        const unit = snap.val();
+        if (!unit) {
+          el.innerHTML = '<div class="placeholder"><h2>Unit not found</h2></div>';
+          return;
+        }
+        const schema = App.schemas[system];
+        el.innerHTML = UnitCard._buildPage(unit, schema);
+        UnitCard._bind(unit, system, factionId);
+      } catch (err) {
+        el.innerHTML = `<div class="placeholder"><h2>Error</h2><p>${err.message}</p></div>`;
+      }
+    },
+
+    _buildPage(unit, schema) {
+      const weapons      = UnitCard._arr(unit.weapons);
+      const abilities    = UnitCard._arr(unit.abilities);
+      const equipment    = UnitCard._arr(unit.equipment);
+      const keywords     = UnitCard._arr(unit.keywords);
+      const loadoutOpts  = UnitCard._arr(unit.loadoutOptions);
+
+      return `
+        <div class="uc-wrap">
+          <div class="uc-card">
+            ${UnitCard._header(unit)}
+            ${UnitCard._stats(unit, schema)}
+            ${weapons.length   ? UnitCard._weapons(weapons, loadoutOpts, schema) : ''}
+            ${abilities.length ? UnitCard._abilities(abilities) : ''}
+            ${equipment.length ? UnitCard._tagSection('Equipment', equipment) : ''}
+            ${keywords.length  ? UnitCard._tagSection('Keywords',  keywords)  : ''}
+            ${unit.notes       ? UnitCard._notes(unit.notes) : ''}
+            ${UnitCard._actions()}
+          </div>
+        </div>
+      `;
+    },
+
+    _arr(v) {
+      if (!v) return [];
+      return Array.isArray(v) ? v : Object.values(v);
+    },
+
+    _header(unit) {
+      const meta = [unit.faction, unit.role].filter(Boolean).join(' · ');
+      return `
+        <div class="uc-header">
+          <div>
+            <div class="uc-name">${unit.name}</div>
+            ${meta ? `<div class="uc-meta">${meta}</div>` : ''}
+          </div>
+          ${unit.points != null ? `<div class="uc-points">${unit.points} PTS</div>` : ''}
+        </div>
+      `;
+    },
+
+    _stats(unit, schema) {
+      const stats = unit.stats || {};
+      const boxes = (schema.statBlock || []).map(s => `
+        <div class="uc-stat">
+          <div class="uc-stat-label">${s}</div>
+          <div class="uc-stat-val">${stats[s] || '—'}</div>
+        </div>
+      `).join('');
+      return `<div class="uc-stats">${boxes}</div>`;
+    },
+
+    _weapons(weapons, loadoutOpts, schema) {
+      const profiles = schema.weaponProfiles || [];
+      const hasType  = schema.hasWeaponType !== false;
+      const byId     = Object.fromEntries(weapons.map(w => [w.id, w]));
+
+      const headers = profiles.map(p => `<th>${p}</th>`).join('');
+      const rows    = weapons.map(w => {
+        const cells    = profiles.map(p => `<td>${w.profiles?.[p] || '—'}</td>`).join('');
+        const typeBadge = hasType
+          ? `<span class="uc-type-badge">${w.type === 'melee' ? 'M' : 'R'}</span>` : '';
+        const star = w.isDefault ? `<span class="uc-default-star">★</span>` : '';
+        return `
+          <tr>
+            <td><div class="uc-weapon-name">${w.name || '—'}${typeBadge}${star}</div></td>
+            ${cells}
+          </tr>
+        `;
+      }).join('');
+
+      let loadoutHTML = '';
+      if (loadoutOpts.length) {
+        const slotRows = loadoutOpts.map(slot => {
+          const names = UnitCard._arr(slot.weaponIds)
+            .map(id => byId[id]?.name).filter(Boolean).join(', ');
+          return `<div class="uc-loadout-row"><strong>${slot.slot}:</strong> ${names || '—'}</div>`;
+        }).join('');
+        loadoutHTML = `
+          <div class="uc-loadout">
+            <div class="uc-loadout-title">Loadout Options</div>
+            ${slotRows}
+          </div>
+        `;
+      }
+
+      return `
+        <div class="uc-section">
+          <div class="uc-section-title">Weapons</div>
+          <table class="uc-table">
+            <thead><tr><th>Weapon</th>${headers}</tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          ${loadoutHTML}
+        </div>
+      `;
+    },
+
+    _abilities(abilities) {
+      const items = abilities.map(a => `
+        <div class="uc-ability">
+          <div class="uc-ability-name">${a.name || ''}</div>
+          <div class="uc-ability-text">${a.description || ''}</div>
+        </div>
+      `).join('');
+      return `
+        <div class="uc-section">
+          <div class="uc-section-title">Abilities</div>
+          ${items}
+        </div>
+      `;
+    },
+
+    _tagSection(label, items) {
+      const tags = items.map(t =>
+        `<span class="tag" style="cursor:default;">${t}</span>`
+      ).join('');
+      return `
+        <div class="uc-section">
+          <div class="uc-section-title">${label}</div>
+          <div class="uc-tags">${tags}</div>
+        </div>
+      `;
+    },
+
+    _notes(text) {
+      return `
+        <div class="uc-section">
+          <div class="uc-section-title">Notes</div>
+          <div class="uc-notes-text">${text}</div>
+        </div>
+      `;
+    },
+
+    _actions() {
+      return `
+        <div class="uc-actions">
+          <button class="btn btn-secondary" id="uc-edit">Edit</button>
+          <button class="btn btn-secondary" id="uc-copy">Copy Unit</button>
+          <button class="btn btn-danger"    id="uc-delete">Delete</button>
+        </div>
+      `;
+    },
+
+    _bind(unit, system, factionId) {
+      document.getElementById('uc-edit').addEventListener('click', () => {
+        location.hash = `#unit/edit/${system}/${factionId}/${unit.id}`;
+      });
+
+      document.getElementById('uc-copy').addEventListener('click', () => {
+        const arr = v => !v ? [] : Array.isArray(v) ? v : Object.values(v);
+        const prefill = {
+          ...unit,
+          name: unit.name + ' (Copy)',
+          id: null,
+          weapons: arr(unit.weapons).map(w => ({ ...w, profiles: { ...w.profiles } })),
+          loadoutOptions: arr(unit.loadoutOptions).map(s => ({ ...s, weaponIds: [...arr(s.weaponIds)] })),
+          abilities:  arr(unit.abilities).map(a => ({ ...a })),
+          equipment:  [...arr(unit.equipment)],
+          keywords:   [...arr(unit.keywords)],
+        };
+        sessionStorage.setItem('unitFormPrefill', JSON.stringify(prefill));
+        location.hash = `#unit/new/${system}`;
+      });
+
+      document.getElementById('uc-delete').addEventListener('click', async () => {
+        if (!confirm(`Delete "${unit.name}"?\n\nThis cannot be undone.`)) return;
+        const btn = document.getElementById('uc-delete');
+        btn.disabled = true;
+        btn.textContent = 'Deleting…';
+        try {
+          await App.db.ref(`gameData/${system}/factions/${factionId}/units/${unit.id}`).remove();
+          location.hash = '#home';
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = 'Delete';
+          alert(`Delete failed: ${err.message}`);
+        }
+      });
+    }
+  };
+
+  // ── ROSTER BUILDER ───────────────────────────────────────────────────────────
+
+  const RosterBuilder = {
+    state: null,
+
+    _fresh(system, factionId) {
+      return {
+        rosterId: null, name: '', system, factionId,
+        factionName: '', operatives: [], compositionRules: null,
+        unitLibrary: [], _iCtr: 0, created: null, browserFilter: '',
+      };
+    },
+
+    async render(system, factionId, rosterId) {
+      const el = document.getElementById('screen-roster');
+
+      if (rosterId) {
+        el.innerHTML = '<div class="loading-text">Loading roster…</div>';
+        try {
+          const snap = await App.db.ref(`rosters/${rosterId}`).once('value');
+          const data = snap.val();
+          if (!data || !data.meta) {
+            el.innerHTML = '<div class="placeholder"><h2>Roster not found</h2></div>';
+            return;
+          }
+          system    = data.meta.gameSystem;
+          factionId = data.meta.factionId;
+          RosterBuilder.state             = RosterBuilder._fresh(system, factionId);
+          RosterBuilder.state.rosterId    = rosterId;
+          RosterBuilder.state.created     = data.meta.created || null;
+          RosterBuilder.state.name        = data.meta.name    || '';
+          const arr = v => !v ? [] : Array.isArray(v) ? v : Object.values(v);
+          RosterBuilder.state.operatives  = arr(data.units).map(u => ({
+            instanceId:    u.instanceId,
+            unitId:        u.unitId,
+            unitName:      u.unitName,
+            role:          u.role          || null,
+            points:        u.points        ?? null,
+            countsAs:      u.countsAs      || 1,
+            chosenLoadout: u.chosenLoadout || {},
+            notes:         u.notes         || '',
+            expanded:      false,
+          }));
+        } catch (err) {
+          el.innerHTML = `<div class="placeholder"><h2>Error loading roster</h2><p>${err.message}</p></div>`;
+          return;
+        }
+      } else if (!system || !factionId) {
+        el.innerHTML = '<div class="placeholder"><h2>Select a faction from the Library to build a roster</h2></div>';
+        return;
+      } else {
+        RosterBuilder.state = RosterBuilder._fresh(system, factionId);
+      }
+
+      el.innerHTML = RosterBuilder._shell();
+      const nameEl = document.getElementById('rb-name');
+      if (nameEl && RosterBuilder.state.name) nameEl.value = RosterBuilder.state.name;
+      RosterBuilder._bind();
+      await RosterBuilder._load();
+      RosterBuilder._renderOperatives();
+    },
+
+    async _load() {
+      const { system, factionId } = RosterBuilder.state;
+      try {
+        // Roster 3b Part 2 v3: for 40k, the flat pool (gameData/{system}/
+        // {factionId}, keyed directly by unitId) is the canonical unit
+        // source — it has squadSize/pointsTable, the BSData-pipeline
+        // subtree (gameData/{system}/factions/{factionId}/units) doesn't
+        // and is deprecated. KT is unaffected: unchanged confirmed-library
+        // read below.
+        if (system === 'warhammer-40k') {
+          const poolSnap = await App.db.ref(`gameData/${system}/${factionId}`).once('value');
+          const val = poolSnap.val() || {};
+
+          RosterBuilder.state.factionName      = factionId.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          RosterBuilder.state.compositionRules = null; // no legality banner for 40k yet — next roster brief
+
+          const defName = `${RosterBuilder.state.factionName} Roster`;
+          if (!RosterBuilder.state.name) RosterBuilder.state.name = defName;
+          const nameEl = document.getElementById('rb-name');
+          if (nameEl && !nameEl.value) nameEl.value = RosterBuilder.state.name;
+          document.getElementById('rb-faction').textContent = RosterBuilder.state.factionName;
+
+          RosterBuilder.state.unitLibrary = Object.entries(val)
+            .map(([id, raw]) => UnitSearch._transformForRoster(id, raw))
+            .sort((a, b) => (a.role || '').localeCompare(b.role || '') || (a.name || '').localeCompare(b.name || ''));
+
+          RosterBuilder._renderBrowser();
+          RosterBuilder._updateHeader();
+          return;
+        }
+
+        const [infoSnap, unitsSnap] = await Promise.all([
+          App.db.ref(`gameData/${system}/factions/${factionId}/info`).once('value'),
+          App.db.ref(`gameData/${system}/factions/${factionId}/units`).once('value'),
+        ]);
+
+        const info = infoSnap.val() || {};
+        RosterBuilder.state.factionName      = info.name || factionId;
+        RosterBuilder.state.compositionRules = info.compositionRules || null;
+
+        const def = `${RosterBuilder.state.factionName} Roster`;
+        if (!RosterBuilder.state.name) RosterBuilder.state.name = def;
+        const nameEl = document.getElementById('rb-name');
+        if (nameEl && !nameEl.value) nameEl.value = RosterBuilder.state.name;
+        document.getElementById('rb-faction').textContent = RosterBuilder.state.factionName;
+
+        const val = unitsSnap.val() || {};
+        RosterBuilder.state.unitLibrary = Object.entries(val)
+          .map(([id, u]) => ({ ...u, id, countsAs: u.countsAs || 1 }))
+          .sort((a, b) => (a.role || '').localeCompare(b.role || '') || (a.name || '').localeCompare(b.name || ''));
+
+        RosterBuilder._renderBrowser();
+        RosterBuilder._updateHeader();
+      } catch (err) {
+        document.getElementById('rb-browser').innerHTML =
+          `<div class="rb-op-empty">Error loading faction: ${err.message}</div>`;
+      }
+    },
+
+    _shell() {
+      return `
+        <div class="rb-wrap">
+          <div class="rb-header">
+            <div class="rb-header-top">
+              <input class="uf-input rb-name-input" id="rb-name" type="text" placeholder="Roster name…">
+              <div class="rb-counter" id="rb-counter">0 / — ops</div>
+            </div>
+            <div class="rb-meta" id="rb-faction">Loading…</div>
+            <div class="rb-legality-banner" id="rb-legality"></div>
+          </div>
+          <div class="rb-section-label">Operatives</div>
+          <div class="rb-op-list" id="rb-op-list">
+            <div class="rb-op-empty">No operatives added yet.</div>
+          </div>
+          <div class="rb-section-label rb-browser-label">Unit Browser</div>
+          <div class="rb-browser" id="rb-browser">
+            <div class="loading-text">Loading…</div>
+          </div>
+        </div>
+        <div class="rb-actions">
+          <div class="rb-draft-url" id="rb-draft-url">
+            <span>Draft saved —</span>
+            <a id="rb-share-link" href=""></a>
+            <button class="rb-copy-btn" id="rb-copy-btn">Copy</button>
+          </div>
+          <button class="btn btn-secondary" id="rb-save">Save Draft</button>
+          <button class="btn btn-primary"   id="rb-publish" disabled>Publish</button>
+        </div>
+      `;
+    },
+
+    _addOperative(unit) {
+      RosterBuilder._invalidatePublish();
+      const instanceId = `op_${Date.now()}_${++RosterBuilder.state._iCtr}`;
+      const chosenLoadout = {};
+      RosterBuilder._arr(unit.loadoutOptions).forEach(slot => {
+        const ids = RosterBuilder._arr(slot.weaponIds);
+        if (ids.length) chosenLoadout[slot.slot] = ids[0];
+      });
+      // Roster 3b Part 2 v3: variable-size 40k squads default to their
+      // minimum and get a live-points recompute when changed (see
+      // _setModelCount) — fixed-size/KT units have no squadSize, modelCount
+      // stays null and points stays the flat value untouched.
+      const hasVariableSize = unit.squadSize && unit.squadSize.min !== unit.squadSize.max;
+      const modelCount = hasVariableSize ? unit.squadSize.min : null;
+      RosterBuilder.state.operatives.push({
+        instanceId, unitId: unit.id, unitName: unit.name,
+        points: RosterBuilder._pointsFor(unit, modelCount),
+        countsAs: unit.countsAs || 1, role: unit.role || null,
+        chosenLoadout, modelCount, notes: '', expanded: false,
+      });
+      RosterBuilder._renderOperatives();
+      RosterBuilder._renderBrowser();
+      RosterBuilder._updateHeader();
+    },
+
+    // unit.pointsTable is normalized to { "<modelCount>": pts } by
+    // _transformForRoster; falls back to the flat unit.points when there's
+    // no modelCount yet, no table, or this count isn't a table key.
+    _pointsFor(unit, modelCount) {
+      if (modelCount != null && unit.pointsTable && unit.pointsTable[String(modelCount)] != null) {
+        return unit.pointsTable[String(modelCount)];
+      }
+      return unit.points != null ? unit.points : null;
+    },
+
+    _setModelCount(instanceId, modelCount) {
+      const op = RosterBuilder.state.operatives.find(o => o.instanceId === instanceId);
+      if (!op) return;
+      const unit = RosterBuilder.state.unitLibrary.find(u => u.id === op.unitId);
+      if (!unit) return;
+      RosterBuilder._invalidatePublish();
+      op.modelCount = Number(modelCount);
+      op.points = RosterBuilder._pointsFor(unit, op.modelCount);
+      RosterBuilder._renderOperatives();
+      RosterBuilder._updateHeader();
+    },
+
+    _removeOperative(instanceId) {
+      RosterBuilder._invalidatePublish();
+      RosterBuilder.state.operatives =
+        RosterBuilder.state.operatives.filter(op => op.instanceId !== instanceId);
+      RosterBuilder._renderOperatives();
+      RosterBuilder._renderBrowser();
+      RosterBuilder._updateHeader();
+    },
+
+    _moveOperative(instanceId, dir) {
+      const ops = RosterBuilder.state.operatives;
+      const idx = ops.findIndex(op => op.instanceId === instanceId);
+      if (dir === 'up'   && idx > 0)              [ops[idx-1], ops[idx]] = [ops[idx], ops[idx-1]];
+      if (dir === 'down' && idx < ops.length - 1) [ops[idx], ops[idx+1]] = [ops[idx+1], ops[idx]];
+      RosterBuilder._renderOperatives();
+    },
+
+    _renderOperatives() {
+      const list = document.getElementById('rb-op-list');
+      const ops  = RosterBuilder.state.operatives;
+      if (!ops.length) {
+        list.innerHTML = '<div class="rb-op-empty">No operatives added yet.</div>';
+        return;
+      }
+      list.innerHTML = ops.map((op, i) => {
+        const unit = RosterBuilder.state.unitLibrary.find(u => u.id === op.unitId);
+        return RosterBuilder._opRowHTML(op, i, ops.length, unit);
+      }).join('');
+    },
+
+    _opRowHTML(op, i, total, unit) {
+      const summary = unit ? RosterBuilder._summaryText(unit, op.chosenLoadout) : '';
+      return `
+        <div class="rb-op-row${op.expanded ? ' expanded' : ''}" data-iid="${op.instanceId}">
+          <div class="rb-op-main" data-iid="${op.instanceId}">
+            <div class="rb-op-info">
+              <div class="rb-op-name">${op.unitName}</div>
+              ${op.role ? `<div class="rb-op-role">${op.role}</div>` : ''}
+              ${summary ? `<div class="rb-op-summary" data-iid="${op.instanceId}">${summary}</div>` : ''}
+            </div>
+            ${op.points != null ? `<div class="rb-op-pts">${op.points} pts</div>` : ''}
+            <div class="rb-op-controls">
+              <button class="arrow-btn" data-iid="${op.instanceId}" data-dir="up"
+                      ${i === 0 ? 'disabled' : ''}>↑</button>
+              <button class="arrow-btn" data-iid="${op.instanceId}" data-dir="down"
+                      ${i === total - 1 ? 'disabled' : ''}>↓</button>
+              <button class="remove-btn" data-iid="${op.instanceId}">×</button>
+            </div>
+          </div>
+          ${op.expanded && unit ? RosterBuilder._loadoutPanel(op, unit) : ''}
+        </div>
+      `;
+    },
+
+    // Squad-size stepper (40k variable-size units only — squadSize.min !==
+    // .max). Fixed-size and KT units have no squadSize, so this is a no-op
+    // there.
+    _squadSizeHTML(op, unit) {
+      if (!unit.squadSize || unit.squadSize.min === unit.squadSize.max) return '';
+      const { min, max } = unit.squadSize;
+      const options = [];
+      for (let n = min; n <= max; n++) options.push(n);
+      return `
+        <div class="rb-squad-size">
+          <label>Squad size</label>
+          <select class="uf-input" onchange="RosterBuilder._setModelCount('${op.instanceId}', this.value)">
+            ${options.map(n => `<option value="${n}" ${op.modelCount === n ? 'selected' : ''}>${n} models</option>`).join('')}
+          </select>
+        </div>
+      `;
+    },
+
+    // Points caveat (shadow-spectres-style pointsTable gaps — see
+    // _normalizePointsTable) and the raw prose _parseWargear couldn't turn
+    // into a clickable choice (Cadian Shock Troops' "for every N models"
+    // special-weapon text is the acceptance case for this).
+    _wargearNoticesHTML(unit) {
+      const parts = [];
+      if (unit.pointsCaveat) parts.push(`<div class="rb-points-caveat">${unit.pointsCaveat}</div>`);
+      if (!unit.loadoutIsHandAuthored && (unit.unparsedWargear || []).length) {
+        parts.push(`
+          <div class="rb-wargear-unparsed">
+            <div class="rb-wargear-unparsed-label">Additional wargear (not yet a pickable choice):</div>
+            ${unit.unparsedWargear.map(u => `<div class="rb-wargear-unparsed-row">${u.rawText}</div>`).join('')}
+            <button class="btn btn-secondary rb-author-loadout-btn" onclick="RosterBuilder._openLoadoutAuthor('${unit.id}')">
+              Author this loadout…
+            </button>
+          </div>
+        `);
+      }
+      return parts.join('');
+    },
+
+    _loadoutPanel(op, unit) {
+      const slots   = RosterBuilder._arr(unit.loadoutOptions);
+      const weapons = RosterBuilder._arr(unit.weapons);
+      const schema  = App.schemas[RosterBuilder.state.system];
+      const table   = RosterBuilder._profileTableHTML(unit, op.chosenLoadout, schema, op.instanceId);
+      const squadSizeHTML = RosterBuilder._squadSizeHTML(op, unit);
+      const noticesHTML   = RosterBuilder._wargearNoticesHTML(unit);
+
+      if (!slots.length) {
+        return `
+          <div class="rb-loadout-panel">
+            ${squadSizeHTML}
+            <div class="rb-fixed-label">Fixed Loadout</div>
+            ${table}
+            ${noticesHTML}
+          </div>
+        `;
+      }
+
+      const radioGroups = slots.map(slot => {
+        const slotWeapons = RosterBuilder._arr(slot.weaponIds)
+          .map(wid => weapons.find(w => w.id === wid)).filter(Boolean);
+        const chosen   = op.chosenLoadout[slot.slot] || RosterBuilder._arr(slot.weaponIds)[0];
+        const safeName = slot.slot.replace(/"/g, '&quot;');
+        const radios   = slotWeapons.map(w => `
+          <label class="rb-radio-label${chosen === w.id ? ' active' : ''}">
+            <input type="radio" class="rb-loadout-radio"
+                   data-iid="${op.instanceId}" data-slot="${safeName}"
+                   name="slot_${op.instanceId}_${slot.slot.replace(/\s+/g, '_')}"
+                   value="${w.id}" ${chosen === w.id ? 'checked' : ''}>
+            ${w.name || '—'}
+          </label>
+        `).join('');
+        return `
+          <div class="rb-slot">
+            <div class="rb-slot-label">${slot.slot}</div>
+            <div class="rb-radio-group">${radios}</div>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="rb-loadout-panel">
+          ${squadSizeHTML}
+          ${radioGroups}
+          <div class="rb-wp-section">${table}</div>
+          ${noticesHTML}
+        </div>
+      `;
+    },
+
+    // ── Lazy hand-author fallback hook (Roster 3b Part 2 v3, Scope #2) ──
+    // Small dedicated editor, not a full UnitForm reuse — writes straight
+    // back into the flat pool's own record (gameData/{system}/{factionId}/
+    // {unitId}/loadoutOptions), the canonical source per the v3 decision,
+    // NOT the deprecated gameData/{system}/factions/.../units subtree.
+    // Skippable: closing without saving leaves the unit exactly as it was
+    // (unparsedWargear notice still visible next time), which is the
+    // "visibly marked as not authored" state — no separate flag needed.
+    _loadoutAuthorState: null,
+
+    _openLoadoutAuthor(unitId) {
+      const unit = RosterBuilder.state.unitLibrary.find(u => u.id === unitId);
+      if (!unit) return;
+      RosterBuilder._loadoutAuthorState = { unitId, slots: [{ name: '', weaponIds: [] }] };
+      RosterBuilder._renderLoadoutAuthor(unit);
+    },
+
+    _closeLoadoutAuthor() {
+      RosterBuilder._loadoutAuthorState = null;
+      const el = document.getElementById('rb-loadout-author-overlay');
+      if (el) el.remove();
+    },
+
+    _renderLoadoutAuthor(unit) {
+      let el = document.getElementById('rb-loadout-author-overlay');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'rb-loadout-author-overlay';
+        el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;';
+        document.body.appendChild(el);
+      }
+
+      const st = RosterBuilder._loadoutAuthorState;
+      const weapons = RosterBuilder._arr(unit.weapons);
+
+      const slotsHTML = st.slots.map((slot, si) => `
+        <div style="border:1px solid #444;border-radius:6px;padding:0.6rem;margin-bottom:0.6rem;">
+          <input class="uf-input" placeholder="Slot name (e.g. &quot;Replace flamer&quot;)"
+                 value="${(slot.name || '').replace(/"/g, '&quot;')}"
+                 oninput="RosterBuilder._loadoutAuthorState.slots[${si}].name = this.value">
+          <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.4rem;">
+            ${weapons.map(w => `
+              <label style="display:flex;align-items:center;gap:0.25rem;font-size:0.8rem;">
+                <input type="checkbox" ${slot.weaponIds.includes(w.id) ? 'checked' : ''}
+                       onchange="RosterBuilder._toggleAuthorWeapon(${si}, '${w.id}', this.checked)">
+                ${w.name}
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+
+      el.innerHTML = `
+        <div style="background:#1a1a1a;border:1px solid #555;border-radius:8px;padding:1rem;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;">
+          <h3 style="margin-top:0;">Author loadout — ${unit.name}</h3>
+          <div style="font-size:0.8rem;color:#999;margin-bottom:0.8rem;">
+            Reference text for this unit's wargear is in the operative panel — use it to decide slots.
+            Each slot becomes a radio-button choice; check every weapon that's a valid option for it.
+          </div>
+          <div id="rb-loadout-author-slots">${slotsHTML}</div>
+          <button class="btn btn-secondary" onclick="RosterBuilder._addAuthorSlot('${unit.id}')">+ Add slot</button>
+          <div style="display:flex;gap:0.5rem;margin-top:1rem;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="RosterBuilder._closeLoadoutAuthor()">Skip — author later</button>
+            <button class="btn btn-primary" onclick="RosterBuilder._saveLoadoutAuthor()">Save</button>
+          </div>
+        </div>
+      `;
+    },
+
+    _toggleAuthorWeapon(slotIdx, weaponId, checked) {
+      const slot = RosterBuilder._loadoutAuthorState.slots[slotIdx];
+      if (checked) { if (!slot.weaponIds.includes(weaponId)) slot.weaponIds.push(weaponId); }
+      else slot.weaponIds = slot.weaponIds.filter(id => id !== weaponId);
+    },
+
+    _addAuthorSlot(unitId) {
+      RosterBuilder._loadoutAuthorState.slots.push({ name: '', weaponIds: [] });
+      const unit = RosterBuilder.state.unitLibrary.find(u => u.id === unitId);
+      RosterBuilder._renderLoadoutAuthor(unit);
+    },
+
+    async _saveLoadoutAuthor() {
+      const st = RosterBuilder._loadoutAuthorState;
+      const { system, factionId } = RosterBuilder.state;
+      const loadoutOptions = st.slots
+        .filter(s => s.name.trim() && s.weaponIds.length)
+        .map(s => ({ slot: s.name.trim(), weaponIds: s.weaponIds }));
+
+      if (!loadoutOptions.length) { alert('Add at least one named slot with a weapon checked.'); return; }
+
+      try {
+        await App.db.ref(`gameData/${system}/${factionId}/${st.unitId}/loadoutOptions`).set(loadoutOptions);
+      } catch (err) {
+        alert(`Could not save: ${err.message}`);
+        return;
+      }
+
+      // Reflect immediately without a full reload — mirrors what the
+      // transform would produce on next load (hand-authored takes
+      // precedence, unparsed notice clears).
+      const unit = RosterBuilder.state.unitLibrary.find(u => u.id === st.unitId);
+      if (unit) {
+        unit.loadoutOptions = loadoutOptions;
+        unit.loadoutIsHandAuthored = true;
+        unit.unparsedWargear = [];
+      }
+      RosterBuilder._closeLoadoutAuthor();
+      RosterBuilder._renderOperatives();
+    },
+
+    _profileTableHTML(unit, chosenLoadout, schema, iid) {
+      const weapons  = RosterBuilder._resolveChosenWeapons(unit, chosenLoadout);
+      const profiles = schema?.weaponProfiles || [];
+      const hasType  = schema?.hasWeaponType !== false;
+      const headers  = profiles.map(p => `<th>${p}</th>`).join('');
+      const rows = weapons.map(w => {
+        const cells     = profiles.map(p => `<td>${w.profiles?.[p] || '—'}</td>`).join('');
+        const typeBadge = hasType ? `<span class="uc-type-badge">${w.type === 'melee' ? 'M' : 'R'}</span>` : '';
+        return `<tr><td><span class="rb-wp-name">${w.name || '—'}</span>${typeBadge}</td>${cells}</tr>`;
+      }).join('');
+      return `
+        <table class="rb-wp-table" data-iid="${iid}">
+          <thead><tr><th>Weapon</th>${headers}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    },
+
+    _resolveChosenWeapons(unit, chosenLoadout) {
+      const weapons = RosterBuilder._arr(unit.weapons);
+      const slots   = RosterBuilder._arr(unit.loadoutOptions);
+      if (!slots.length) return weapons;
+      const slottedIds = new Set(slots.flatMap(s => RosterBuilder._arr(s.weaponIds)));
+      const fixed      = weapons.filter(w => !slottedIds.has(w.id));
+      const chosen     = slots.map(slot => {
+        const wid = (chosenLoadout && chosenLoadout[slot.slot]) || RosterBuilder._arr(slot.weaponIds)[0];
+        return weapons.find(w => w.id === wid) || null;
+      }).filter(Boolean);
+      return [...fixed, ...chosen];
+    },
+
+    _summaryText(unit, chosenLoadout) {
+      const weapons = RosterBuilder._resolveChosenWeapons(unit, chosenLoadout);
+      const names   = weapons.map(w => w.name).filter(Boolean);
+      return names.length ? `${unit.name} — ${names.join(' · ')}` : '';
+    },
+
+    _refreshProfileTable(iid, unit, chosenLoadout, schema) {
+      const table = document.querySelector(`.rb-wp-table[data-iid="${iid}"]`);
+      if (!table) return;
+      const tbody    = table.querySelector('tbody');
+      const weapons  = RosterBuilder._resolveChosenWeapons(unit, chosenLoadout);
+      const profiles = schema?.weaponProfiles || [];
+      const hasType  = schema?.hasWeaponType !== false;
+      tbody.innerHTML = weapons.map(w => {
+        const cells     = profiles.map(p => `<td>${w.profiles?.[p] || '—'}</td>`).join('');
+        const typeBadge = hasType ? `<span class="uc-type-badge">${w.type === 'melee' ? 'M' : 'R'}</span>` : '';
+        return `<tr><td><span class="rb-wp-name">${w.name || '—'}</span>${typeBadge}</td>${cells}</tr>`;
+      }).join('');
+    },
+
+    _refreshSummary(iid, unit, chosenLoadout) {
+      const el = document.querySelector(`.rb-op-summary[data-iid="${iid}"]`);
+      if (el) el.textContent = RosterBuilder._summaryText(unit, chosenLoadout);
+    },
+
+    _refreshRadioLabels(iid, slotName, chosenWid) {
+      const panel = document.querySelector(`.rb-op-row[data-iid="${iid}"] .rb-loadout-panel`);
+      if (!panel) return;
+      panel.querySelectorAll('.rb-radio-label').forEach(lbl => {
+        const radio = lbl.querySelector('input.rb-loadout-radio');
+        if (radio && radio.dataset.slot === slotName) {
+          lbl.classList.toggle('active', radio.value === chosenWid);
+        }
+      });
+    },
+
+    // 40k's flat pool is 100+ units per faction — RosterBuilder now reads it
+    // directly (Roster 3b Part 2 v3), so the old "go search a separate
+    // screen, then come back" button no longer has a purpose; an inline
+    // filter on this same browser does the job the search screen used to.
+    _renderBrowser() {
+      const browser  = document.getElementById('rb-browser');
+      const { system } = RosterBuilder.state;
+      const filter   = (RosterBuilder.state.browserFilter || '').trim().toLowerCase();
+      const allUnits = RosterBuilder.state.unitLibrary;
+      const units    = (system === 'warhammer-40k' && filter)
+        ? allUnits.filter(u => (u.name || '').toLowerCase().includes(filter))
+        : allUnits;
+
+      const filterHTML = system === 'warhammer-40k' ? `
+        <div class="rb-browser-filter">
+          <input class="uf-input" id="rb-browser-search" type="text"
+                 placeholder="Filter ${allUnits.length} units…"
+                 value="${(RosterBuilder.state.browserFilter || '').replace(/"/g, '&quot;')}"
+                 oninput="RosterBuilder._onBrowserFilterInput(this.value)">
+        </div>` : '';
+
+      if (!allUnits.length) {
+        browser.innerHTML = filterHTML + `<div class="rb-op-empty">${
+          system === 'warhammer-40k'
+            ? 'No units found for this faction.'
+            : 'No units in library for this faction yet.'
+        }</div>`;
+        return;
+      }
+
+      if (!units.length) {
+        browser.innerHTML = filterHTML + '<div class="rb-op-empty">No units match.</div>';
+        return;
+      }
+
+      browser.innerHTML = filterHTML + units.map(u => {
+        const chk = RosterBuilder._checkMaxed(u);
+        return `
+          <div class="rb-unit-row${chk.maxed ? ' maxed' : ''}">
+            <div class="rb-unit-info">
+              <div class="rb-unit-name">${u.name}</div>
+              ${u.role ? `<div class="rb-unit-role">${u.role}</div>` : ''}
+            </div>
+            ${u.points != null ? `<div class="rb-unit-pts">${u.points} pts</div>` : ''}
+            <button class="rb-add-btn" data-uid="${u.id}"
+                    ${chk.maxed ? `disabled title="${chk.reason}"` : ''}>+ Add</button>
+          </div>
+        `;
+      }).join('');
+    },
+
+    // Filtering re-renders the whole browser innerHTML (same pattern as
+    // every other RosterBuilder update) — restore focus/cursor so typing
+    // doesn't visibly lose the input each keystroke.
+    _onBrowserFilterInput(value) {
+      RosterBuilder.state.browserFilter = value;
+      const el = document.getElementById('rb-browser-search');
+      const pos = el ? el.selectionStart : null;
+      RosterBuilder._renderBrowser();
+      const newEl = document.getElementById('rb-browser-search');
+      if (newEl) { newEl.focus(); if (pos != null) newEl.setSelectionRange(pos, pos); }
+    },
+
+    _updateHeader() {
+      const ops   = RosterBuilder.state.operatives;
+      const rules = RosterBuilder.state.compositionRules;
+      const total = ops.reduce((s, op) => s + (op.countsAs || 1), 0);
+      const max   = rules?.totalOperatives?.max;
+      const pts   = ops.reduce((s, op) => s + (op.points || 0), 0);
+      const el    = document.getElementById('rb-counter');
+      if (!el) return;
+      const label = max != null ? `${total} / ${max} ops` : `${total} ops`;
+      el.textContent = pts > 0 ? `${label} · ${pts} pts` : label;
+      el.className   = 'rb-counter' +
+        (max && total > max ? ' over' : max && total === max ? ' full' : '');
+      RosterBuilder._updateLegalityBanner();
+    },
+
+    _checkMaxed(unit) {
+      const rules = RosterBuilder.state.compositionRules;
+      if (!rules) return { maxed: false };
+      const ops  = RosterBuilder.state.operatives;
+
+      const used = ops.reduce((s, op) => s + (op.countsAs || 1), 0);
+      const left = rules.totalOperatives.max - used;
+      if ((unit.countsAs || 1) > left) {
+        return { maxed: true, reason: `Only ${left} slot${left === 1 ? '' : 's'} remaining` };
+      }
+
+      const unitCount = ops.filter(op => op.unitId === unit.id).length;
+
+      const maxRule = (rules.rules || []).find(r => r.type === 'max' && r.unitRole === unit.role);
+      if (maxRule && unitCount >= maxRule.count) {
+        return { maxed: true, reason: maxRule.description };
+      }
+
+      const uniqueRule = (rules.rules || []).find(r => r.type === 'unique');
+      if (uniqueRule) {
+        const excluded = uniqueRule.excludeRoles || [];
+        if (!excluded.includes(unit.role) && unitCount >= 1) {
+          return { maxed: true, reason: `Only one ${unit.role || unit.name} allowed` };
+        }
+      }
+
+      return { maxed: false };
+    },
+
+    _arr(v) {
+      if (!v) return [];
+      return Array.isArray(v) ? v : Object.values(v);
+    },
+
+    _checkLegality() {
+      const rules = RosterBuilder.state.compositionRules;
+      const ops   = RosterBuilder.state.operatives;
+      // legal: null means "not validated" (no compositionRules exist for
+      // this faction yet — true for all of 40k right now) — a THIRD state,
+      // deliberately distinct from true/false. Returning legal:true here
+      // was fine when compositionRules was always populated for every real
+      // faction; 40k is the first legitimate case where it's null, and
+      // that vacuous-true default is exactly what stamped a "Legal" badge
+      // on 40k drafts no check had actually run against.
+      if (!rules) return { legal: null, violations: [] };
+
+      const violations = [];
+      const total = ops.reduce((s, op) => s + (op.countsAs || 1), 0);
+
+      // 1. Total operative count vs min/max
+      const { min, max } = rules.totalOperatives || {};
+      if (min != null && total < min) {
+        violations.push(`Need ${min} operative${min === 1 ? '' : 's'} — have ${total}`);
+      }
+      if (max != null && total > max) {
+        violations.push(`Too many operatives — maximum ${max}, have ${total}`);
+      }
+
+      // 2. Required roles present
+      (rules.rules || []).filter(r => r.type === 'required').forEach(r => {
+        const count = ops.filter(op => op.role === r.unitRole).length;
+        if (count < r.count) {
+          violations.push(r.description || `Requires ${r.count} ${r.unitRole}`);
+        }
+      });
+
+      // 3. Role maximums not exceeded
+      (rules.rules || []).filter(r => r.type === 'max').forEach(r => {
+        const count = ops.filter(op => op.role === r.unitRole).length;
+        if (count > r.count) {
+          violations.push(r.description || `Maximum ${r.count} ${r.unitRole} — have ${count}`);
+        }
+      });
+
+      // 4. Unique constraint — each non-repeatable unit template may appear only once
+      const uniqueRule = (rules.rules || []).find(r => r.type === 'unique');
+      if (uniqueRule) {
+        const excluded = new Set(uniqueRule.excludeRoles || []);
+        const unitCounts = {};
+        ops.forEach(op => {
+          if (!excluded.has(op.role)) {
+            unitCounts[op.unitId] = (unitCounts[op.unitId] || 0) + 1;
+          }
+        });
+        Object.entries(unitCounts).forEach(([uid, count]) => {
+          if (count > 1) {
+            const unit = RosterBuilder.state.unitLibrary.find(u => u.id === uid);
+            violations.push(`Only one ${unit?.name || uid} allowed`);
+          }
+        });
+      }
+
+      // 5. Special per-faction loadout rules — added per faction as needed
+      violations.push(...RosterBuilder._checkSpecialRules());
+
+      return { legal: violations.length === 0, violations };
+    },
+
+    _checkSpecialRules() {
+      // Faction-specific cross-team weapon limits.
+      // When more factions need this treatment, convert to a dispatch table keyed by factionId.
+      const errors = [];
+      if (RosterBuilder.state.factionId === 'void-dancer-troupe') {
+        const fusionCount = RosterBuilder.state.operatives.filter(op =>
+          Object.values(op.chosenLoadout || {}).includes('w-fusion-pistol')
+        ).length;
+        const neuroCount = RosterBuilder.state.operatives.filter(op =>
+          Object.values(op.chosenLoadout || {}).includes('w-neuro-disruptor')
+        ).length;
+        if (fusionCount > 1) errors.push('Max 1 fusion pistol across the team');
+        if (neuroCount  > 1) errors.push('Max 1 neuro disruptor across the team');
+      }
+      return errors;
+    },
+
+    async _doSaveDraft() {
+      const btn = document.getElementById('rb-save');
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+      try {
+        const s   = RosterBuilder.state;
+        const pts = s.operatives.reduce((sum, op) => sum + (op.points || 0), 0);
+
+        const isNew = !s.rosterId;
+        if (isNew) {
+          s.rosterId = App.db.ref('rosters').push().key;
+          s.created  = Date.now();
+          localStorage.setItem(`roster_owner_${s.rosterId}`, '1');
+        }
+
+        const { legal } = RosterBuilder._checkLegality();
+        const meta = {
+          name:        s.name || 'Untitled Roster',
+          gameSystem:  s.system,
+          factionId:   s.factionId,
+          factionName: s.factionName,
+          created:     s.created,
+          updated:     Date.now(),
+          pointsTotal: pts,
+          status:      'draft',
+          isLegal:     legal,
+        };
+
+        const units = s.operatives.map(op => ({
+          instanceId:    op.instanceId,
+          unitId:        op.unitId,
+          unitName:      op.unitName,
+          role:          op.role,
+          points:        op.points,
+          countsAs:      op.countsAs,
+          chosenLoadout: op.chosenLoadout,
+          notes:         op.notes,
+        }));
+
+        await App.db.ref(`rosters/${s.rosterId}`).update({ meta, units });
+        RosterBuilder._showDraftURL(s.rosterId);
+      } catch (err) {
+        alert(`Save failed: ${err.message}`);
+      } finally {
+        const b = document.getElementById('rb-save');
+        if (b) { b.disabled = false; b.textContent = 'Save Draft'; }
+      }
+    },
+
+    _showDraftURL(rosterId) {
+      const url   = `${location.origin}${location.pathname}#roster/${rosterId}`;
+      const div   = document.getElementById('rb-draft-url');
+      const link  = document.getElementById('rb-share-link');
+      const label = div?.querySelector('span');
+      if (!div || !link) return;
+      if (label) label.textContent = 'Draft saved —';
+      link.href        = url;
+      link.textContent = url;
+      div.classList.add('visible');
+    },
+
+    _showPublishedURL(rosterId) {
+      const url   = `${location.origin}${location.pathname}#roster/${rosterId}`;
+      const div   = document.getElementById('rb-draft-url');
+      const link  = document.getElementById('rb-share-link');
+      const label = div?.querySelector('span');
+      if (!div || !link) return;
+      if (label) label.textContent = 'Published —';
+      link.href        = url;
+      link.textContent = url;
+      div.classList.add('visible');
+    },
+
+    _invalidatePublish() {
+      const s = RosterBuilder.state;
+      if (!s.rosterId) return;
+      s.rosterId = null;
+      s.created  = null;
+      const div = document.getElementById('rb-draft-url');
+      if (div) div.classList.remove('visible');
+    },
+
+    async _doPublish() {
+      const btn = document.getElementById('rb-publish');
+      if (btn) { btn.disabled = true; btn.textContent = 'Publishing…'; }
+      try {
+        const s = RosterBuilder.state;
+
+        // Ensure a roster node exists in Firebase
+        if (!s.rosterId) {
+          s.rosterId = App.db.ref('rosters').push().key;
+          s.created  = Date.now();
+          localStorage.setItem(`roster_owner_${s.rosterId}`, '1');
+        }
+
+        const pts = s.operatives.reduce((sum, op) => sum + (op.points || 0), 0);
+
+        const arr = v => !v ? [] : Array.isArray(v) ? v : Object.values(v);
+
+        // Roster 3b Part 2 v3: for 40k, templates come from the already-
+        // transformed unitLibrary in memory (flat pool, canonical) — NOT a
+        // fresh fetch from the deprecated gameData/{system}/factions/...
+        // subtree, which has no loadoutOptions at all and would silently
+        // publish every 40k roster with an empty chosenLoadout. KT keeps
+        // its original fresh-fetch-from-confirmed-library behavior,
+        // unchanged, below.
+        let templates;
+        if (s.system === 'warhammer-40k') {
+          templates = {};
+          for (const u of s.unitLibrary) templates[u.id] = u;
+        } else {
+          const tSnap = await App.db
+            .ref(`gameData/${s.system}/factions/${s.factionId}/units`)
+            .once('value');
+          templates = tSnap.val() || {};
+        }
+
+        const units = s.operatives.map(op => {
+          const tmpl    = templates[op.unitId] || {};
+          const weapons = arr(tmpl.weapons);
+          // Resolve chosenLoadout IDs → full weapon objects (each weapon
+          // object already carries its own `bonuses` array, if any, since
+          // it's copied whole — nothing strips it).
+          const chosenLoadout = {};
+          arr(tmpl.loadoutOptions).forEach(slot => {
+            const wid    = (op.chosenLoadout && op.chosenLoadout[slot.slot])
+                           || arr(slot.weaponIds)[0];
+            const weapon = weapons.find(w => w.id === wid);
+            if (weapon) chosenLoadout[slot.slot] = { ...weapon };
+          });
+          return {
+            instanceId:   op.instanceId,
+            unitId:       op.unitId,
+            name:         op.unitName,
+            role:         op.role       || null,
+            points:       op.points     ?? null,
+            countsAs:     op.countsAs   || 1,
+            modelCount:   op.modelCount ?? null,
+            stats:        tmpl.stats    || {},
+            weapons:      weapons.map(w => ({ ...w })),
+            chosenLoadout,
+            abilities:    arr(tmpl.abilities).map(a => ({ ...a })),
+            keywords:     arr(tmpl.keywords || tmpl.tags),
+            equipment:    arr(tmpl.equipment),
+            notes:        op.notes      || '',
+          };
+        });
+
+        const exportData = {
+          meta: {
+            name:        s.name || 'Untitled Roster',
+            gameSystem:  s.system,
+            factionId:   s.factionId,
+            factionName: s.factionName,
+            pointsTotal: pts,
+            publishedAt: Date.now(),
+            rosterId:    s.rosterId,
+          },
+          units,
+        };
+
+        // Write export and mark draft published in parallel. isLegal was
+        // previously hardcoded true here — harmless while the Publish
+        // button's own disabled-without-rules gate was the only way to
+        // reach this code, but a defense-in-depth fix belongs here too:
+        // record what was actually checked, not an assumption.
+        const { legal: publishLegal } = RosterBuilder._checkLegality();
+        await Promise.all([
+          App.db.ref(`exports/${s.system}/${s.rosterId}`).set(exportData),
+          App.db.ref(`rosters/${s.rosterId}/meta`).update({ status: 'published', isLegal: publishLegal }),
+        ]);
+
+        const publishedId = s.rosterId;
+        // Clear state — subsequent edits will create a new draft
+        s.rosterId = null;
+        s.created  = null;
+        RosterBuilder._showPublishedURL(publishedId);
+      } catch (err) {
+        alert(`Publish failed: ${err.message}`);
+      } finally {
+        const b = document.getElementById('rb-publish');
+        if (b) {
+          const { legal } = RosterBuilder._checkLegality();
+          b.disabled    = !legal;
+          b.textContent = 'Publish';
+        }
+      }
+    },
+
+    _updateLegalityBanner() {
+      const banner  = document.getElementById('rb-legality');
+      const publish = document.getElementById('rb-publish');
+      if (!banner) return;
+
+      const rules = RosterBuilder.state.compositionRules;
+      if (!rules) {
+        banner.className = 'rb-legality-banner';
+        if (publish) publish.disabled = true;
+        return;
+      }
+
+      const { legal, violations } = RosterBuilder._checkLegality();
+
+      if (legal) {
+        banner.className  = 'rb-legality-banner legal';
+        banner.textContent = 'Roster is legal';
+      } else {
+        banner.className = 'rb-legality-banner illegal';
+        banner.innerHTML = violations.map(v => `<div>• ${v}</div>`).join('');
+      }
+
+      if (publish) publish.disabled = !legal;
+    },
+
+    _bind() {
+      document.getElementById('rb-name').addEventListener('input', e => {
+        RosterBuilder.state.name = e.target.value;
+        RosterBuilder._invalidatePublish();
+      });
+
+      const opList = document.getElementById('rb-op-list');
+
+      opList.addEventListener('click', e => {
+        if (e.target.classList.contains('arrow-btn')) {
+          RosterBuilder._moveOperative(e.target.dataset.iid, e.target.dataset.dir);
+          return;
+        }
+        if (e.target.classList.contains('remove-btn')) {
+          RosterBuilder._removeOperative(e.target.dataset.iid);
+          return;
+        }
+        if (!e.target.closest('.rb-op-controls') && !e.target.closest('.rb-loadout-panel')) {
+          const row = e.target.closest('.rb-op-row');
+          if (row) {
+            const op = RosterBuilder.state.operatives.find(o => o.instanceId === row.dataset.iid);
+            if (op) {
+              op.expanded = !op.expanded;
+              RosterBuilder._renderOperatives();
+            }
+          }
+        }
+      });
+
+      opList.addEventListener('change', e => {
+        if (!e.target.classList.contains('rb-loadout-radio')) return;
+        const { iid, slot } = e.target.dataset;
+        const wid = e.target.value;
+        const op  = RosterBuilder.state.operatives.find(o => o.instanceId === iid);
+        if (!op) return;
+        op.chosenLoadout[slot] = wid;
+        const unit   = RosterBuilder.state.unitLibrary.find(u => u.id === op.unitId);
+        const schema = App.schemas[RosterBuilder.state.system];
+        RosterBuilder._refreshProfileTable(iid, unit, op.chosenLoadout, schema);
+        RosterBuilder._refreshSummary(iid, unit, op.chosenLoadout);
+        RosterBuilder._refreshRadioLabels(iid, slot, wid);
+      });
+
+      document.getElementById('rb-browser').addEventListener('click', e => {
+        const btn = e.target.closest('.rb-add-btn');
+        if (!btn || btn.disabled) return;
+        const unit = RosterBuilder.state.unitLibrary.find(u => u.id === btn.dataset.uid);
+        if (unit) RosterBuilder._addOperative(unit);
+      });
+
+      document.getElementById('rb-save').addEventListener('click', RosterBuilder._doSaveDraft);
+      document.getElementById('rb-copy-btn').addEventListener('click', () => {
+        const link = document.getElementById('rb-share-link');
+        if (!link?.href) return;
+        navigator.clipboard.writeText(link.href).then(() => {
+          const btn = document.getElementById('rb-copy-btn');
+          if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy'; }, 1500); }
+        }).catch(() => {});
+      });
+      document.getElementById('rb-publish').addEventListener('click', RosterBuilder._doPublish);
+    },
+  };
+
+  // ── ROSTER VIEW ──────────────────────────────────────────────────────────────
+
+  const RosterView = {
+    async render(rosterId) {
+      const el = document.getElementById('screen-roster');
+      el.innerHTML = '<div class="loading-text">Loading…</div>';
+      try {
+        const snap = await App.db.ref(`rosters/${rosterId}`).once('value');
+        const data = snap.val();
+        if (!data) {
+          el.innerHTML = '<div class="placeholder"><h2>Roster not found</h2><p>This link may be invalid or the roster was deleted.</p></div>';
+          return;
+        }
+        const { meta, units } = data;
+        const unitTemplates = await RosterView._loadUnitTemplates(meta.gameSystem, meta.factionId);
+        const isOwner = !!localStorage.getItem(`roster_owner_${rosterId}`);
+        el.innerHTML = RosterView._buildPage(rosterId, meta, units, unitTemplates, isOwner);
+      } catch (err) {
+        el.innerHTML = `<div class="placeholder"><h2>Error loading roster</h2><p>${err.message}</p></div>`;
+      }
+    },
+
+    async _loadUnitTemplates(system, factionId) {
+      try {
+        const snap = await App.db.ref(`gameData/${system}/factions/${factionId}/units`).once('value');
+        return snap.val() || {};
+      } catch { return {}; }
+    },
+
+    _arr(v) {
+      if (!v) return [];
+      return Array.isArray(v) ? v : Object.values(v);
+    },
+
+    _resolveWeaponNames(op, unitTemplate) {
+      if (!unitTemplate) return [];
+      const weapons    = RosterView._arr(unitTemplate.weapons);
+      const slots      = RosterView._arr(unitTemplate.loadoutOptions);
+      const loadout    = op.chosenLoadout || {};
+      if (!slots.length) return weapons.map(w => w.name).filter(Boolean);
+      const slottedIds = new Set(slots.flatMap(s => RosterView._arr(s.weaponIds)));
+      const fixed      = weapons.filter(w => !slottedIds.has(w.id)).map(w => w.name).filter(Boolean);
+      const chosen     = slots.map(slot => {
+        const wid = loadout[slot.slot] || RosterView._arr(slot.weaponIds)[0];
+        return weapons.find(w => w.id === wid)?.name || null;
+      }).filter(Boolean);
+      return [...fixed, ...chosen];
+    },
+
+    _buildPage(rosterId, meta, units, unitTemplates, isOwner) {
+      const ops   = RosterView._arr(units);
+      const total = ops.reduce((s, op) => s + (op.countsAs || 1), 0);
+      const pts   = meta.pointsTotal || 0;
+
+      const systemName = App.schemas[meta.gameSystem]?.name || meta.gameSystem || '';
+      const metaLine   = [meta.factionName, systemName].filter(Boolean).join(' · ');
+      const countParts = [`${total} operative${total === 1 ? '' : 's'}`];
+      if (pts > 0) countParts.push(`${pts} pts`);
+
+      const isPublished  = meta.status === 'published';
+      const isLegal      = meta.isLegal === true;
+      // meta.isLegal is null/undefined when no compositionRules exist for
+      // this faction yet (all of 40k today) — a real "not validated" state,
+      // not the same as "checked and failed" (false) or "checked and
+      // passed" (true). Surfacing it as its own badge is the whole point:
+      // a green "Legal" here was claiming a check that never ran.
+      const notValidated = meta.isLegal == null;
+      const badgeClass  = isPublished ? 'published' : (notValidated ? 'unvalidated' : (isLegal ? 'legal' : 'draft'));
+      const badgeLabel  = isPublished ? 'Published'  : (notValidated ? 'Not Validated' : (isLegal ? 'Legal' : 'Draft'));
+
+      const opRows = ops.map(op => {
+        const tmpl    = unitTemplates[op.unitId];
+        const names   = RosterView._resolveWeaponNames(op, tmpl);
+        const summary = names.length ? `${op.unitName} — ${names.join(' · ')}` : '';
+        return `
+          <div class="rv-op-row">
+            <div class="rv-op-top">
+              <div>
+                <span class="rv-op-name">${op.unitName}</span>
+                ${op.role ? `<span class="rv-op-role"> · ${op.role}</span>` : ''}
+              </div>
+              ${op.points != null ? `<div class="rv-op-pts">${op.points} pts</div>` : ''}
+            </div>
+            ${summary ? `<div class="rv-op-weapons">${summary}</div>` : ''}
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="rv-wrap">
+          <div class="rv-header">
+            <div class="rv-header-top">
+              <div class="rv-title">${meta.name || 'Untitled Roster'}</div>
+              <div class="rv-legal-badge ${badgeClass}">${badgeLabel}</div>
+            </div>
+            <div class="rv-meta">${metaLine}</div>
+            <div class="rv-meta">${countParts.join(' · ')}</div>
+          </div>
+          <div class="rv-section-label">Operatives (${ops.length})</div>
+          <div class="rv-op-list">
+            ${opRows || '<div class="rv-empty">No operatives.</div>'}
+          </div>
+          ${isOwner ? `
+            <button class="btn btn-secondary rv-edit-btn"
+                    onclick="location.hash='#roster/edit/${rosterId}'">
+              Edit this roster
+            </button>
+          ` : ''}
+        </div>
+      `;
+    },
+  };
+
+  // ── UNIT SEARCH (40k lazy migration) ────────────────────────────────────────
+
+  const UnitSearch = {
+    state: { system: null, factionSlug: null, sourcePool: null, preview: null },
+
+    async render(system, factionSlug) {
+      UnitSearch.state = { system, factionSlug, sourcePool: null, preview: null };
+      const el = document.getElementById('screen-unit-search');
+      if (!system || !factionSlug) {
+        el.innerHTML = '<div class="placeholder"><h2>No faction selected</h2></div>';
+        return;
+      }
+      el.innerHTML = `
+        <div class="us-wrap">
+          <div class="us-search-bar">
+            <input class="uf-input" id="us-search-input" type="text"
+                   placeholder="Type a unit name…" disabled>
+            <div class="us-pool-label" id="us-pool-count">Loading source pool…</div>
+          </div>
+          <div id="us-results"></div>
+          <div id="us-preview"></div>
+        </div>
+      `;
+      document.getElementById('us-search-input').addEventListener('input', e => {
+        UnitSearch._runSearch(e.target.value);
+      });
+      await UnitSearch._loadPool();
+    },
+
+    async _loadPool() {
+      try {
+        const snap = await App.db
+          .ref(`gameData/${UnitSearch.state.system}/${UnitSearch.state.factionSlug}`)
+          .once('value');
+        UnitSearch.state.sourcePool = snap.val() || {};
+        const count = Object.keys(UnitSearch.state.sourcePool).length;
+        document.getElementById('us-pool-count').textContent = `${count} units available`;
+        const input = document.getElementById('us-search-input');
+        if (input) { input.disabled = false; input.focus(); }
+      } catch (err) {
+        document.getElementById('screen-unit-search').innerHTML =
+          `<div class="placeholder"><h2>Error loading source pool</h2><p>${err.message}</p></div>`;
+      }
+    },
+
+    _runSearch(query) {
+      const q   = query.trim().toLowerCase();
+      const el  = document.getElementById('us-results');
+      document.getElementById('us-preview').innerHTML = '';
+      if (!q) { el.innerHTML = ''; return; }
+
+      const matches = Object.entries(UnitSearch.state.sourcePool || {})
+        .filter(([, u]) => u.name && u.name.toLowerCase().includes(q))
+        .sort(([, a], [, b]) => (a.name || '').localeCompare(b.name || ''));
+
+      if (!matches.length) {
+        el.innerHTML = '<div class="us-empty">No units match.</div>';
+        return;
+      }
+
+      el.innerHTML = matches.map(([uid, u]) => `
+        <div class="us-result-row" data-uid="${uid}" onclick="UnitSearch._selectUnit('${uid}')">
+          <div class="us-result-info">
+            <span class="us-result-name">${u.name}</span>
+            ${u.category ? `<span class="us-result-cat">${u.category}</span>` : ''}
+          </div>
+          ${u.points != null ? `<span class="us-result-pts">${u.points} pts</span>` : ''}
+        </div>
+      `).join('');
+    },
+
+    _selectUnit(unitId) {
+      const raw = (UnitSearch.state.sourcePool || {})[unitId];
+      if (!raw) return;
+      const transformed = UnitSearch._transform(unitId, raw);
+      UnitSearch.state.preview = transformed;
+      UnitSearch._renderPreview(transformed);
+    },
+
+    _transform(unitId, raw) {
+      const weapons = Object.entries(raw.weapons || {}).map(([wid, w]) => ({
+        id:       wid,
+        name:     w.name  || wid,
+        type:     w.type  || 'ranged',
+        isDefault: true,
+        keywords: w.keywords || [],
+        profiles: {
+          'RANGE': (w.type === 'melee' || w.range === 0) ? 'Melee' : `${w.range}"`,
+          'A':     String(w.attacks ?? ''),
+          'BS/WS': w.skill != null ? `${w.skill}+` : '',
+          'S':     String(w.S  ?? ''),
+          'AP':    String(w.AP ?? ''),
+          'D':     String(w.D  ?? ''),
+        },
+      }));
+
+      const wargearText = Array.isArray(raw.wargearOptions)
+        ? raw.wargearOptions.join(' ')
+        : (raw.wargearOptions || '');
+      const loadoutOptions = UnitSearch._parseWargear(wargearText);
+
+      return {
+        id:          unitId,
+        name:        raw.name     || unitId,
+        gameSystem:  UnitSearch.state.system,
+        faction:     UnitSearch.state.factionSlug,
+        factionId:   UnitSearch.state.factionSlug,
+        role:        raw.category || null,
+        points:      raw.points   ?? null,
+        stats:       raw.stats    || {},
+        weapons,
+        loadoutOptions,
+        keywords:    raw.keywords || [],
+        pointsTable: raw.pointsTable || null,
+        squadSize:   raw.squadSize   || null,
+        category:    raw.category    || null,
+        isCharacter: raw.isCharacter || false,
+        isPsyker:    raw.isPsyker    || false,
+        isVehicle:   raw.isVehicle   || false,
+        abilities:   !raw.abilities ? []
+                       : Array.isArray(raw.abilities)
+                           ? raw.abilities
+                           : Object.values(raw.abilities),
+        notes: '',
+      };
+    },
+
+    _parseWargear(text) {
+      if (!text) return [];
+
+      // Strip abilities/faction noise the scraper concatenated into this field
+      text = text
+        .replace(/\bABILITIES\b[\s\S]*/i, '')
+        .replace(/\bFACTION:\s*[\s\S]*/i, '')
+        .replace(/\*\s*You cannot[^.]+\./gi, '')  // strip footnote sentences
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+      if (!text) return [];
+
+      const parsed   = [];
+      const unparsed = [];
+
+      // Pattern 4: "For every N models…" — pull out first, flag as unparsed
+      text = text.replace(/For every \d+[^.]+\./gi, m => {
+        unparsed.push({ type: 'unparsed', rawText: m.trim() });
+        return '';
+      });
+
+      // Pattern 1c: "X can be replaced with (one|N) of the following: opts" — run BEFORE p1.
+      // p1 assumes "can have their/its/the X replaced"; when the phrasing is instead
+      // "X can be replaced" (X comes before "can", not after), p1's lazy capture group
+      // matched the literal word "be" as if it were the replaced item ("Replace be").
+      const p1c = /([^.]*?)\s+can be replaced with (?:one|\d+) of the following[*]?\s*:\s*([^.]+)/gi;
+      text = text.replace(p1c, (_, replaces, optText) => {
+        const options = UnitSearch._parseOptionsList(optText);
+        if (options.length) {
+          const r = UnitSearch._cleanRef(replaces);
+          parsed.push({ type: 'one-of', name: `Replace ${r}`, replaces: r, options });
+        }
+        return '';
+      });
+
+      // Pattern 1: "…can [each] [have their] X replaced with one of the following[*]: opts"
+      // Accepts "N of the following" too (BSData sometimes writes "1 of the following"
+      // instead of "one of the following" — same meaning, different wording).
+      const p1 = /[^.]*?can (?:each )?(?:have (?:their|its|the) )?(.+?)\s+replaced with (?:one|\d+) of the following[*]?\s*:\s*([^.]+)/gi;
+      text = text.replace(p1, (_, replaces, optText) => {
+        const options = UnitSearch._parseOptionsList(optText);
+        if (options.length) {
+          const r = UnitSearch._cleanRef(replaces);
+          parsed.push({ type: 'one-of', name: `Replace ${r}`, replaces: r, options });
+        }
+        return '';
+      });
+
+      // Pattern 1b: "…can [each] [have their] X replaced with 1 Y" (single option)
+      const p1b = /[^.]*?can (?:each )?(?:have (?:their|its|the) )?(.+?)\s+replaced with (?:1 )?([a-z][^.(]+)\./gi;
+      text = text.replace(p1b, (_, replaces, option) => {
+        const opt = UnitSearch._cleanRef(option);
+        const r   = UnitSearch._cleanRef(replaces);
+        if (opt && !opt.includes('cannot') && !opt.includes('more than') && opt.length < 60) {
+          parsed.push({ type: 'one-of', name: `Replace ${r}`, replaces: r, options: [opt] });
+        }
+        return '';
+      });
+
+      // Pattern 2: "This model/unit can be equipped with 1 Y"
+      const p2 = /[Tt]his (?:model|unit) can be equipped with (?:1 )?([^.(]+)\./g;
+      text = text.replace(p2, (_, option) => {
+        const opt = UnitSearch._cleanRef(option);
+        if (opt) parsed.push({ type: 'optional', name: `Optional: ${opt}`, options: [opt] });
+        return '';
+      });
+
+      // Pattern 3: "Up to N models can replace X with one of the following: opts"
+      const p3 = /[Uu]p to (\d+) [^.]+?(?:one|\d+) of the following[*]?\s*:\s*([^.]+)/g;
+      text = text.replace(p3, (_, n, optText) => {
+        const options = UnitSearch._parseOptionsList(optText);
+        if (options.length) {
+          parsed.push({ type: 'counted', name: `Optional (up to ${n})`, max: parseInt(n), options });
+        }
+        return '';
+      });
+
+      // Remaining substantial text → unparsed
+      text.split(/\.\s+/).forEach(chunk => {
+        const s = chunk.replace(/\.$/, '').trim();
+        if (s.length > 20) unparsed.push({ type: 'unparsed', rawText: s });
+      });
+
+      return [...parsed, ...unparsed];
+    },
+
+    _parseOptionsList(text) {
+      // Options are "1 flamer 1 grenade launcher 1 meltagun" — split on " 1 "
+      return text.trim()
+        .split(/\s+1\s+/)
+        .map(p => p.replace(/^1\s+/, '').replace(/[*\s]+$/, '').trim())
+        .filter(p => p.length > 0 && p.length < 80);
+    },
+
+    _cleanRef(text) {
+      return text
+        .replace(/^(?:their|its|the|1)\s+/i, '')
+        .replace(/\s+and\s+.*$/i, '')
+        .replace(/[*]$/, '')
+        .trim();
+    },
+
+    // ── Roster 3b Part 2 v3 — bridges _parseWargear's name-string options to
+    // the weaponIds RosterBuilder's loadout UI expects (KT-native shape). ──
+
+    _weaponNameNorm(s) { return (s || '').toLowerCase().replace(/[\s-]+/g, ''); },
+
+    // Matches an option/replaces name string against a unit's own weapons
+    // object by name. Tries, in order: exact name, exact name after a
+    // possessive prefix is stripped ("Platform's shuriken cannon" →
+    // "shuriken cannon" — common in this prose), space/dash-normalized
+    // exact match, then normalized PREFIX match. A prefix match can return
+    // MULTIPLE weapon ids on purpose — e.g. "missile launcher" prose maps to
+    // both "Missile launcher – starshot" and "Missile launcher – sunburst"
+    // on the same unit, and there's no way to know which one prose means
+    // without guessing, so both are offered as real choices.
+    _matchWeaponIds(name, weaponsObj) {
+      const candidates = [name];
+      const possessive = name.match(/'s\s+(.+)$/i);
+      if (possessive) candidates.push(possessive[1]);
+
+      for (const cand of candidates) {
+        const exact = cand.toLowerCase().trim();
+        for (const [wid, w] of Object.entries(weaponsObj || {})) {
+          if ((w.name || '').toLowerCase().trim() === exact) return [wid];
+        }
+        const target = UnitSearch._weaponNameNorm(cand);
+        if (!target) continue;
+        for (const [wid, w] of Object.entries(weaponsObj || {})) {
+          if (UnitSearch._weaponNameNorm(w.name) === target) return [wid];
+        }
+        const prefixMatches = Object.entries(weaponsObj || {})
+          .filter(([, w]) => UnitSearch._weaponNameNorm(w.name).startsWith(target));
+        if (prefixMatches.length) return prefixMatches.map(([wid]) => wid);
+      }
+      return [];
+    },
+
+    // parsedEntries: _parseWargear's output. weaponsObj: the flat-pool unit's
+    // own `weapons` object (keyed, BSData-flat-pool shape). Returns
+    // { loadoutOptions: [{slot, weaponIds}], unparsed: [...] } — unparsed
+    // carries forward both _parseWargear's own unparsed entries AND any
+    // parsed entry whose option names didn't resolve to a real weapon id
+    // (never silently dropped — surfaced as reference text instead).
+    _resolveLoadoutOptions(parsedEntries, weaponsObj) {
+      const resolved = [];
+      const unparsed = [];
+      const seenNames = {};
+      for (const entry of parsedEntries) {
+        if (entry.type === 'unparsed') { unparsed.push(entry); continue; }
+
+        const optionIds = [];
+        const unresolvedOptions = [];
+        for (const o of (entry.options || [])) {
+          const ids = UnitSearch._matchWeaponIds(o, weaponsObj);
+          if (ids.length) optionIds.push(...ids);
+          else unresolvedOptions.push(o);
+        }
+        const uniqueIds = [...new Set(optionIds)];
+
+        if (!uniqueIds.length) {
+          unparsed.push({
+            type: 'unparsed',
+            rawText: `${entry.name}: ${(entry.options || []).join(', ')} (no matching weapon id on this unit)`,
+          });
+          continue;
+        }
+
+        let weaponIds = uniqueIds;
+        if (entry.type === 'one-of' && entry.replaces) {
+          const defaultIds = UnitSearch._matchWeaponIds(entry.replaces, weaponsObj);
+          for (const d of defaultIds) if (!weaponIds.includes(d)) weaponIds = [d, ...weaponIds];
+        }
+
+        // Same "replaces" name can legitimately produce two independent slots
+        // (e.g. Cadian Sergeant: pistol-only swap AND pistol+melee swap, both
+        // literally named "Replace laspistol") — keep both, disambiguate the
+        // slot label rather than silently merging two different choices.
+        let slotName = entry.name, n = 2;
+        while (seenNames[slotName]) { slotName = `${entry.name} (${n++})`; }
+        seenNames[slotName] = true;
+
+        resolved.push({ slot: slotName, weaponIds });
+        if (unresolvedOptions.length) {
+          unparsed.push({
+            type: 'unparsed',
+            rawText: `${entry.name}: ${unresolvedOptions.join(', ')} (no matching weapon id — not offered as a choice)`,
+          });
+        }
+      }
+      return { loadoutOptions: resolved, unparsed };
+    },
+
+    // pointsTable: [{models: "10 models", points: N}, ...] (flat-pool shape).
+    // Never guesses the model count from position — a row missing `models`
+    // (confirmed gap: shadow-spectres) is dropped and flagged, not inferred
+    // from squadSize.min/max by row order.
+    _normalizePointsTable(pointsTable) {
+      const table = {};
+      const droppedRows = [];
+      for (const row of (pointsTable || [])) {
+        const m = String(row.models || '').match(/^(\d+)\s*model/i);
+        if (m) table[m[1]] = row.points;
+        else droppedRows.push(row);
+      }
+      return { table, droppedRows, usable: Object.keys(table).length > 0 && droppedRows.length === 0 };
+    },
+
+    // Flat-pool unit (keyed weapons object, prose wargearOptions) →
+    // RosterBuilder-compatible shape (array weapons, {slot,weaponIds}
+    // loadoutOptions — same fields UnitForm/_loadoutPanel already consume
+    // for hand-authored KT units, so the rest of RosterBuilder needs no
+    // system-specific branching once this transform has run).
+    _transformForRoster(unitId, raw) {
+      const weapons = Object.entries(raw.weapons || {}).map(([wid, w]) => ({
+        id: wid,
+        name: w.name || wid,
+        type: w.type || 'ranged',
+        isDefault: true,
+        keywords: w.keywords || [],
+        profiles: {
+          'RANGE': (w.type === 'melee' || w.range === 0) ? 'Melee' : `${w.range}"`,
+          'A':     String(w.attacks ?? ''),
+          'BS/WS': w.skill != null ? `${w.skill}+` : '',
+          'S':     String(w.S  ?? ''),
+          'AP':    String(w.AP ?? ''),
+          'D':     String(w.D  ?? ''),
+        },
+      }));
+
+      const wargearText = Array.isArray(raw.wargearOptions) ? raw.wargearOptions.join(' ') : (raw.wargearOptions || '');
+      const parsed = UnitSearch._parseWargear(wargearText);
+      const { loadoutOptions: parsedSlots, unparsed } = UnitSearch._resolveLoadoutOptions(parsed, raw.weapons || {});
+
+      // Hand-authored override (lazy fallback hook) takes precedence over
+      // the automatic prose parse — it exists specifically because the
+      // parse was insufficient for this unit.
+      const loadoutOptions = (raw.loadoutOptions && raw.loadoutOptions.length)
+        ? raw.loadoutOptions
+        : parsedSlots;
+      const loadoutIsHandAuthored = !!(raw.loadoutOptions && raw.loadoutOptions.length);
+
+      const { table: pointsTable, usable: pointsTableUsable } = UnitSearch._normalizePointsTable(raw.pointsTable);
+
+      return {
+        id: unitId,
+        name: raw.name || unitId,
+        role: raw.category || null,
+        category: raw.category || null,
+        points: raw.points ?? null,
+        pointsTable: pointsTableUsable ? pointsTable : null,
+        pointsCaveat: !pointsTableUsable && raw.pointsTable && raw.pointsTable.length
+          ? 'Points vary by squad size — see composition text; showing base price.'
+          : null,
+        squadSize: raw.squadSize || null,
+        stats: raw.stats || {},
+        weapons,
+        loadoutOptions,
+        loadoutIsHandAuthored,
+        unparsedWargear: loadoutIsHandAuthored ? [] : unparsed,
+        keywords: raw.keywords || [],
+        countsAs: raw.countsAs || 1,
+        isCharacter: raw.isCharacter || false,
+        isPsyker: raw.isPsyker || false,
+        isVehicle: raw.isVehicle || false,
+        abilities: !raw.abilities ? []
+          : Array.isArray(raw.abilities) ? raw.abilities : Object.values(raw.abilities),
+        composition: raw.composition || null,
+      };
+    },
+
+    _renderPreview(unit) {
+      const el     = document.getElementById('us-preview');
+      const schema = App.schemas[UnitSearch.state.system] || {};
+      const statBlock = schema.statBlock      || [];
+      const profiles  = schema.weaponProfiles || [];
+
+      const statsHTML = statBlock.map(s => `
+        <div class="uc-stat">
+          <div class="uc-stat-label">${s}</div>
+          <div class="uc-stat-val">${unit.stats[s] || '—'}</div>
+        </div>
+      `).join('');
+
+      const weaponCards = unit.weapons.map((w, wi) => `
+        <div class="us-weapon-card">
+          <div class="us-weapon-head">
+            <span class="us-weapon-name">${w.name}</span>
+            <span class="uc-type-badge">${w.type === 'melee' ? 'M' : 'R'}</span>
+            <label class="us-default-label">
+              <input type="checkbox" ${w.isDefault ? 'checked' : ''}
+                     onchange="UnitSearch._onDefaultChange(this,${wi})">
+              Default
+            </label>
+            <button class="btn btn-danger" style="padding:0.2rem 0.5rem;font-size:0.7rem;width:auto;"
+                    onclick="UnitSearch._removeWeapon(${wi})">×</button>
+          </div>
+          <div class="us-weapon-profiles">
+            ${profiles.map(p => `
+              <div class="us-profile-field">
+                <span class="us-profile-label">${p}</span>
+                <input class="uf-input us-profile-input"
+                       value="${w.profiles[p] || ''}"
+                       oninput="UnitSearch._onProfileInput(this,${wi},'${p}')">
+              </div>
+            `).join('')}
+          </div>
+          ${w.keywords?.length ? `<div class="us-weapon-kw">${w.keywords.join(', ')}</div>` : ''}
+        </div>
+      `).join('');
+
+      const parsedSlots  = unit.loadoutOptions.filter(s => s.type !== 'unparsed');
+      const unparsedSlots = unit.loadoutOptions.filter(s => s.type === 'unparsed');
+
+      const parsedHTML = parsedSlots.length
+        ? parsedSlots.map(slot => `
+            <div class="us-wargear-row">
+              <span class="us-slot-name">${slot.name}</span>
+              <span class="us-slot-type">${slot.type}</span>
+              <span class="us-slot-options">${(slot.options || []).join(' / ')}</span>
+            </div>
+          `).join('')
+        : '<div class="us-empty">None parsed automatically.</div>';
+
+      const unparsedHTML = unparsedSlots.length
+        ? unparsedSlots.map(s => `<div class="us-unparsed-row">${s.rawText}</div>`).join('')
+        : '';
+
+      el.innerHTML = `
+        <div class="us-preview-panel">
+          <div class="us-section-title">
+            ${unit.name}
+            ${unit.points != null ? `<span class="us-pts-badge">${unit.points} pts</span>` : ''}
+            ${unit.category ? `<span class="lib-unit-role">${unit.category}</span>` : ''}
+          </div>
+
+          <div class="us-preview-section">
+            <div class="us-subsection-label">Stats</div>
+            <div class="uc-stats">${statsHTML}</div>
+            ${unit.squadSize ? `<div class="us-squad-size">
+              Squad size: ${unit.squadSize.min}–${unit.squadSize.max} models
+            </div>` : ''}
+          </div>
+
+          <div class="us-preview-section">
+            <div class="us-subsection-label">
+              Weapons — toggle Default, edit profiles if wrong
+            </div>
+            <div id="us-weapon-list">${weaponCards}</div>
+          </div>
+
+          <div class="us-preview-section">
+            <div class="us-subsection-label">Wargear Options</div>
+            <div class="us-wargear-parsed">
+              <div class="us-wargear-label">Structured</div>
+              ${parsedHTML}
+            </div>
+            ${unparsedSlots.length ? `
+              <div class="us-wargear-unparsed">
+                <div class="us-wargear-label">Needs manual review (not added as loadout slots)</div>
+                ${unparsedHTML}
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="us-preview-actions">
+            <button class="btn btn-primary" onclick="UnitSearch._doConfirm()">
+              Confirm &amp; Add to Library
+            </button>
+            <button class="btn btn-secondary" onclick="UnitSearch._cancelPreview()">
+              Cancel
+            </button>
+          </div>
+        </div>
+      `;
+    },
+
+    _onProfileInput(el, wi, profile) {
+      const u = UnitSearch.state.preview;
+      if (u) u.weapons[wi].profiles[profile] = el.value;
+    },
+
+    _onDefaultChange(el, wi) {
+      const u = UnitSearch.state.preview;
+      if (u) u.weapons[wi].isDefault = el.checked;
+    },
+
+    _removeWeapon(wi) {
+      const u = UnitSearch.state.preview;
+      if (!u) return;
+      u.weapons.splice(wi, 1);
+      UnitSearch._renderPreview(u);
+    },
+
+    _cancelPreview() {
+      const ret = sessionStorage.getItem('unitSearchReturn');
+      sessionStorage.removeItem('unitSearchReturn');
+      location.hash = ret || '#home';
+    },
+
+    _doConfirm() {
+      UnitSearch._confirm(UnitSearch.state.preview);
+    },
+
+    async _confirm(unit) {
+      if (!unit) return;
+      const { system, factionSlug } = UnitSearch.state;
+      const btn = document.querySelector('#us-preview .btn-primary');
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+      try {
+        // Create faction info node if this is the first confirmed unit for this faction
+        const infoRef  = App.db.ref(`gameData/${system}/factions/${factionSlug}/info`);
+        const infoSnap = await infoRef.once('value');
+        if (!infoSnap.val()) {
+          const name = factionSlug.replace(/-/g, ' ')
+            .replace(/\b\w/g, c => c.toUpperCase());
+          await infoRef.set({ name, compositionRules: {} });
+        }
+
+        await App.db
+          .ref(`gameData/${system}/factions/${factionSlug}/units/${unit.id}`)
+          .set(unit);
+
+        const ret = sessionStorage.getItem('unitSearchReturn');
+        sessionStorage.removeItem('unitSearchReturn');
+        location.hash = ret || `#library/${system}`;
+      } catch (err) {
+        alert(`Save failed: ${err.message}`);
+        if (btn) { btn.disabled = false; btn.textContent = 'Confirm & Add to Library'; }
+      }
+    },
+  };
+
+  // ── ROSTER CLEANER ───────────────────────────────────────────────────────────
+
+  const RosterCleaner = {
+
+    // Loaded once per render: { [factionId]: { [unitId]: unit } }
+    _factionCache: {},
+
+    async render() {
+      const el = document.getElementById('screen-clean-drafts');
+      el.innerHTML = '<div class="cleaner-wrap"><div class="loading-text">Scanning draft rosters…</div></div>';
+
+      let rosters;
+      try {
+        const snap = await App.db.ref('rosters').once('value');
+        rosters = snap.val() || {};
+      } catch (e) {
+        el.innerHTML = `<div class="cleaner-wrap"><p class="tag-error">Failed to load rosters: ${e.message}</p></div>`;
+        return;
+      }
+
+      // Filter to drafts only
+      const drafts = Object.entries(rosters)
+        .filter(([, r]) => r.meta && r.meta.status === 'draft')
+        .map(([id, r]) => ({ id, meta: r.meta, units: RosterCleaner._toArray(r.units) }));
+
+      if (!drafts.length) {
+        el.innerHTML = '<div class="cleaner-wrap"><div class="loading-text">No draft rosters found.</div></div>';
+        return;
+      }
+
+      // Check each unit in each draft roster
+      const results = await Promise.all(drafts.map(r => RosterCleaner._checkRoster(r)));
+
+      RosterCleaner._renderReport(el, results);
+    },
+
+    _toArray(units) {
+      if (!units) return [];
+      return Array.isArray(units) ? units : Object.values(units);
+    },
+
+    async _checkRoster(roster) {
+      const { id, meta, units } = roster;
+      const system    = meta.gameSystem || 'kill-team';
+      const factionId = meta.factionId  || null;
+
+      const unitResults = await Promise.all(units.map(u => RosterCleaner._checkUnit(system, factionId, u)));
+      return { id, meta, system, factionId, unitResults };
+    },
+
+    async _checkUnit(system, factionId, unit) {
+      const { unitId, unitName } = unit;
+      if (!factionId || !unitId) {
+        return { unit, status: 'manual', reason: !factionId ? 'roster has no factionId' : 'unit has no unitId' };
+      }
+
+      // 1. Does the current ID exist?
+      const snap = await App.db.ref(`gameData/${system}/factions/${factionId}/units/${unitId}`).once('value');
+      if (snap.exists()) return { unit, status: 'ok' };
+
+      // 2. Try slug-strip: remove trailing -NNN
+      const stripped = unitId.replace(/-\d+$/, '');
+      if (stripped !== unitId) {
+        const stripSnap = await App.db.ref(`gameData/${system}/factions/${factionId}/units/${stripped}`).once('value');
+        if (stripSnap.exists()) {
+          return { unit, status: 'auto', newId: stripped, method: 'slug-strip' };
+        }
+      }
+
+      // 3. Try name-match across all faction units
+      const allUnits = await RosterCleaner._loadFaction(system, factionId);
+      if (!allUnits) {
+        return { unit, status: 'manual', reason: 'faction not found in gameData' };
+      }
+
+      const target  = (unitName || '').toLowerCase().trim();
+      const matches = target
+        ? Object.entries(allUnits).filter(([, u]) => (u.name || '').toLowerCase().trim() === target)
+        : [];
+
+      if (matches.length === 1) {
+        return { unit, status: 'auto', newId: matches[0][0], method: 'name-match' };
+      }
+
+      return {
+        unit, status: 'manual',
+        reason:     matches.length === 0 ? 'no unit found with matching name' : 'multiple units share that name',
+        candidates: matches.map(([id]) => id),
+      };
+    },
+
+    async _loadFaction(system, factionId) {
+      const key = `${system}/${factionId}`;
+      if (RosterCleaner._factionCache[key] !== undefined) return RosterCleaner._factionCache[key];
+      const snap = await App.db.ref(`gameData/${system}/factions/${factionId}/units`).once('value');
+      RosterCleaner._factionCache[key] = snap.val() || null;
+      return RosterCleaner._factionCache[key];
+    },
+
+    _renderReport(el, results) {
+      const totalRosters  = results.length;
+      let   autoCount     = 0;
+      let   manualCount   = 0;
+      let   okCount       = 0;
+
+      const rosterHtml = results.map(r => {
+        const rosterMeta = `${r.meta.factionName || r.factionId || '?'} · ${r.system}`;
+        const rowsHtml   = r.unitResults.map(({ unit, status, newId, method, reason, candidates }) => {
+          if (status === 'ok') {
+            okCount++;
+            return `
+              <div class="cleaner-unit-row">
+                <div class="cleaner-unit-name">${unit.unitName || unit.unitId}</div>
+                <div class="cleaner-unit-id">${unit.unitId}</div>
+                <div class="cleaner-status tag-ok">✓ ok</div>
+              </div>`;
+          }
+          if (status === 'auto') {
+            autoCount++;
+            const methodLabel = method === 'slug-strip' ? 'slug' : 'name';
+            return `
+              <div class="cleaner-unit-row" data-roster="${r.id}" data-old="${unit.unitId}" data-new="${newId}" data-instance="${unit.instanceId}">
+                <div class="cleaner-unit-name">${unit.unitName || unit.unitId}</div>
+                <div class="cleaner-unit-id">${unit.unitId}<span class="fix-arrow">→</span>${newId}</div>
+                <div class="cleaner-status tag-auto">↻ auto (${methodLabel})</div>
+                <div class="cleaner-note">Loadout selections may need re-picking — weapon IDs also changed.</div>
+              </div>`;
+          }
+          // manual
+          manualCount++;
+          const candText = candidates && candidates.length
+            ? `Candidates: ${candidates.join(', ')}`
+            : reason || 'no match';
+          return `
+            <div class="cleaner-unit-row">
+              <div class="cleaner-unit-name">${unit.unitName || unit.unitId}</div>
+              <div class="cleaner-unit-id">${unit.unitId}</div>
+              <div class="cleaner-status tag-manual">⚠ manual</div>
+              <div class="cleaner-note">${candText}</div>
+            </div>`;
+        }).join('');
+
+        return `
+          <div class="cleaner-roster">
+            <div class="cleaner-roster-header">
+              ${r.meta.name || r.id}
+              <span class="cleaner-roster-meta">${rosterMeta} · ${r.id}</span>
+            </div>
+            ${rowsHtml}
+          </div>`;
+      }).join('');
+
+      const hasAuto = autoCount > 0;
+      el.innerHTML = `
+        <div class="cleaner-wrap">
+          <div class="cleaner-summary">
+            ${totalRosters} draft roster${totalRosters !== 1 ? 's' : ''} checked ·
+            <span class="tag-ok">${okCount} units ok</span> ·
+            <span class="tag-auto">${autoCount} auto-fixable</span> ·
+            <span class="tag-manual">${manualCount} need manual review</span>
+          </div>
+          ${rosterHtml}
+          <div class="cleaner-actions">
+            <button class="cleaner-apply-btn" id="cleaner-apply" ${hasAuto ? '' : 'disabled'}
+                    onclick="RosterCleaner.applyFixes()">
+              Apply ${autoCount} Fix${autoCount !== 1 ? 'es' : ''}
+            </button>
+            <span class="cleaner-status-msg" id="cleaner-msg">
+              ${manualCount ? `${manualCount} unit${manualCount !== 1 ? 's' : ''} need manual attention — edit their rosters directly.` : ''}
+            </span>
+          </div>
+        </div>`;
+    },
+
+    async applyFixes() {
+      const btn = document.getElementById('cleaner-apply');
+      const msg = document.getElementById('cleaner-msg');
+      btn.disabled = true;
+      btn.textContent = 'Applying…';
+      msg.textContent = '';
+
+      // Collect all auto-fix rows
+      const rows = document.querySelectorAll('.cleaner-unit-row[data-old]');
+
+      // Group by rosterId so we can PATCH the whole units array at once per roster
+      const byRoster = {};
+      rows.forEach(row => {
+        const rosterId   = row.dataset.roster;
+        const instanceId = row.dataset.instance;
+        const newId      = row.dataset.new;
+        if (!byRoster[rosterId]) byRoster[rosterId] = [];
+        byRoster[rosterId].push({ instanceId, newId });
+      });
+
+      let errorCount = 0;
+
+      for (const [rosterId, fixes] of Object.entries(byRoster)) {
+        try {
+          // Fetch the current units array
+          const snap  = await App.db.ref(`rosters/${rosterId}/units`).once('value');
+          const units = RosterCleaner._toArray(snap.val());
+
+          // Apply fixes
+          fixes.forEach(({ instanceId, newId }) => {
+            const u = units.find(u => u.instanceId === instanceId);
+            if (u) u.unitId = newId;
+          });
+
+          // Write back
+          await App.db.ref(`rosters/${rosterId}/units`).set(units);
+        } catch (e) {
+          console.error(`Failed to patch roster ${rosterId}:`, e);
+          errorCount++;
+        }
+      }
+
+      if (errorCount) {
+        msg.textContent = `Done with ${errorCount} error(s) — check console.`;
+        msg.style.color = 'var(--red)';
+      } else {
+        btn.textContent = 'Applied ✓';
+        msg.textContent = 'Fixes written. Re-select loadouts in the roster builder for repaired units.';
+        msg.style.color = 'var(--green)';
+        // Refresh to show updated state
+        setTimeout(() => RosterCleaner.render(), 1800);
+      }
+    },
+  };
+
+  // ── ROUTER ───────────────────────────────────────────────────────────────────
+
+  const Router = {
+    init() {
+      window.addEventListener('hashchange', Router.render);
+      Router.render();
+    },
+
+    render() {
+      const raw   = location.hash.slice(1) || 'home';
+      const parts = raw.split('/').filter(Boolean);
+      const [screen, sub, param] = parts;
+
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+
+      const back  = document.getElementById('nav-back');
+      const title = document.getElementById('nav-title');
+      const crumb = document.getElementById('nav-crumb');
+
+      crumb.textContent = '';
+
+      switch (screen) {
+        case 'unit':
+          document.getElementById('screen-unit-form').classList.add('active');
+          back.classList.add('visible');
+          title.textContent = sub === 'new' ? 'Add Unit' : 'Edit Unit';
+          if (param && App.schemas[param]) crumb.textContent = App.schemas[param].name;
+          // #unit/new/{system}                  → param=system, sub='new'
+          // #unit/edit/{system}/{factionId}/{id} → param=system, parts[3]=factionId, parts[4]=unitId
+          UnitForm.render(param, sub, parts[3], parts[4]);
+          break;
+
+        case 'unit-view':
+          document.getElementById('screen-unit-view').classList.add('active');
+          back.classList.add('visible');
+          title.textContent = 'Unit Card';
+          if (sub && App.schemas[sub]) crumb.textContent = App.schemas[sub].name;
+          UnitCard.render(sub, param, parts[3]);
+          break;
+
+        case 'library':
+          document.getElementById('screen-library').classList.add('active');
+          back.classList.add('visible');
+          title.textContent = 'Library';
+          if (sub && App.schemas[sub]) crumb.textContent = App.schemas[sub].name;
+          Library.render(sub);
+          break;
+
+        case 'roster':
+          document.getElementById('screen-roster').classList.add('active');
+          back.classList.add('visible');
+          if (sub === 'new') {
+            title.textContent = 'Roster Builder';
+            if (param && App.schemas[param]) crumb.textContent = App.schemas[param].name;
+            RosterBuilder.render(param, parts[3]);
+          } else if (sub === 'edit') {
+            title.textContent = 'Roster Builder';
+            RosterBuilder.render(null, null, param);
+          } else {
+            title.textContent = 'Roster';
+            RosterView.render(sub);
+          }
+          break;
+
+        case 'unit-search':
+          // #unit-search/{system}/{factionSlug}
+          document.getElementById('screen-unit-search').classList.add('active');
+          back.classList.add('visible');
+          title.textContent = 'Unit Search';
+          if (sub && App.schemas[sub]) crumb.textContent = App.schemas[sub].name;
+          UnitSearch.render(sub, param);
+          break;
+
+        case 'clean-drafts':
+          document.getElementById('screen-clean-drafts').classList.add('active');
+          back.classList.add('visible');
+          title.textContent = 'Draft Cleaner';
+          crumb.textContent = 'Maintenance';
+          RosterCleaner.render();
+          break;
+
+        default:
+          document.getElementById('screen-home').classList.add('active');
+          back.classList.remove('visible');
+          title.textContent = 'Roster Manager';
+          Screens.home.render();
+      }
+    }
+  };
+
+  // ── SCREENS ──────────────────────────────────────────────────────────────────
+
+  const Screens = {
+    home: {
+      render() {
+        const grid    = document.getElementById('system-grid');
+        const entries = Object.entries(App.schemas);
+
+        if (!entries.length) {
+          grid.innerHTML = '<div class="loading-text">No game systems found.</div>';
+          return;
+        }
+
+        grid.innerHTML = entries.map(([id, s]) => `
+          <div class="system-card" data-id="${id}" onclick="App.selectSystem('${id}')">
+            <div class="card-name">${s.name || id}</div>
+            <div class="card-stats">${(s.statBlock || []).join(' · ')}</div>
+          </div>
+        `).join('');
+
+        if (App.selectedSystem) App.selectSystem(App.selectedSystem);
+      }
+    }
+  };
+
+  // ── BOOT ─────────────────────────────────────────────────────────────────────
+
+  App.init().catch(err => {
+    document.body.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;
+                  color:#cc6060;font-family:sans-serif;font-size:.9rem;">
+        Firebase error: ${err.message}
+      </div>`;
+  });
+
+  </script>
+</body>
+</html>

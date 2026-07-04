@@ -1,0 +1,57 @@
+Kill Team Scrape Report
+=======================
+Date: 2026-06-27T00:33:50.586Z
+
+## Ork Kommandos
+URL: https://wahapedia.ru/kill-team3/kill-teams/kommandos/
+Page size: 182 KB
+Operative sections found: 11
+Operatives parsed: 11
+Stats missing: 0
+Weapons missing: 0
+Parse errors: 0
+
+## Tau Pathfinders
+URL: https://wahapedia.ru/kill-team3/kill-teams/pathfinders/
+Page size: 241 KB
+Operative sections found: 16
+Operatives parsed: 16
+Stats missing: 0
+Weapons missing: 0
+Parse errors: 0
+
+## Void-dancer Troupe
+URL: https://wahapedia.ru/kill-team3/kill-teams/void-dancer-troupe/
+Page size: 140 KB
+Operative sections found: 4
+Operatives parsed: 4
+Stats missing: 0
+Weapons missing: 0
+Parse errors: 0
+
+## Legionary
+URL: https://wahapedia.ru/kill-team3/kill-teams/legionary/
+Page size: 195 KB
+Operative sections found: 10
+Operatives parsed: 10
+Stats missing: 0
+Weapons missing: 0
+Parse errors: 0
+
+## Kasrkin
+URL: https://wahapedia.ru/kill-team3/kill-teams/kasrkin/
+Page size: 173 KB
+Operative sections found: 8
+Operatives parsed: 8
+Stats missing: 0
+Weapons missing: 0
+Parse errors: 0
+
+## Hand of the Archon
+URL: https://wahapedia.ru/kill-team3/kill-teams/hand-of-the-archon/
+Page size: 166 KB
+Operative sections found: 9
+Operatives parsed: 9
+Stats missing: 0
+Weapons missing: 0
+Parse errors: 0
