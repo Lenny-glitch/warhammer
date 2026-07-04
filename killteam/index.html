@@ -1,0 +1,3694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kill Team</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --p1:        #4a9eff;
+      --p1-glow:   rgba(74,158,255,0.22);
+      --p1-dim:    rgba(74,158,255,0.12);
+      --p2:        #c97af7;
+      --p2-glow:   rgba(201,122,247,0.22);
+      --p2-dim:    rgba(201,122,247,0.12);
+      --bg:        #0e0e1a;
+      --surface:   #181828;
+      --surface2:  #22223a;
+      --border:    #2e2e50;
+      --border-hi: #5050a0;
+      --text:      #dcdcf0;
+      --text-dim:  #6a6a90;
+      --green:     #4caf74;
+      --green-dim: rgba(76,175,116,0.15);
+      --red:       #cc6060;
+      --red-dim:   rgba(200,60,60,0.15);
+      --gold:      #c9a84c;
+      --orange:    #ff8c00;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── DEV BANNER ── */
+    #dev-banner {
+      display: none;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      background: var(--orange); color: #000;
+      text-align: center; padding: 5px 12px;
+      font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+    }
+    body.dev-mode #dev-banner { display: block; }
+    body.dev-mode              { padding-top: 29px; }
+
+    /* ── SCREEN SYSTEM (normal mode) ── */
+    #app {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; padding: 2rem;
+    }
+    body.dev-mode #app { display: none; }
+
+    .screen { display: none; flex-direction: column; align-items: center; width: 100%; }
+    .screen.active { display: flex; }
+
+    /* ── DEV CONTAINER ── */
+    #dev-container { display: none; min-height: calc(100vh - 29px); }
+    body.dev-mode #dev-container { display: flex; }
+    .dev-col { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); min-width: 0; }
+    .dev-col:last-child { border-right: none; }
+    .dev-col-label {
+      padding: 5px 12px; font-size: 10px; font-weight: 700;
+      letter-spacing: 2px; text-transform: uppercase;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    #dev-col-p1 .dev-col-label { color: var(--p1); }
+    #dev-col-p2 .dev-col-label { color: var(--p2); }
+    .dev-col-body { flex: 1; overflow: auto; }
+
+    /* ── LOBBY ── */
+    .lobby-wrap { width: 100%; max-width: 440px; }
+    .lobby-title {
+      font-size: 2.2rem; font-weight: 900; letter-spacing: 5px;
+      text-transform: uppercase; text-align: center; margin-bottom: 4px;
+    }
+    .lobby-sub {
+      font-size: 11px; color: var(--text-dim); letter-spacing: 2px;
+      text-transform: uppercase; text-align: center; margin-bottom: 2rem;
+    }
+    .field-label {
+      font-size: 11px; color: var(--text-dim); letter-spacing: 1px;
+      text-transform: uppercase; margin-bottom: 5px;
+    }
+    .field-wrap { margin-bottom: 1rem; }
+    .text-input {
+      width: 100%; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 5px; padding: 9px 12px; color: var(--text);
+      font: inherit; font-size: 14px;
+    }
+    .text-input:focus { outline: none; border-color: var(--border-hi); }
+    .roster-preview {
+      margin-top: 5px; font-size: 12px; color: var(--text-dim);
+      min-height: 1.4em;
+    }
+    .roster-preview.ok  { color: var(--green); }
+    .roster-preview.err { color: var(--red); }
+    .link-row { display: flex; gap: 8px; margin-top: 0.5rem; }
+    .link-input {
+      flex: 1; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 5px; padding: 7px 10px; color: var(--text-dim);
+      font-size: 12px; font-family: monospace; min-width: 0;
+    }
+
+    /* ── WAITING ── */
+    .waiting-wrap { text-align: center; max-width: 440px; width: 100%; }
+    .waiting-name { font-size: 1.3rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+    .waiting-sub  { font-size: 13px; color: var(--text-dim); margin-bottom: 2rem; }
+
+    /* ── BUTTONS ── */
+    .btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 5px; padding: 8px 16px; color: var(--text);
+      font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .btn:hover:not(:disabled) { background: #2a2a48; border-color: #444466; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--border-hi); border-color: #7070c0;
+      font-weight: 600;
+    }
+    .btn-primary:hover:not(:disabled) { background: #6060b0; }
+    .btn-ghost { background: none; border-color: transparent; color: var(--text-dim); font-size: 11px; }
+    .btn-ghost:hover { background: var(--surface); border-color: var(--border); color: var(--text); }
+    .btn-p1 { border-color: var(--p1); color: var(--p1); }
+    .btn-p2 { border-color: var(--p2); color: var(--p2); }
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* ── SPINNER ── */
+    .spinner {
+      width: 32px; height: 32px; border: 3px solid var(--surface2);
+      border-top-color: var(--p1); border-radius: 50%;
+      animation: spin 0.75s linear infinite; margin-bottom: 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── GAME LAYOUT ── */
+    #screen-game {
+      flex-direction: column; min-height: 100vh;
+      padding: 0; align-items: stretch; max-width: none;
+    }
+    .game-topbar {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 7px 14px; background: var(--surface);
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+      font-size: 12px; flex-wrap: wrap;
+    }
+    .topbar-tp   { font-weight: 700; color: var(--gold); letter-spacing: 1px; }
+    .topbar-sep  { color: var(--border-hi); }
+    .topbar-phase { font-size: 11px; background: var(--border); padding: 2px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    .topbar-cp-p1 { color: var(--p1); font-size: 12px; }
+    .topbar-cp-p2 { color: var(--p2); font-size: 12px; }
+    .topbar-spacer { flex: 1; }
+
+    .game-main {
+      flex: 1; display: flex; min-height: 0; overflow: hidden;
+    }
+
+    /* ── SIDEBARS ── */
+    .sidebar {
+      width: 200px; flex-shrink: 0; overflow-y: auto;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+    }
+    .sidebar-right { border-right: none; border-left: 1px solid var(--border); }
+    .sidebar-header {
+      padding: 8px 10px; font-size: 10px; font-weight: 700;
+      letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid var(--border);
+    }
+    .sidebar-p1 .sidebar-header { color: var(--p1); }
+    .sidebar-p2 .sidebar-header { color: var(--p2); }
+
+    .op-row {
+      padding: 7px 10px; border-bottom: 1px solid var(--border);
+      cursor: default; transition: background 0.1s;
+    }
+    .op-row.clickable { cursor: pointer; }
+    .op-row.clickable:hover { background: var(--surface2); }
+    .op-row.active-op { background: rgba(201,168,76,0.08); }
+    .op-row.expended  { opacity: 0.42; }
+    .op-row.dead      { opacity: 0.55; }
+    .op-name    { font-size: 12px; font-weight: 600; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .op-role    { font-size: 10px; color: var(--text-dim); margin-bottom: 3px; }
+    .op-status-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+    .op-wounds  { font-size: 10px; }
+    .op-tag {
+      font-size: 9px; padding: 1px 5px; border-radius: 3px;
+      font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .tag-engage  { background: var(--green-dim); color: var(--green); border: 1px solid rgba(76,175,116,0.3); }
+    .tag-conceal { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); }
+    .tag-ready   { background: rgba(201,168,76,0.12); color: var(--gold); border: 1px solid rgba(201,168,76,0.3); }
+    .tag-expended { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); }
+    .tag-wounded  { background: rgba(255,140,0,0.12); color: var(--orange); border: 1px solid rgba(255,140,0,0.3); }
+    .tag-injured  { background: var(--red-dim); color: var(--red); border: 1px solid rgba(200,60,60,0.3); }
+    .tag-deploy   { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); font-size: 9px; }
+    .op-row.deploy-selected { background: rgba(201,168,76,0.12); border-left: 2px solid var(--gold); }
+
+    /* ── OP CARD EXPAND ── */
+    .op-header { display: flex; align-items: flex-start; gap: 4px; margin-bottom: 2px; }
+    .op-header .op-name { flex: 1; min-width: 0; margin-bottom: 0; }
+    .op-expand-btn {
+      background: none; border: none; cursor: pointer;
+      color: var(--text-dim); font-size: 9px; padding: 1px 2px;
+      flex-shrink: 0; line-height: 1.6; margin-top: 1px;
+    }
+    .op-expand-btn:hover { color: var(--text); }
+    .op-expanded {
+      margin-top: 7px; padding-top: 7px;
+      border-top: 1px solid var(--border);
+    }
+    .op-stat-grid {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;
+    }
+    .op-stat-cell { text-align: center; }
+    .op-stat-label { font-size: 8px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+    .op-stat-val   { font-size: 11px; font-weight: 600; }
+    .op-weapons    { display: flex; flex-direction: column; gap: 0; margin-bottom: 4px; }
+    .op-weapon-row {
+      display: flex; flex-wrap: wrap; gap: 3px; align-items: baseline;
+      padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .op-weapon-row:last-child { border-bottom: none; }
+    .op-weapon-name { font-size: 10px; font-weight: 600; flex: 0 0 100%; margin-bottom: 1px; }
+    .op-weapon-stat {
+      font-size: 9px; color: var(--text-dim);
+      background: var(--surface2); padding: 0 3px; border-radius: 2px;
+    }
+    .op-weapon-kw {
+      font-size: 8px; color: var(--text-dim); font-style: italic; flex-shrink: 1;
+    }
+    .op-abilities { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+    .op-ability-tag {
+      font-size: 8px; padding: 1px 4px; border-radius: 2px; cursor: help;
+      background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border);
+    }
+
+    /* ── BOARD WRAP ── */
+    .board-wrap { flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 12px; }
+    .board-svg  { display: block; max-height: 100%; }
+
+    /* ── PHASE BAR ── */
+    .phase-bar {
+      flex-shrink: 0; background: var(--surface); border-top: 1px solid var(--border);
+      padding: 10px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .phase-bar-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; flex-shrink: 0; }
+    .phase-bar-body  { flex: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    /* ── ACTIVATION PANEL ── */
+    .activation-wrap {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%;
+    }
+    .activation-name { font-size: 13px; font-weight: 700; }
+    .activation-ap   { font-size: 12px; color: var(--gold); font-weight: 700; white-space: nowrap; }
+    .activation-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .action-btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 5px 10px; color: var(--text);
+      font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap;
+      transition: background 0.1s;
+    }
+    .action-btn:hover:not(:disabled) { background: #2a2a48; border-color: var(--border-hi); }
+    .action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .action-btn.stub { border-style: dashed; color: var(--text-dim); }
+    .order-btn {
+      padding: 5px 10px; border-radius: 4px; border: 1px solid; font: inherit;
+      font-size: 11px; cursor: pointer; font-weight: 600;
+    }
+    .order-btn.engage  { background: var(--green-dim); color: var(--green); border-color: rgba(76,175,116,0.5); }
+    .order-btn.conceal { background: var(--surface2); color: var(--text-dim); border-color: var(--border); }
+
+    /* ── TERRAIN PHASE ── */
+    .terrain-tier-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tier-btn {
+      display: flex; flex-direction: column; align-items: flex-start;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 5px; padding: 5px 10px; cursor: pointer; font: inherit;
+      transition: border-color 0.1s;
+    }
+    .tier-btn.selected { border-color: var(--gold); }
+    .tier-btn:hover:not(.selected) { border-color: var(--border-hi); }
+    .tier-btn-name { font-size: 12px; font-weight: 600; }
+    .tier-btn-cost { font-size: 10px; color: var(--text-dim); }
+    .tier-swatch { width: 10px; height: 10px; border-radius: 2px; margin-bottom: 3px; }
+    .budget-row  { display: flex; gap: 4px; align-items: center; font-size: 12px; }
+    .budget-bar  { flex: 1; height: 4px; background: var(--surface2); border-radius: 2px; }
+    .budget-fill { height: 100%; border-radius: 2px; transition: width 0.2s; }
+    .budget-fill.p1 { background: var(--p1); }
+    .budget-fill.p2 { background: var(--p2); }
+
+    /* ── INITIATIVE PHASE ── */
+    .init-wrap { text-align: center; }
+    .init-roll-box {
+      display: inline-flex; gap: 3rem; margin: 1rem 0;
+    }
+    .init-player { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+    .init-player-name { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+    .init-dice { font-size: 2.5rem; font-weight: 900; min-width: 3rem; text-align: center; }
+    .init-result { font-size: 12px; color: var(--text-dim); min-height: 1.2em; }
+
+    /* ── SHOOT RESOLUTION ── */
+    .shoot-panel { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+    .shoot-panel-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .shoot-stats { display: flex; gap: 10px; flex-wrap: wrap; }
+    .shoot-stats span { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+    .shoot-stats strong { color: var(--text); }
+    .dice-pool { display: flex; gap: 4px; flex-wrap: wrap; align-items: flex-end; min-height: 28px; }
+    .dice-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .dice-group-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; }
+    .dice-group-dice { display: flex; gap: 2px; flex-wrap: wrap; }
+    .dice-separator { width: 1px; height: 32px; background: var(--border); margin: 0 6px; align-self: center; }
+    .shoot-result { font-size: 12px; padding: 5px 10px; border-radius: 4px; background: var(--surface2); }
+
+    /* ── STRATEGY PHASE ── */
+    .strategy-wrap { display: flex; flex-direction: column; gap: 8px; }
+    .cp-row { display: flex; gap: 1rem; align-items: center; font-size: 13px; }
+    .cp-p1  { color: var(--p1); font-weight: 700; }
+    .cp-p2  { color: var(--p2); font-weight: 700; }
+
+    /* ── RADIAL MENU ── */
+    #radial-menu {
+      position: fixed; width: 0; height: 0; overflow: visible;
+      pointer-events: none; z-index: 200;
+      opacity: 0; transition: opacity 0.12s ease;
+    }
+    #radial-menu.visible { opacity: 1; }
+    .radial-item, .radial-end {
+      position: absolute;
+      width: 50px; height: 50px; border-radius: 50%;
+      border: 1px solid var(--border-hi); background: var(--surface2); color: var(--text);
+      font-size: 10px; font-weight: 600; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; text-align: center; padding: 4px; line-height: 1.15;
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+      pointer-events: auto;
+    }
+    .radial-item:hover:not([disabled]) { background: var(--surface); border-color: var(--gold); color: var(--gold); }
+    .radial-item[disabled] { opacity: 0.35; cursor: default; border-style: dashed; }
+    .radial-end { width: 44px; height: 44px; border-color: var(--border); color: var(--text-dim); }
+    .radial-end:hover { background: var(--red-dim); border-color: var(--red); color: var(--red); }
+    .r-order  { border-color: var(--gold); color: var(--gold); }
+    .r-engage { border-color: var(--green); color: var(--green); }
+    .r-conceal { border-color: var(--border-hi); color: var(--text-dim); }
+    .r-shoot:not([disabled]) { border-color: var(--p1); color: var(--p1); }
+    .ri-ap { font-size: 9px; color: var(--text-dim); font-weight: 400; }
+    .radial-item.restriction-target { border-color: var(--red) !important; }
+    .radial-item.restriction-target::after {
+      content: '✕';
+      position: absolute; top: -5px; right: -5px;
+      width: 14px; height: 14px; font-size: 8px; font-weight: 900; line-height: 14px;
+      text-align: center; background: var(--red); color: #fff; border-radius: 50%;
+      pointer-events: none;
+    }
+
+    /* ── FIGHT PANEL ── */
+    .fight-panel { display:flex;flex-direction:column;gap:8px;width:100%; }
+    .fight-panel-header { display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+    .fight-status { font-size:11px;color:var(--gold);font-weight:600;padding:4px 0;line-height:1.4; }
+    .fight-pools { display:flex;gap:8px;width:100%;flex-wrap:wrap; }
+    .fight-pool {
+      flex:1;min-width:140px;display:flex;flex-direction:column;gap:5px;
+      background:var(--surface2);border-radius:6px;padding:8px;border:1px solid var(--border);
+    }
+    .fight-pool-atk { border-color:rgba(74,158,255,0.35); }
+    .fight-pool-def { border-color:rgba(201,122,247,0.35); }
+    .fight-pool-label { font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;font-weight:700; }
+    .fight-dice { display:flex;flex-wrap:wrap;gap:5px; }
+    .fight-die {
+      display:flex;flex-direction:column;align-items:center;gap:3px;
+      padding:4px;border-radius:5px;background:var(--surface);border:1px solid var(--border);min-width:44px;
+    }
+    .fight-die.available { border-color:var(--gold); }
+    .fight-die.used { opacity:0.42; }
+    .fight-die.blocked-out { opacity:0.28;border-style:dashed; }
+    .fight-die-result { font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--text-dim); }
+    .fight-pool-total { font-size:10px;font-weight:700; }
+
+    /* ── ERROR ── */
+    .error-box {
+      background: var(--red-dim); border: 1px solid rgba(200,60,60,0.3);
+      border-radius: 6px; padding: 1rem 1.25rem; color: var(--red);
+      font-size: 14px; margin-bottom: 1.5rem; width: 100%; text-align: center; max-width: 440px;
+    }
+    .info-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.75rem 1rem; font-size: 13px;
+      color: var(--text-dim); margin-bottom: 0.75rem;
+    }
+    .divider { width: 100%; border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+
+    /* ── KT-3 GRIMDARK EFFECTS ── */
+    @keyframes kt3-screen-flash {
+      0%   { opacity: 0; }
+      30%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    #kt3-vignette {
+      position: fixed; inset: 0; pointer-events: none; z-index: 500;
+      background: radial-gradient(ellipse at center, transparent 50%, rgba(180,30,30,0.55) 100%);
+      opacity: 0;
+    }
+    #kt3-vignette.flash { animation: kt3-screen-flash 0.5s ease-out forwards; }
+  </style>
+</head>
+<body>
+
+<div id="dev-banner">⚠ DEV MODE — Both player perspectives shown side by side
+  <button onclick="devNewGame()" style="margin-left:16px;padding:2px 10px;font-size:11px;cursor:pointer;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:3px;color:inherit;font:inherit;">Reset Game</button>
+  <button onclick="autoPlaceDev()" style="margin-left:8px;padding:2px 10px;font-size:11px;cursor:pointer;background:rgba(255,200,50,0.15);border:1px solid rgba(255,200,50,0.4);border-radius:3px;color:inherit;font:inherit;" title="Skip deployment — place all operatives automatically and advance to initiative">Auto-Place</button>
+</div>
+
+<!-- Normal mode: one screen at a time -->
+<div id="app">
+  <div id="screen-loading" class="screen active">
+    <div class="spinner"></div>
+    <p style="color:var(--text-dim);font-size:14px;">Loading…</p>
+  </div>
+  <div id="screen-error" class="screen">
+    <div class="error-box" id="error-msg">Something went wrong.</div>
+    <button class="btn" onclick="location.reload()">Reload</button>
+  </div>
+  <div id="screen-lobby"   class="screen"></div>
+  <div id="screen-waiting" class="screen"></div>
+  <div id="screen-game"    class="screen"></div>
+</div>
+
+<!-- Dev mode: two columns side by side -->
+<div id="dev-container">
+  <div class="dev-col" id="dev-col-p1">
+    <div class="dev-col-label">Player 1</div>
+    <div class="dev-col-body" id="dev-body-p1"></div>
+  </div>
+  <div class="dev-col" id="dev-col-p2">
+    <div class="dev-col-label">Player 2</div>
+    <div class="dev-col-body" id="dev-body-p2"></div>
+  </div>
+</div>
+
+<div id="kt3-vignette"></div>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════
+
+const BOARD_W         = 22;
+const BOARD_H         = 30;
+const DEPLOY_DEPTH    = 10;   // inches from each end — 1/3 of 30"
+const TERRAIN_BUDGET  = 10;   // pts per player
+const TOKEN_R         = 0.5;  // operative token radius
+const TERRAIN_COSTS   = { rough: 1, chestHigh: 2, tall: 3 };
+const TERRAIN_LABELS  = { rough: 'Rough', chestHigh: 'Chest-High', tall: 'Tall' };
+const TERRAIN_FX      = { rough: 'Difficult ground', chestHigh: 'Cover, passable', tall: 'Blocks LOS' };
+
+// Hardcoded dev rosters — Tau Pathfinders + Void-dancer Troupe
+const DEV_ROSTER_P1 = '-OvzZzqDWpwSVAwZx3kO';
+const DEV_ROSTER_P2 = '-OvzZzrLgyu9iYFRbFrb';
+
+// Pre-authored blood splat blob paths (unit scale; origin at 0,0; fits ~−1 to 1 box)
+const SPLAT_PATHS = [
+  'M 0 -0.8 C 0.5 -1 0.95 -0.4 0.8 0.15 C 0.65 0.6 0.2 0.95 -0.25 0.82 C -0.7 0.68 -1 0.15 -0.75 -0.3 C -0.5 -0.7 -0.4 -0.65 0 -0.8 Z',
+  'M 0.15 -0.9 C 0.55 -0.85 0.9 -0.3 0.75 0.3 C 0.58 0.82 -0.05 1.05 -0.52 0.72 C -0.9 0.42 -0.85 -0.18 -0.6 -0.58 C -0.3 -0.92 -0.18 -0.98 0.15 -0.9 Z',
+  'M -0.2 -0.95 C 0.32 -0.92 0.82 -0.5 0.88 0.05 C 0.95 0.55 0.55 0.9 0.02 0.82 C -0.48 0.72 -0.9 0.35 -0.82 -0.28 C -0.72 -0.72 -0.55 -1.02 -0.2 -0.95 Z',
+  'M 0.22 -0.72 C 0.62 -0.62 0.82 -0.08 0.72 0.42 C 0.52 0.9 -0.08 1.12 -0.6 0.72 C -0.92 0.45 -0.72 -0.18 -0.52 -0.62 C -0.22 -1.02 -0.08 -0.82 0.22 -0.72 Z',
+  'M -0.1 -0.92 C 0.48 -1.02 1.02 -0.32 0.92 0.22 C 0.82 0.72 0.28 0.92 -0.22 0.82 C -0.78 0.72 -1.02 0.12 -0.82 -0.38 C -0.62 -0.82 -0.52 -0.82 -0.1 -0.92 Z',
+  'M 0.3 -0.78 C 0.72 -0.68 0.92 -0.18 0.82 0.32 C 0.62 0.82 0.12 1.02 -0.38 0.82 C -0.82 0.62 -0.92 0.02 -0.72 -0.48 C -0.42 -0.92 -0.08 -0.92 0.3 -0.78 Z',
+];
+
+// ═══════════════════════════════════════════════════════════
+//  SVG HELPERS
+//  Source: warhammer40k/js/board.js — copied, not reimplemented
+// ═══════════════════════════════════════════════════════════
+
+const NS = 'http://www.w3.org/2000/svg';
+
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(NS, tag);
+  Object.entries(attrs || {}).forEach(([k, v]) => e.setAttribute(k, String(v)));
+  return e;
+}
+
+function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+function toSVG(svg, cx, cy) {
+  const pt = svg.createSVGPoint();
+  pt.x = cx; pt.y = cy;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+// Clamp destination to within `max` inches along the same vector from origin
+function clampVec(fx, fy, tx, ty, max) {
+  const dx = tx - fx, dy = ty - fy;
+  const d  = Math.hypot(dx, dy);
+  if (d === 0 || d <= max) return { x: tx, y: ty };
+  return { x: fx + (dx / d) * max, y: fy + (dy / d) * max };
+}
+
+// 1" snap for Kill Team (not 2" like 40k)
+function snapToGrid(x, y) {
+  return {
+    x: Math.max(0.5, Math.min(BOARD_W - 0.5, Math.round(x))),
+    y: Math.max(0.5, Math.min(BOARD_H - 0.5, Math.round(y))),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SHARED MATH UTILITIES
+//  SOURCE: warhammer40k/js/shooting.js + board.js — keep in sync.
+//  These are pure functions with no 40k-specific logic.
+// ═══════════════════════════════════════════════════════════
+
+// Line-segment intersection test (parametric)
+function segmentsIntersect(x1,y1,x2,y2, x3,y3,x4,y4) {
+  const d1x = x2-x1, d1y = y2-y1;
+  const d2x = x4-x3, d2y = y4-y3;
+  const cross = d1x*d2y - d1y*d2x;
+  if (Math.abs(cross) < 1e-10) return false;
+  const dx = x3-x1, dy = y3-y1;
+  const t = (dx*d2y - dy*d2x) / cross;
+  const u = (dx*d1y - dy*d1x) / cross;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+// Does segment (x1,y1)→(x2,y2) cross terrain rect t?
+function segmentCrossesRect(x1,y1,x2,y2, t) {
+  const rx = t.x, ry = t.y, rx2 = t.x + t.width, ry2 = t.y + t.height;
+  return segmentsIntersect(x1,y1,x2,y2, rx,ry,  rx2,ry)  ||
+         segmentsIntersect(x1,y1,x2,y2, rx2,ry, rx2,ry2) ||
+         segmentsIntersect(x1,y1,x2,y2, rx,ry2, rx2,ry2) ||
+         segmentsIntersect(x1,y1,x2,y2, rx,ry,  rx,ry2);
+}
+
+// Single ray against terrain map → 'clear' | 'cover' | 'blocked'
+// terrain: { "x,y": 'rough'|'chestHigh'|'tall' } — same format as board terrain state
+function rayResult(x1,y1,x2,y2, terrain) {
+  let hasCover = false;
+  for (const [key, tier] of Object.entries(terrain || {})) {
+    const [gx, gy] = key.split(',').map(Number);
+    if (!segmentCrossesRect(x1,y1,x2,y2, { x:gx, y:gy, width:1, height:1 })) continue;
+    if (tier === 'tall')      return 'blocked';
+    if (tier === 'chestHigh') hasCover = true;
+    // 'rough' has no LOS effect
+  }
+  return hasCover ? 'cover' : 'clear';
+}
+
+// Circle vs axis-aligned rect overlap
+function circleOverlapsRect(cx, cy, r, rect) {
+  const nearX = Math.max(rect.x, Math.min(cx, rect.x + rect.width));
+  const nearY = Math.max(rect.y, Math.min(cy, rect.y + rect.height));
+  return Math.hypot(cx - nearX, cy - nearY) < r;
+}
+
+// Circle vs circle overlap
+function circleOverlapsCircle(ax, ay, ar, bx, by, br) {
+  return Math.hypot(ax - bx, ay - by) < ar + br;
+}
+
+// Inline SVG d6 pip face — SOURCE: warhammer40k/js/game.js dieFaceSVG()
+function dieFaceSVG(value, size) {
+  size = size || 24;
+  const PIP_LAYOUTS = {
+    1: [[0.5, 0.5]],
+    2: [[0.28, 0.28], [0.72, 0.72]],
+    3: [[0.28, 0.28], [0.5, 0.5], [0.72, 0.72]],
+    4: [[0.28, 0.28], [0.72, 0.28], [0.28, 0.72], [0.72, 0.72]],
+    5: [[0.28, 0.28], [0.72, 0.28], [0.5, 0.5], [0.28, 0.72], [0.72, 0.72]],
+    6: [[0.28, 0.2], [0.72, 0.2], [0.28, 0.5], [0.72, 0.5], [0.28, 0.8], [0.72, 0.8]]
+  };
+  const r    = (size * 0.09).toFixed(1);
+  const pips = (PIP_LAYOUTS[value] || PIP_LAYOUTS[1]).map(([x, y]) =>
+    `<circle cx="${(x*size).toFixed(1)}" cy="${(y*size).toFixed(1)}" r="${r}" fill="currentColor"/>`
+  ).join('');
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" `+
+         `style="display:inline-block;vertical-align:middle;background:var(--bg);`+
+         `border:1px solid var(--border);border-radius:3px;margin:0 2px;`+
+         `color:var(--text)" aria-label="${value}">${pips}</svg>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TERRAIN RENDERING
+//  Source: warhammer40k/js/board.js — copied, adapted for 1" grid
+// ═══════════════════════════════════════════════════════════
+
+const TERRAIN_FILL   = { rough: '#1e1a10', chestHigh: '#141e12', tall: '#0e1018' };
+const TERRAIN_STROKE = { rough: '#5a4830', chestHigh: '#3a5028', tall: '#30384a' };
+
+function drawGrid(parent) {
+  const g = svgEl('g');
+  // 1" grid (minor)
+  for (let x = 0; x <= BOARD_W; x++) {
+    g.appendChild(svgEl('line', { x1: x, y1: 0, x2: x, y2: BOARD_H, stroke: 'rgba(255,255,255,0.03)', 'stroke-width': 0.06 }));
+  }
+  for (let y = 0; y <= BOARD_H; y++) {
+    g.appendChild(svgEl('line', { x1: 0, y1: y, x2: BOARD_W, y2: y, stroke: 'rgba(255,255,255,0.03)', 'stroke-width': 0.06 }));
+  }
+  // 5" major grid lines
+  for (let x = 0; x <= BOARD_W; x += 5) {
+    g.appendChild(svgEl('line', { x1: x, y1: 0, x2: x, y2: BOARD_H, stroke: 'rgba(255,255,255,0.08)', 'stroke-width': 0.1 }));
+  }
+  for (let y = 0; y <= BOARD_H; y += 5) {
+    g.appendChild(svgEl('line', { x1: 0, y1: y, x2: BOARD_W, y2: y, stroke: 'rgba(255,255,255,0.08)', 'stroke-width': 0.1 }));
+  }
+  // Midline
+  g.appendChild(svgEl('line', {
+    x1: 0, y1: BOARD_H / 2, x2: BOARD_W, y2: BOARD_H / 2,
+    stroke: 'rgba(255,255,255,0.12)', 'stroke-width': 0.14, 'stroke-dasharray': '0.8 0.5',
+  }));
+  parent.appendChild(g);
+}
+
+function drawTerrain(parent, terrain) {
+  Object.entries(terrain || {}).forEach(([key, tier]) => {
+    const [gx, gy] = key.split(',').map(Number);
+    parent.appendChild(svgEl('rect', {
+      x: gx, y: gy, width: 1, height: 1,
+      fill:   TERRAIN_FILL[tier]   || '#1e1a10',
+      stroke: TERRAIN_STROKE[tier] || '#4a3820',
+      'stroke-width': 0.04,
+    }));
+  });
+}
+
+function drawDeployZones(parent) {
+  // P1 deploys bottom (y: BOARD_H - DEPLOY_DEPTH to BOARD_H)
+  parent.appendChild(svgEl('rect', {
+    x: 0, y: BOARD_H - DEPLOY_DEPTH, width: BOARD_W, height: DEPLOY_DEPTH,
+    fill: 'rgba(74,158,255,0.06)', stroke: 'rgba(74,158,255,0.25)',
+    'stroke-width': 0.12, 'stroke-dasharray': '0.8 0.4',
+  }));
+  // P2 deploys top (y: 0 to DEPLOY_DEPTH)
+  parent.appendChild(svgEl('rect', {
+    x: 0, y: 0, width: BOARD_W, height: DEPLOY_DEPTH,
+    fill: 'rgba(201,122,247,0.06)', stroke: 'rgba(201,122,247,0.25)',
+    'stroke-width': 0.12, 'stroke-dasharray': '0.8 0.4',
+  }));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  APP STATE
+// ═══════════════════════════════════════════════════════════
+
+let db;
+let gameId;
+let devMode;
+
+let myPlayer  = null;    // 'player1' | 'player2' (normal mode)
+let gameData  = null;    // live Firebase snapshot
+
+// Local-only state (not in Firebase)
+let activation    = null;  // { opId, apRemaining } — active operative during firefight
+let terrainTier   = 'rough';
+let terrainActive = false; // debounce for terrain writes
+let deploySelId   = null;  // selected operative ID during deployment
+let dragState     = null;  // { opId, startX, startY, maxMove, svg, moveOverlay, arrowOverlay }
+let shootWeapon   = null;  // null | 'picking' | weapon object — during shoot action
+let shootState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } — during drag
+let fightWeapon   = null;  // null | 'picking' | weapon object — during fight action
+let fightState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } — during fight drag
+let radialSlot    = null;  // playerSlot whose radial is currently showing
+let expandedOps   = new Set(); // op IDs whose sidebar cards are expanded
+let splatData     = []; // { x, y, pathIdx, rotation, scale, color, bornAt } — permanent death stains
+let diceAnimState = null; // { atkRolls, defRolls, atkStopAt, defStopAt, t0, totalDur, displayAtk, displayDef, _timer }
+let rosterPreviewTimers = {};
+
+// ═══════════════════════════════════════════════════════════
+//  BOOTSTRAP
+// ═══════════════════════════════════════════════════════════
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (typeof firebaseConfig === 'undefined') {
+    showError('firebase-config.js not found. Copy firebase-config.example.js → firebase-config.js and fill in credentials.');
+    return;
+  }
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+  } catch (e) {
+    showError(`Firebase init failed: ${e.message}`);
+    return;
+  }
+
+  const rawSearch = window.location.search.slice(1).replace(/\?/g, '&');
+  const params    = new URLSearchParams(rawSearch);
+  devMode         = params.get('dev') === 'true';
+  gameId          = params.get('game') || null;
+
+  if (devMode) {
+    document.body.classList.add('dev-mode');
+    bootDev();
+  } else if (gameId) {
+    // Restore player slot from localStorage
+    const stored = localStorage.getItem(`kt_player_${gameId}`);
+    if (stored) myPlayer = stored;
+    loadGame(gameId);
+  } else {
+    renderLobby('create');
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════
+
+function generateToken() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function parseStat(v) {
+  return parseInt(String(v || '0').replace(/[^\d-]/g, '')) || 0;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ROSTER EXPORT LOADING
+// ═══════════════════════════════════════════════════════════
+
+async function fetchRosterExport(rosterId) {
+  const snap = await db.ref(`exports/kill-team/${rosterId}`).once('value');
+  return snap.val();
+}
+
+function buildOperatives(exportData, playerSlot) {
+  const raw  = exportData.units;
+  const arr  = Array.isArray(raw) ? raw : Object.values(raw);
+  const ops  = {};
+
+  // Number duplicate operative names so "Player","Player","Player" → "Player #1","Player #2","Player #3"
+  const nameCount = {};
+  arr.forEach(u => { nameCount[u.name] = (nameCount[u.name] || 0) + 1; });
+  const nameSeen = {};
+
+  arr.forEach(u => {
+    const id      = `${playerSlot}_${u.instanceId}`;
+    const baseName = u.name;
+    let displayName = baseName;
+    if (nameCount[baseName] > 1) {
+      nameSeen[baseName] = (nameSeen[baseName] || 0) + 1;
+      displayName = `${baseName} #${nameSeen[baseName]}`;
+    }
+    const maxW    = parseStat(u.stats.WOUNDS);
+    const apl     = parseStat(u.stats.APL) || 2;
+    const move    = parseStat(u.stats.MOVE) || 6;
+    const def     = parseStat(u.stats.DF)   || 3;
+    const save    = parseStat(u.stats.SAVE) || 5;
+
+    // Copy full weapon list onto instance so combat resolution has no async lookups.
+    // chosenLoadout takes priority (selected weapons); fall back to full weapons array.
+    const rawWeapons = u.chosenLoadout && u.chosenLoadout.length
+      ? u.chosenLoadout
+      : (Array.isArray(u.weapons) ? u.weapons : Object.values(u.weapons || {}));
+    const weapons = rawWeapons.map(w => ({
+      id:      w.id   || w.name,
+      name:    w.name || '',
+      type:    w.type || 'melee',
+      profiles: {
+        ATK: w.profiles?.ATK || '0',
+        HIT: w.profiles?.HIT || '4+',
+        DMG: w.profiles?.DMG || '1/1',
+        RNG: w.profiles?.RNG || '',
+        WR:  w.profiles?.WR  || '',
+      },
+    }));
+
+    const abilArr = Array.isArray(u.abilities) ? u.abilities : Object.values(u.abilities || {});
+    const abilities = abilArr.map(a => ({ name: a.name || '', description: a.description || '' }));
+
+    ops[id] = {
+      id,
+      player:      playerSlot,
+      faction:     exportData.meta.factionId,
+      factionName: exportData.meta.factionName,
+      unitId:      u.unitId,
+      name:        displayName,
+      role:        u.role || '',
+      order:       'conceal',
+      ready:       true,
+      apl,
+      move,
+      def,
+      save,
+      weapons,
+      abilities,
+      wounds:      maxW,
+      maxWounds:   maxW,
+      x:           -1,
+      y:           -1,
+      activatedThisTurn: false,
+    };
+  });
+
+  return ops;
+}
+
+// Debounced roster ID preview (used in lobby form)
+function previewRoster(inputId, previewId, delay = 600) {
+  clearTimeout(rosterPreviewTimers[inputId]);
+  const el = document.getElementById(previewId);
+  if (!el) return;
+  el.className = 'roster-preview';
+  el.textContent = '…';
+  rosterPreviewTimers[inputId] = setTimeout(async () => {
+    const val = (document.getElementById(inputId)?.value || '').trim();
+    if (!val) { el.textContent = ''; return; }
+    try {
+      const data = await fetchRosterExport(val);
+      if (!data || !data.meta) {
+        el.className = 'roster-preview err';
+        el.textContent = 'Roster not found';
+        return;
+      }
+      const units  = Array.isArray(data.units) ? data.units : Object.values(data.units || {});
+      el.className = 'roster-preview ok';
+      el.textContent = `${data.meta.factionName} — ${units.length} operatives`;
+    } catch(e) {
+      el.className = 'roster-preview err';
+      el.textContent = 'Error fetching roster';
+    }
+  }, delay);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GAME CREATION / JOINING
+// ═══════════════════════════════════════════════════════════
+
+async function createGame(playerName, rosterId) {
+  showScreen('loading');
+  try {
+    const exportData = await fetchRosterExport(rosterId);
+    if (!exportData?.meta) throw new Error('Roster not found. Check the roster ID.');
+
+    const ops   = buildOperatives(exportData, 'player1');
+    const token = generateToken();
+    const ref   = db.ref('games-kt').push();
+    gameId      = ref.key;
+
+    await ref.set({
+      meta:   { status: 'waiting', createdAt: Date.now() },
+      players: {
+        player1: {
+          name:        playerName,
+          faction:     exportData.meta.factionId,
+          factionName: exportData.meta.factionName,
+          rosterId,
+          token,
+        },
+      },
+      operatives:   ops,
+      terrain:       {},
+      terrainOwner:  {},
+      terrainPassed: { player1: false, player2: false },
+      turn: {
+        turningPoint:      1,
+        phase:             'strategy',
+        activePlayer:      'player1',
+        activatingPlayer:  'player1',
+        cp: { player1: 0, player2: 0 },
+      },
+      initiative: null,
+      gameOver:   null,
+    });
+
+    myPlayer = 'player1';
+    localStorage.setItem(`kt_player_${gameId}`, 'player1');
+    localStorage.setItem(`kt_token_${gameId}`,  token);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('game', gameId);
+    window.history.replaceState({}, '', url.toString());
+
+    subscribeToGame();
+  } catch(e) {
+    showError(e.message);
+  }
+}
+
+async function joinGame(playerName, rosterId) {
+  if (!gameId) { showError('No game ID in URL.'); return; }
+  showScreen('loading');
+  try {
+    // Check game exists and has a slot
+    const snap = await db.ref(`games-kt/${gameId}`).once('value');
+    const data = snap.val();
+    if (!data) throw new Error('Game not found.');
+    if (data.players?.player2) throw new Error('Game is already full.');
+
+    const exportData = await fetchRosterExport(rosterId);
+    if (!exportData?.meta) throw new Error('Roster not found. Check the roster ID.');
+
+    const ops   = buildOperatives(exportData, 'player2');
+    const token = generateToken();
+
+    const updates = {
+      'players/player2': {
+        name:        playerName,
+        faction:     exportData.meta.factionId,
+        factionName: exportData.meta.factionName,
+        rosterId,
+        token,
+      },
+      'meta/status': 'terrain',
+    };
+    Object.entries(ops).forEach(([id, op]) => { updates[`operatives/${id}`] = op; });
+    await db.ref(`games-kt/${gameId}`).update(updates);
+
+    myPlayer = 'player2';
+    localStorage.setItem(`kt_player_${gameId}`, 'player2');
+    localStorage.setItem(`kt_token_${gameId}`,  token);
+
+    subscribeToGame();
+  } catch(e) {
+    showError(e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DEV MODE
+// ═══════════════════════════════════════════════════════════
+
+async function bootDev() {
+  document.getElementById('dev-body-p1').innerHTML = '<div style="padding:1rem;color:var(--text-dim);font-size:12px;">Creating game…</div>';
+  document.getElementById('dev-body-p2').innerHTML = '<div style="padding:1rem;color:var(--text-dim);font-size:12px;">Joining…</div>';
+  try {
+    const [exp1, exp2] = await Promise.all([
+      fetchRosterExport(DEV_ROSTER_P1),
+      fetchRosterExport(DEV_ROSTER_P2),
+    ]);
+    if (!exp1?.meta || !exp2?.meta) throw new Error('Dev rosters not found in Firebase.');
+
+    const ops1  = buildOperatives(exp1, 'player1');
+    const ops2  = buildOperatives(exp2, 'player2');
+    const allOps = { ...ops1, ...ops2 };
+
+    const ref = db.ref('games-kt').push();
+    gameId    = ref.key;
+
+    await ref.set({
+      meta:   { status: 'terrain', createdAt: Date.now(), dev: true },
+      players: {
+        player1: { name: 'P1 Dev', faction: exp1.meta.factionId, factionName: exp1.meta.factionName, rosterId: DEV_ROSTER_P1, token: 'dev1' },
+        player2: { name: 'P2 Dev', faction: exp2.meta.factionId, factionName: exp2.meta.factionName, rosterId: DEV_ROSTER_P2, token: 'dev2' },
+      },
+      operatives:   allOps,
+      terrain:       {},
+      terrainOwner:  {},
+      terrainPassed: { player1: false, player2: false },
+      turn: {
+        turningPoint:     1,
+        phase:            'strategy',
+        activePlayer:     'player1',
+        activatingPlayer: 'player1',
+        cp: { player1: 0, player2: 0 },
+      },
+      initiative: null,
+      gameOver:   null,
+    });
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('game', gameId);
+    window.history.replaceState({}, '', url.toString());
+
+    subscribeToGame();
+  } catch(e) {
+    document.getElementById('dev-body-p1').innerHTML = `<div style="padding:1rem;color:var(--red);font-size:12px;">${escHtml(e.message)}</div>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FIREBASE SUBSCRIPTION
+// ═══════════════════════════════════════════════════════════
+
+function loadGame(id) {
+  showScreen('loading');
+  db.ref(`games-kt/${id}`).once('value', snap => {
+    if (!snap.exists()) {
+      showError(`Game not found: ${id}`);
+      return;
+    }
+    subscribeToGame();
+  }, err => showError(`Could not load game: ${err.message}`));
+}
+
+function subscribeToGame() {
+  db.ref(`games-kt/${gameId}`).on('value', snap => {
+    const prev = gameData;
+    gameData = snap.val();
+    if (gameData) {
+      render();
+      detectAndPlayEffects(prev, gameData);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER DISPATCH
+// ═══════════════════════════════════════════════════════════
+
+function render() {
+  if (devMode) { renderDev(); return; }
+
+  const status = gameData.meta?.status;
+
+  if (status === 'waiting') {
+    if (!myPlayer) {
+      renderLobby('join');
+    } else {
+      renderWaiting();
+    }
+    return;
+  }
+
+  if (!myPlayer) {
+    renderLobby('join');
+    return;
+  }
+
+  showScreen('game');
+  renderGame(myPlayer);
+}
+
+function renderDev() {
+  renderDevCol('p1', 'player1');
+  renderDevCol('p2', 'player2');
+}
+
+function renderDevCol(colId, playerSlot) {
+  const body = document.getElementById(`dev-body-${colId}`);
+  if (!body) return;
+
+  const old = body.querySelector('.game-wrap-dev');
+  const wrap = document.createElement('div');
+  wrap.className = 'game-wrap-dev';
+  wrap.style.cssText = 'height:100%;display:flex;flex-direction:column;';
+  body.innerHTML = '';
+  body.appendChild(wrap);
+  renderGame(playerSlot, wrap);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LOBBY
+// ═══════════════════════════════════════════════════════════
+
+function renderLobby(mode) {
+  showScreen('lobby');
+  const el    = document.getElementById('screen-lobby');
+  const isNew = mode === 'create';
+
+  el.innerHTML = `
+    <div class="lobby-wrap">
+      <h1 class="lobby-title">KILL TEAM</h1>
+      <p class="lobby-sub">${isNew ? 'New Game' : 'Join Game'}</p>
+
+      <div class="field-wrap">
+        <div class="field-label">Your name</div>
+        <input id="lobby-name" class="text-input" type="text" placeholder="Commander" maxlength="32" />
+      </div>
+
+      <div class="field-wrap">
+        <div class="field-label">Roster ID</div>
+        <input id="lobby-roster" class="text-input" type="text" placeholder="Firebase roster ID"
+          oninput="previewRoster('lobby-roster','lobby-preview')" />
+        <div id="lobby-preview" class="roster-preview"></div>
+      </div>
+
+      <div class="btn-row" style="margin-bottom:1.5rem;">
+        <button class="btn btn-primary" onclick="handleLobbySubmit('${mode}')">
+          ${isNew ? 'Create Game' : 'Join Game'}
+        </button>
+        ${!isNew ? `<button class="btn btn-ghost" onclick="renderLobby('create')">New game instead</button>` : ''}
+      </div>
+
+      ${isNew ? `
+        <div class="info-box">
+          After creating, share the link with your opponent.
+          They paste their own Roster ID to join.
+        </div>
+      ` : `
+        <div class="info-box">
+          Your opponent created this game. Enter your name and roster ID to join.
+        </div>
+      `}
+    </div>
+  `;
+
+  document.getElementById('lobby-name')?.focus();
+}
+
+function handleLobbySubmit(mode) {
+  const name    = (document.getElementById('lobby-name')?.value || '').trim();
+  const rosterId = (document.getElementById('lobby-roster')?.value || '').trim();
+  if (!name)     { alert('Enter your name.'); return; }
+  if (!rosterId) { alert('Enter a Roster ID.'); return; }
+  if (mode === 'create') createGame(name, rosterId);
+  else                   joinGame(name, rosterId);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  WAITING SCREEN
+// ═══════════════════════════════════════════════════════════
+
+function renderWaiting() {
+  showScreen('waiting');
+  const p1      = gameData.players?.player1;
+  const gameUrl = buildGameUrl();
+  const el      = document.getElementById('screen-waiting');
+
+  el.innerHTML = `
+    <div class="waiting-wrap">
+      <h1 class="lobby-title">KILL TEAM</h1>
+      <p class="waiting-name" style="color:var(--p1)">${escHtml(p1?.factionName || 'Player 1')}</p>
+      <p class="waiting-sub">Waiting for opponent to join…</p>
+      <div class="field-label" style="margin-bottom:5px;">Share this link</div>
+      <div class="link-row">
+        <input class="link-input" type="text" value="${escHtml(gameUrl)}" readonly />
+        <button class="btn" onclick="copyLink(this, ${JSON.stringify(gameUrl)})">Copy</button>
+      </div>
+    </div>
+  `;
+}
+
+function copyLink(btn, url) {
+  navigator.clipboard.writeText(url).catch(() => {});
+  btn.textContent = 'Copied!';
+  setTimeout(() => { btn.textContent = 'Copy'; }, 1800);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GAME SCREEN
+// ═══════════════════════════════════════════════════════════
+
+function renderGame(playerSlot, devContainer) {
+  const container = devContainer || document.getElementById('screen-game');
+  const status    = gameData.meta?.status;
+
+  // Board + sidebar layout (reused for all active phases)
+  const ops    = gameData.operatives || {};
+  const p1ops  = Object.values(ops).filter(o => o.player === 'player1' && o.wounds > 0);
+  const p2ops  = Object.values(ops).filter(o => o.player === 'player2' && o.wounds > 0);
+  const p1dead = Object.values(ops).filter(o => o.player === 'player1' && o.wounds <= 0);
+  const p2dead = Object.values(ops).filter(o => o.player === 'player2' && o.wounds <= 0);
+  const turn   = gameData.turn || {};
+  const tp     = turn.turningPoint || 1;
+  const phase  = status === 'active' ? (turn.phase || 'strategy') : status;
+  const p1info = gameData.players?.player1 || {};
+  const p2info = gameData.players?.player2 || {};
+
+  const topbar = `
+    <div class="game-topbar">
+      <span class="topbar-tp">TP ${tp}</span>
+      <span class="topbar-sep">·</span>
+      <span class="topbar-phase">${phaseLabel(status, phase)}</span>
+      <span class="topbar-sep">·</span>
+      <span class="topbar-cp-p1">${escHtml(p1info.factionName || 'P1')} ${turn.cp?.player1 ?? 0}CP</span>
+      <span class="topbar-sep">·</span>
+      <span class="topbar-cp-p2">${escHtml(p2info.factionName || 'P2')} ${turn.cp?.player2 ?? 0}CP</span>
+      <span class="topbar-spacer"></span>
+      ${devMode ? `<button class="btn btn-ghost" onclick="devNewGame()" style="font-size:10px;padding:3px 8px;">New Dev Game</button>` : ''}
+    </div>
+  `;
+
+  container.innerHTML = topbar + `
+    <div class="game-main">
+      <div class="sidebar sidebar-p1" id="sidebar-p1-${playerSlot}">
+        <div class="sidebar-header">${escHtml(p1info.factionName || 'Player 1')}</div>
+        ${renderOpList(p1ops, 'player1', playerSlot, status, phase, turn)}
+        ${p1dead.length ? `<div style="padding:6px 10px;font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;">Incapacitated</div>` + p1dead.map(o => renderOpRow(o, 'player1', playerSlot, status, phase, turn, true)).join('') : ''}
+      </div>
+
+      <div class="board-wrap" id="board-wrap-${playerSlot}"></div>
+
+      <div class="sidebar sidebar-right sidebar-p2" id="sidebar-p2-${playerSlot}">
+        <div class="sidebar-header">${escHtml(p2info.factionName || 'Player 2')}</div>
+        ${renderOpList(p2ops, 'player2', playerSlot, status, phase, turn)}
+        ${p2dead.length ? `<div style="padding:6px 10px;font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;">Incapacitated</div>` + p2dead.map(o => renderOpRow(o, 'player2', playerSlot, status, phase, turn, true)).join('') : ''}
+      </div>
+    </div>
+
+    <div class="phase-bar" id="phase-bar-${playerSlot}">
+      ${renderPhaseBar(status, phase, playerSlot, turn)}
+    </div>
+  `;
+
+  // Build the SVG board
+  const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
+  if (boardWrap) buildBoardSVG(boardWrap, playerSlot, status, phase);
+}
+
+function phaseLabel(status, phase) {
+  if (status === 'waiting')    return 'Waiting';
+  if (status === 'terrain')    return 'Terrain Placement';
+  if (status === 'deployment') return 'Deployment';
+  if (status === 'initiative') return 'Initiative Roll';
+  if (phase === 'strategy')    return 'Strategy Phase';
+  if (phase === 'firefight')   return 'Firefight Phase';
+  return status || phase;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  OPERATIVE SIDEBAR ROWS
+// ═══════════════════════════════════════════════════════════
+
+function renderOpList(opArr, opPlayer, viewerSlot, status, phase, turn) {
+  if (!opArr.length) return '<div style="padding:8px 10px;font-size:11px;color:var(--text-dim);">—</div>';
+  return opArr.map(o => renderOpRow(o, opPlayer, viewerSlot, status, phase, turn, false)).join('');
+}
+
+function toggleOpExpand(opId) {
+  if (expandedOps.has(opId)) expandedOps.delete(opId);
+  else expandedOps.add(opId);
+  reRender();
+}
+
+function renderOpExpanded(op) {
+  const stats = [
+    ['APL',  op.apl  ?? '?'],
+    ['Move', (op.move ?? '?') + '"'],
+    ['DF',   op.def  ?? '?'],
+    ['Save', (op.save ?? '?') + '+'],
+    ['W',    `${op.wounds ?? '?'}/${op.maxWounds ?? '?'}`],
+  ];
+
+  const statsHtml = `<div class="op-stat-grid">${
+    stats.map(([lbl, val]) => `
+      <div class="op-stat-cell">
+        <div class="op-stat-label">${lbl}</div>
+        <div class="op-stat-val">${val}</div>
+      </div>`).join('')
+  }</div>`;
+
+  const weaponsHtml = (op.weapons || []).map(w => {
+    const typeIcon = w.type === 'melee' ? '⚔' : '◎';
+    const atk = w.profiles?.ATK || '?';
+    const hit = w.profiles?.HIT || '?';
+    const dmg = w.profiles?.DMG || '?';
+    // Range from RNG field or extracted from WR
+    const rngNum = parseInt(w.profiles?.RNG) || ((/Range\s+(\d+)/i.exec(w.profiles?.WR || '') || [])[1] | 0);
+    const rngStr = rngNum ? `${rngNum}"` : (w.type === 'melee' ? 'Melee' : '—');
+    // Strip "Range X"," from WR for keywords-only display
+    const kws = (w.profiles?.WR || '').replace(/Range\s+\d+[""]\s*,?\s*/i, '').trim().replace(/^,\s*/, '');
+    return `
+      <div class="op-weapon-row">
+        <div class="op-weapon-name">${typeIcon} ${escHtml(w.name)}</div>
+        <span class="op-weapon-stat" title="Attack dice">A${escHtml(atk)}</span>
+        <span class="op-weapon-stat" title="Hit threshold">${escHtml(hit)}</span>
+        <span class="op-weapon-stat" title="Normal / Crit damage">DMG ${escHtml(dmg)}</span>
+        <span class="op-weapon-stat" title="Range">${escHtml(rngStr)}</span>
+        ${kws ? `<span class="op-weapon-kw" title="${escHtml(kws)}">${escHtml(kws.length > 28 ? kws.slice(0, 26) + '…' : kws)}</span>` : ''}
+      </div>`;
+  }).join('');
+
+  const abilities = op.abilities || [];
+  const abilitiesHtml = abilities.length
+    ? `<div class="op-abilities">${
+        abilities.map(a => `<span class="op-ability-tag" title="${escHtml(a.description || '')}">${escHtml(a.name)}</span>`).join('')
+      }</div>`
+    : '';
+
+  return `<div class="op-expanded">${statsHtml}${weaponsHtml ? `<div class="op-weapons">${weaponsHtml}</div>` : ''}${abilitiesHtml}</div>`;
+}
+
+function renderOpRow(op, opPlayer, viewerSlot, status, phase, turn, isDead) {
+  const isMe       = opPlayer === viewerSlot;
+  const isDeployed = op.x >= 0 && op.y >= 0;
+  const isActive   = activation?.opId === op.id;
+  const isExpended = !op.ready;
+
+  // Clickable during firefight if it's my op, it's ready, it's deployed, and it's my turn to activate
+  const myTurn      = turn.activatingPlayer === viewerSlot;
+  const canAct      = isMe && op.ready && isDeployed && myTurn && phase === 'firefight' && status === 'active' && !activation;
+  const canDeselect = isActive && activation && !activation.apSpent;
+  // Clickable during deployment: my undeployed ops (simultaneous — no activePlayer gating)
+  const canDeploy   = isMe && !isDeployed && status === 'deployment';
+
+  const woundsPct  = op.maxWounds > 0 ? op.wounds / op.maxWounds : 1;
+  const isWounded  = op.wounds < op.maxWounds && op.wounds > op.maxWounds / 2;
+  const isInjured  = op.wounds <= op.maxWounds / 2 && op.wounds > 0;
+  const isSelected = deploySelId === op.id;
+
+  let rowClass = 'op-row';
+  if (isDead)       rowClass += ' dead';
+  else if (isExpended) rowClass += ' expended';
+  if (isActive)     rowClass += ' active-op';
+  if (isSelected)   rowClass += ' deploy-selected';
+  if (canAct || canDeploy || canDeselect) rowClass += ' clickable';
+
+  const clickHandler = canDeselect ? `onclick="cancelActivation()"` :
+                       canAct      ? `onclick="activateOperative('${op.id}','${viewerSlot}')"` :
+                       canDeploy   ? `onclick="selectForDeploy('${op.id}')"` : '';
+
+  const woundsColor = isDead || isInjured ? 'var(--red)' : isWounded ? 'var(--orange)' : 'var(--green)';
+
+  const isExpanded = expandedOps.has(op.id);
+
+  return `
+    <div class="${rowClass}" ${clickHandler} data-op-id="${op.id}">
+      <div class="op-header">
+        <div class="op-name">${isDead ? '✕ ' : ''}${escHtml(op.name)}</div>
+        <button class="op-expand-btn" onclick="event.stopPropagation();toggleOpExpand('${op.id}')" title="${isExpanded ? 'Collapse' : 'Show stats & weapons'}">${isExpanded ? '▾' : '▸'}</button>
+      </div>
+      ${op.role ? `<div class="op-role">${escHtml(op.role)}</div>` : ''}
+      <div class="op-status-row">
+        <span class="op-wounds" style="color:${woundsColor}">${op.wounds}/${op.maxWounds}W</span>
+        ${!isDead && isDeployed && !isExpended ? `<span class="op-tag tag-ready">Ready</span>` : ''}
+        ${!isDead && isDeployed && isExpended  ? `<span class="op-tag tag-expended">Expended</span>` : ''}
+        ${!isDead && !isDeployed               ? `<span class="op-tag tag-deploy">Undeployed</span>` : ''}
+        ${!isDead ? `<span class="op-tag ${op.order === 'engage' ? 'tag-engage' : 'tag-conceal'}">${op.order === 'engage' ? 'Engage' : 'Conceal'}</span>` : ''}
+        ${isInjured ? `<span class="op-tag tag-injured">Injured</span>` : ''}
+        ${isSelected ? `<span class="op-tag" style="background:rgba(201,168,76,0.15);color:var(--gold);border:1px solid rgba(201,168,76,0.4);">Selected</span>` : ''}
+      </div>
+      ${isExpanded ? renderOpExpanded(op) : ''}
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PHASE BAR
+// ═══════════════════════════════════════════════════════════
+
+function renderPhaseBar(status, phase, playerSlot, turn) {
+  const iAmActive = turn.activePlayer === playerSlot;
+  const myTurn    = turn.activatingPlayer === playerSlot;
+
+  if (status === 'terrain') return renderTerrainBar(playerSlot);
+  if (status === 'deployment') return renderDeployBar(playerSlot);
+  if (status === 'initiative') return renderInitiativeBar(playerSlot);
+  if (phase === 'strategy')    return renderStrategyBar(playerSlot, turn);
+  if (phase === 'firefight')   return renderFirefightBar(playerSlot, turn, myTurn);
+  return `<span class="phase-bar-label">${phaseLabel(status, phase)}</span>`;
+}
+
+// ── Terrain Phase ──
+
+function renderTerrainBar(playerSlot) {
+  const terrain      = gameData.terrain || {};
+  const terrainOwner = gameData.terrainOwner || {};
+  const hasPassed    = !!(gameData.terrainPassed || {})[playerSlot];
+
+  const mySpent    = Object.entries(terrainOwner).filter(([,v]) => v === playerSlot)
+                       .reduce((s, [k]) => s + (TERRAIN_COSTS[terrain[k]] || 0), 0);
+  const otherSlot  = playerSlot === 'player1' ? 'player2' : 'player1';
+  const otherSpent = Object.entries(terrainOwner).filter(([,v]) => v === otherSlot)
+                       .reduce((s, [k]) => s + (TERRAIN_COSTS[terrain[k]] || 0), 0);
+  const myRemain   = TERRAIN_BUDGET - mySpent;
+  const tiers      = ['rough', 'chestHigh', 'tall'];
+
+  const tierBtns = tiers.map(t => {
+    const cost      = TERRAIN_COSTS[t];
+    const disabled  = hasPassed || myRemain < cost;
+    const isSel     = terrainTier === t;
+    const swatchCol = t === 'rough' ? '#5a4830' : t === 'chestHigh' ? '#3a5028' : '#30384a';
+    return `
+      <button class="tier-btn${isSel ? ' selected' : ''}" onclick="setTerrainTier('${t}')" ${disabled ? 'disabled' : ''}>
+        <div class="tier-swatch" style="background:${swatchCol};"></div>
+        <div class="tier-btn-name">${TERRAIN_LABELS[t]}</div>
+        <div class="tier-btn-cost">${cost} pt/sq</div>
+      </button>
+    `;
+  }).join('');
+
+  const budgetBar = (slot, spent, color) => `
+    <div class="budget-row">
+      <span style="width:20px;font-size:10px;color:var(--${color});">${slot === 'player1' ? 'P1' : 'P2'}</span>
+      <div class="budget-bar"><div class="budget-fill ${slot === 'player1' ? 'p1' : 'p2'}" style="width:${Math.min(100, (spent/TERRAIN_BUDGET)*100).toFixed(0)}%"></div></div>
+      <span style="width:36px;font-size:10px;color:var(--text-dim);text-align:right;">${spent}/${TERRAIN_BUDGET}</span>
+    </div>
+  `;
+
+  return `
+    <span class="phase-bar-label">Terrain</span>
+    <div class="phase-bar-body">
+      ${hasPassed
+        ? `<span style="font-size:12px;color:var(--text-dim);">Turn passed — waiting for opponent…</span>`
+        : `<div class="terrain-tier-row">${tierBtns}</div>
+           <button class="btn" onclick="passTerrainTurn('${playerSlot}')" style="flex-shrink:0;">Pass Turn</button>`
+      }
+      <div style="margin-left:auto;display:flex;flex-direction:column;gap:3px;min-width:120px;">
+        ${budgetBar('player1', playerSlot === 'player1' ? mySpent : otherSpent, 'p1')}
+        ${budgetBar('player2', playerSlot === 'player2' ? mySpent : otherSpent, 'p2')}
+      </div>
+    </div>
+  `;
+}
+
+// ── Deployment Phase ──
+
+function renderDeployBar(playerSlot) {
+  const ops         = Object.values(gameData.operatives || {});
+  const myUndeployed = ops.filter(o => o.player === playerSlot && o.x < 0);
+  const allDeployed  = ops.every(o => o.x >= 0);
+
+  if (allDeployed) return `<span class="phase-bar-label">Deployment complete</span><div class="phase-bar-body"><span style="font-size:12px;color:var(--text-dim);">Advancing to initiative…</span></div>`;
+
+  return `
+    <span class="phase-bar-label">Deploy</span>
+    <div class="phase-bar-body">
+      ${myUndeployed.length > 0
+        ? `${deploySelId
+            ? `<span style="font-size:12px;">Click your deployment zone to place the selected operative.</span>
+               <button class="btn btn-ghost" onclick="cancelDeploy()">Cancel</button>`
+            : `<span style="font-size:12px;">Select an operative from your sidebar, then click your drop zone to place it.</span>`
+          }`
+        : `<span style="font-size:12px;color:var(--text-dim);">All your operatives deployed. Waiting for opponent…</span>`
+      }
+    </div>
+  `;
+}
+
+// ── Initiative Phase ──
+
+function renderInitiativeBar(playerSlot) {
+  const init = gameData.initiative || {};
+  const myRoll    = init[playerSlot];
+  const otherSlot = playerSlot === 'player1' ? 'player2' : 'player1';
+  const otherRoll = init[otherSlot];
+  const bothRolled = myRoll != null && otherRoll != null;
+
+  let result = '';
+  if (bothRolled) {
+    if (myRoll > otherRoll)       result = `You win initiative! You go first.`;
+    else if (otherRoll > myRoll)  result = `Opponent wins initiative. They go first.`;
+    else                          result = `Tie! Rolling again…`;
+  }
+
+  return `
+    <span class="phase-bar-label">Initiative</span>
+    <div class="phase-bar-body">
+      ${myRoll == null
+        ? `<button class="btn btn-primary" onclick="rollInitiative('${playerSlot}')">Roll 2D6</button>`
+        : bothRolled
+          ? `<span style="font-size:13px;">${escHtml(result)}</span>`
+          : `<span style="font-size:12px;color:var(--gold);">You rolled ${myRoll}. Waiting for opponent…</span>`
+      }
+    </div>
+  `;
+}
+
+// ── Strategy Phase ──
+
+function renderStrategyBar(playerSlot, turn) {
+  const iAmActive = turn.activePlayer === playerSlot;
+  const tp        = turn.turningPoint || 1;
+  const myCP      = turn.cp?.[playerSlot] ?? 0;
+  return `
+    <span class="phase-bar-label">Strategy</span>
+    <div class="phase-bar-body">
+      <div class="strategy-wrap">
+        <span style="font-size:12px;color:var(--text-dim);">TP ${tp} Strategy Phase — CP awarded, operatives readied.</span>
+        <span style="font-size:12px;">Your CP: <strong>${myCP}</strong></span>
+      </div>
+      ${iAmActive
+        ? `<button class="btn btn-primary" onclick="endStrategyPhase('${playerSlot}')">End Strategy Phase</button>`
+        : `<span style="font-size:12px;color:var(--text-dim);">Waiting for opponent…</span>`
+      }
+    </div>
+  `;
+}
+
+// ── Firefight Phase ──
+
+function renderFirefightBar(playerSlot, turn, myTurn) {
+  // Fight resolution takes over both panels when active
+  const pendingFight = gameData.pendingFight;
+  if (pendingFight) {
+    const attOp = (gameData.operatives || {})[pendingFight.attackerOpId];
+    const defOp = (gameData.operatives || {})[pendingFight.defenderOpId];
+    const iAmAttacker = pendingFight.attackerSlot === playerSlot;
+    const iAmDefender = defOp?.player === playerSlot;
+    if (iAmAttacker || iAmDefender) {
+      return renderFightResolutionBar(playerSlot, pendingFight, iAmAttacker, iAmDefender, attOp, defOp);
+    }
+  }
+
+  // Shot resolution takes over both panels when active
+  const pending = gameData.pendingShot;
+  if (pending) {
+    const attOp = (gameData.operatives || {})[pending.attackerOpId];
+    const tgtOp = (gameData.operatives || {})[pending.targetOpId];
+    const iAmAttacker = pending.attackerSlot === playerSlot;
+    const iAmDefender = tgtOp?.player === playerSlot;
+    if (iAmAttacker || iAmDefender) {
+      return renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp);
+    }
+  }
+
+  if (activation && activation.playerSlot === playerSlot) {
+    return renderActivationBar(playerSlot, turn);
+  }
+
+  const ops     = Object.values(gameData.operatives || {});
+  const myReady = ops.filter(o => o.player === playerSlot && o.ready && o.wounds > 0 && o.x >= 0).length;
+
+  return `
+    <span class="phase-bar-label">Firefight</span>
+    <div class="phase-bar-body">
+      ${myTurn
+        ? myReady > 0
+          ? `<span style="font-size:12px;">Your turn to activate — select an operative.</span>
+             <span style="font-size:11px;color:var(--text-dim);">${myReady} ready</span>`
+          : `<span style="font-size:12px;color:var(--text-dim);">No ready operatives. Waiting for opponent to finish…</span>`
+        : `<span style="font-size:12px;color:var(--text-dim);">Opponent is activating.</span>`
+      }
+    </div>
+  `;
+}
+
+function renderActivationBar(playerSlot, turn) {
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op) return '';
+  const ap = activation.apRemaining;
+
+  // Weapon picker mode
+  if (shootWeapon === 'picking') {
+    const ranged = getRangedWeapons(op);
+    return `
+      <span class="phase-bar-label">Choose Weapon</span>
+      <div class="phase-bar-body">
+        <div class="shoot-panel">
+          <strong style="font-size:12px;">${escHtml(op.name)} — select ranged weapon:</strong>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${ranged.map((w, i) => `
+              <button class="action-btn" onclick="pickWeaponForShoot('${playerSlot}',${i})" style="display:flex;flex-direction:column;align-items:flex-start;padding:6px 10px;">
+                <span>${escHtml(w.name)}</span>
+                <span style="font-size:10px;color:var(--text-dim);">ATK ${w.profiles.ATK} / ${w.profiles.HIT} / RNG ${w.profiles.RNG} / DMG ${w.profiles.DMG}</span>
+              </button>`).join('')}
+          </div>
+          <button class="btn" onclick="cancelShoot()">Cancel</button>
+        </div>
+      </div>`;
+  }
+
+  const ranged        = getRangedWeapons(op);
+  const melee         = getMeleeWeapons(op);
+  const conceal       = op.order === 'conceal';
+  const hasMoved      = activation.hasMoved;
+  const hasDashed     = activation.hasDashed;
+  const hasShot       = activation.hasShot;
+  const hasFought     = activation.hasFought;
+  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal;
+  const fightDisabled = ap < 1 || !melee.length  || !hasFightTarget(op) || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
+  const dragActive    = !!shootState || !!fightState || !!dragState;
+  const moveDisabled  = ap < 1 || dragActive || hasMoved;
+  const dashDisabled  = ap < 1 || dragActive || hasDashed;
+
+  // Weapon picker for fight
+  if (fightWeapon === 'picking') {
+    return `
+      <span class="phase-bar-label">Choose Weapon</span>
+      <div class="phase-bar-body">
+        <div class="shoot-panel">
+          <strong style="font-size:12px;">${escHtml(op.name)} — select melee weapon:</strong>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${melee.map((w, i) => `
+              <button class="action-btn" onclick="pickWeaponForFight('${playerSlot}',${i})" style="display:flex;flex-direction:column;align-items:flex-start;padding:6px 10px;">
+                <span>${escHtml(w.name)}</span>
+                <span style="font-size:10px;color:var(--text-dim);">ATK ${w.profiles.ATK} / ${w.profiles.HIT} / DMG ${w.profiles.DMG}</span>
+              </button>`).join('')}
+          </div>
+          <button class="btn" onclick="cancelFight()">Cancel</button>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="activation-wrap">
+      <span class="activation-name">${escHtml(op.name)}</span>
+      <span class="activation-ap">${ap} AP</span>
+      <button class="order-btn ${op.order}" ${hasShot ? 'disabled title="Cannot switch to Conceal after shooting"' : `onclick="toggleOrder('${activation.opId}','${playerSlot}')"`}>
+        ${op.order === 'engage' ? 'Engage' : 'Conceal'}
+      </button>
+      <div class="activation-actions">
+        <button class="action-btn" onclick="startMove('${playerSlot}',false)" ${moveDisabled ? 'disabled' : ''} title="${hasMoved ? 'Already moved this activation' : ''}">Move (1AP)</button>
+        <button class="action-btn" onclick="startMove('${playerSlot}',true)"  ${dashDisabled ? 'disabled' : ''} title="${hasDashed ? 'Already dashed' : '3&quot; — combine with Move for max distance'}">Dash (1AP)</button>
+        <button class="action-btn" onclick="startShoot('${playerSlot}')" ${shootDisabled ? 'disabled' : ''} title="${conceal ? 'Locked: Conceal order' : ''}">Shoot (1AP)</button>
+        <button class="action-btn" onclick="startFight('${playerSlot}')" ${fightDisabled ? 'disabled' : ''} title="${hasFought ? 'Already fought this activation' : !hasFightTarget(op) ? 'No enemies in control range (1&quot;)' : !melee.length ? 'No melee weapons' : ''}">Fight (1AP)</button>
+        <button class="action-btn stub" ${conceal ? 'title="Locked: Conceal order"' : 'title="Coming in KT-3"'} disabled>Charge (1AP)</button>
+      </div>
+      <button class="btn" onclick="endActivation('${playerSlot}')" style="margin-left:auto;">End Activation</button>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  BOARD SVG
+// ═══════════════════════════════════════════════════════════
+
+function buildBoardSVG(wrap, playerSlot, status, phase) {
+  const svg = svgEl('svg', {
+    viewBox:         `0 0 ${BOARD_W} ${BOARD_H}`,
+    class:           'board-svg',
+    'pointer-events': 'all',
+  });
+
+  // Size: fill the wrap, preserve aspect ratio
+  svg.style.cssText = 'width:100%;height:100%;max-height:100%;';
+
+  // Background
+  svg.appendChild(svgEl('rect', { x: 0, y: 0, width: BOARD_W, height: BOARD_H, fill: '#0a0a14' }));
+
+  // Layers (painter's order: bg → grid → splats → deploy → terrain → beams → bursts → tokens → overlay)
+  const gridG    = svgEl('g'); drawGrid(gridG); svg.appendChild(gridG);
+  const splatG   = svgEl('g', { id: `splat-g-${playerSlot}`, 'pointer-events': 'none' }); svg.appendChild(splatG);
+  const deployG  = svgEl('g'); svg.appendChild(deployG);
+  const terrainG = svgEl('g'); svg.appendChild(terrainG);
+  const beamG    = svgEl('g', { id: `beam-g-${playerSlot}`,  'pointer-events': 'none' }); svg.appendChild(beamG);
+  const burstG   = svgEl('g', { id: `burst-g-${playerSlot}`, 'pointer-events': 'none' }); svg.appendChild(burstG);
+  const unitG    = svgEl('g'); svg.appendChild(unitG);
+  const overlay  = svgEl('g', { id: `overlay-${playerSlot}`, 'pointer-events': 'none' }); svg.appendChild(overlay);
+
+  // Draw deploy zones during deployment phase
+  if (status === 'deployment') drawDeployZones(deployG);
+
+  // Terrain
+  drawTerrain(terrainG, gameData.terrain);
+
+  // Permanent blood splats (drawn after terrain so the correct layer order is maintained in the DOM)
+  splatData.forEach(s => drawSplat(splatG, s));
+
+  // Operatives
+  const ops = gameData.operatives || {};
+  Object.values(ops).forEach(op => {
+    if (op.x < 0 || op.y < 0) return; // undeployed
+    drawOperativeToken(unitG, op, playerSlot, status, phase);
+  });
+
+  wrap.innerHTML = '';
+  wrap.appendChild(svg);
+
+  // Wire interactions
+  if (status === 'terrain') {
+    setupTerrainPaint(svg, playerSlot);
+  } else if (status === 'deployment') {
+    setupDeployClick(svg, playerSlot);
+  } else if (status === 'active' && phase === 'firefight') {
+    setupDragMove(svg, playerSlot, unitG, overlay);
+  }
+}
+
+// ── Health arc (Jet Force Gemini style segmented arc) ──
+//
+// Arc: 270° span, gap at bottom (6 o'clock). Segments fill from bottom-left
+// clockwise; depletion empties from the rightmost segment inward.
+// Green above half wounds; all remaining turn red at/below the Injured threshold.
+
+function drawHealthArc(parent, op) {
+  const N = op.maxWounds;
+  if (!N || N <= 0) return;
+
+  const cx         = op.x, cy = op.y;
+  const r          = TOKEN_R + 0.15;   // 0.65" — just outside token body
+  const ARC_START  = 135;              // SVG° (0=right, CW): bottom-left gap edge (≈7:30)
+  const ARC_TOTAL  = 270;             // gap at bottom = remaining 90° from 4:30→7:30
+  const GAP_DEG    = 3;
+  const segSpan    = ARC_TOTAL / N;
+  const segFill    = Math.max(1, segSpan - GAP_DEG);
+
+  const isInjured  = op.wounds > 0 && op.wounds <= op.maxWounds / 2;
+  const fillColor  = isInjured ? '#c0392b' : '#4a9a5a';
+  const emptyColor = 'rgba(255,255,255,0.08)';
+  const toRad = d => d * Math.PI / 180;
+
+  for (let i = 0; i < N; i++) {
+    const sa = toRad(ARC_START + i * segSpan);
+    const ea = toRad(ARC_START + i * segSpan + segFill);
+    const x1 = (cx + r * Math.cos(sa)).toFixed(4);
+    const y1 = (cy + r * Math.sin(sa)).toFixed(4);
+    const x2 = (cx + r * Math.cos(ea)).toFixed(4);
+    const y2 = (cy + r * Math.sin(ea)).toFixed(4);
+    const la = segFill > 180 ? 1 : 0;
+
+    parent.appendChild(svgEl('path', {
+      d:                `M ${x1} ${y1} A ${r} ${r} 0 ${la} 1 ${x2} ${y2}`,
+      fill:             'none',
+      stroke:           i < op.wounds ? fillColor : emptyColor,
+      'stroke-width':   0.09,
+      'stroke-linecap': 'butt',
+    }));
+  }
+}
+
+// ── Operative token ──
+
+function drawOperativeToken(parent, op, viewerSlot, status, phase) {
+  const isP1      = op.player === 'player1';
+  const baseColor = isP1 ? '#2a5a99' : '#6a2a99';
+  const rimColor  = isP1 ? '#4a9eff' : '#c97af7';
+  const isExpended = !op.ready;
+  const isActive   = activation?.opId === op.id;
+  const isDead     = op.wounds <= 0;
+
+  const g = svgEl('g', { 'data-op-id': op.id, class: 'op-token' });
+
+  // ── Dead / incapacitated token ──
+  if (isDead) {
+    g.style.opacity = '0.65';
+    g.appendChild(svgEl('circle', { cx: op.x, cy: op.y, r: TOKEN_R, fill: 'rgba(20,20,36,0.8)', stroke: '#444460', 'stroke-width': 0.1 }));
+    const xSz = TOKEN_R * 0.52;
+    const xOpt = { stroke: '#cc6060', 'stroke-width': 0.16, 'stroke-linecap': 'round', 'pointer-events': 'none' };
+    g.appendChild(svgEl('line', { x1: op.x - xSz, y1: op.y - xSz, x2: op.x + xSz, y2: op.y + xSz, ...xOpt }));
+    g.appendChild(svgEl('line', { x1: op.x + xSz, y1: op.y - xSz, x2: op.x - xSz, y2: op.y + xSz, ...xOpt }));
+    parent.appendChild(g);
+    return;
+  }
+
+  if (isExpended) g.style.opacity = '0.45';
+
+  // Token body
+  g.appendChild(svgEl('circle', { cx: op.x, cy: op.y, r: TOKEN_R, fill: baseColor + '60', stroke: rimColor, 'stroke-width': isActive ? 0.18 : 0.12 }));
+
+  // Health arc
+  drawHealthArc(g, op);
+
+  // Abbreviation label
+  const abbr = svgEl('text', {
+    x: op.x, y: op.y + TOKEN_R * 0.38,
+    'text-anchor': 'middle', fill: rimColor,
+    'font-size': TOKEN_R * 0.85, 'font-family': 'sans-serif', 'font-weight': 700,
+    'pointer-events': 'none',
+  });
+  abbr.textContent = (op.name || '?')[0].toUpperCase();
+  g.appendChild(abbr);
+
+  // Order status pip — top-right corner; green = Engage, muted = Conceal; readable by both players
+  const orderFill   = op.order === 'engage' ? '#4caf74' : '#2a2a42';
+  const orderStroke = op.order === 'engage' ? '#2a6a44' : '#505070';
+  g.appendChild(svgEl('circle', {
+    cx: op.x + TOKEN_R * 0.75, cy: op.y - TOKEN_R * 0.75,
+    r: TOKEN_R * 0.28,
+    fill: orderFill, stroke: orderStroke, 'stroke-width': 0.06,
+    'pointer-events': 'none',
+  }));
+
+  // Active activation glow (behind everything)
+  if (isActive) {
+    g.insertBefore(svgEl('circle', {
+      cx: op.x, cy: op.y, r: TOKEN_R * 1.75,
+      fill: 'none', stroke: 'rgba(201,168,76,0.6)', 'stroke-width': 0.18,
+    }), g.firstChild);
+  }
+
+  parent.appendChild(g);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TERRAIN PAINTING INTERACTION
+// ═══════════════════════════════════════════════════════════
+
+function setTerrainTier(tier) {
+  terrainTier = tier;
+  // Re-render phase bar only
+  reRenderPhaseBar();
+}
+
+function setupTerrainPaint(svg, playerSlot) {
+  if ((gameData.terrainPassed || {})[playerSlot]) return;
+
+  const terrain      = gameData.terrain || {};
+  const terrainOwner = gameData.terrainOwner || {};
+
+  let painting  = false;
+  let paintMode = true;
+  let strokes   = new Map(); // key → tier (this drag stroke)
+  let erases    = new Set();
+  let lastKey   = null;
+
+  function inBounds(gx, gy) {
+    return gx >= 0 && gy >= 0 && gx < BOARD_W && gy < BOARD_H;
+  }
+
+  function getMySpent() {
+    return Object.entries(terrainOwner)
+      .filter(([,v]) => v === playerSlot)
+      .reduce((s, [k]) => s + (TERRAIN_COSTS[terrain[k]] || 0), 0);
+  }
+
+  function netCostFor(gx, gy) {
+    const key     = `${gx},${gy}`;
+    const oldTier = terrain[key];
+    const ownedByMe = terrainOwner[key] === playerSlot;
+    const oldCost = oldTier && ownedByMe ? (TERRAIN_COSTS[oldTier] || 0) : 0;
+    return (TERRAIN_COSTS[terrainTier] || 0) - oldCost;
+  }
+
+  function tryPaint(gx, gy) {
+    if (!inBounds(gx, gy)) return;
+    const key = `${gx},${gy}`;
+    if (key === lastKey) return;
+    lastKey = key;
+
+    const existingOwner = terrainOwner[key];
+    if (existingOwner && existingOwner !== playerSlot) return; // can't paint opponent's squares
+
+    if (paintMode) {
+      const mySpent  = getMySpent();
+      const net      = netCostFor(gx, gy);
+      const projSpent = mySpent
+        + [...strokes.entries()].reduce((s, [k, t]) => s + (TERRAIN_COSTS[t] || 0) - (TERRAIN_COSTS[terrain[k]] || 0) * (terrainOwner[k] === playerSlot ? 1 : 0), 0)
+        - [...erases].reduce((s, k) => s + (terrainOwner[k] === playerSlot ? (TERRAIN_COSTS[terrain[k]] || 0) : 0), 0);
+      if (projSpent + net > TERRAIN_BUDGET) return;
+      strokes.set(key, terrainTier);
+      erases.delete(key);
+    } else {
+      // Erase mode: only own squares
+      if (terrainOwner[key] !== playerSlot) return;
+      erases.add(key);
+      strokes.delete(key);
+    }
+  }
+
+  function getSVGPos(e) {
+    const pt = svg.createSVGPoint();
+    const touch = e.touches ? e.touches[0] : e;
+    pt.x = touch.clientX; pt.y = touch.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+
+  function getSq(e) {
+    const p = getSVGPos(e);
+    return { gx: Math.floor(p.x), gy: Math.floor(p.y) };
+  }
+
+  async function commitStroke() {
+    if (!strokes.size && !erases.size) return;
+    if (terrainActive) return;
+    terrainActive = true;
+
+    const updates = {};
+    strokes.forEach((tier, key) => {
+      updates[`terrain/${key}`]      = tier;
+      updates[`terrainOwner/${key}`] = playerSlot;
+    });
+    erases.forEach(key => {
+      updates[`terrain/${key}`]      = null;
+      updates[`terrainOwner/${key}`] = null;
+    });
+
+    try {
+      await db.ref(`games-kt/${gameId}`).update(updates);
+    } finally {
+      terrainActive = false;
+    }
+  }
+
+  svg.addEventListener('mousedown', e => {
+    const { gx, gy } = getSq(e);
+    const key = `${gx},${gy}`;
+    // Erase mode if clicking own existing square with same tier
+    paintMode = !(terrainOwner[key] === playerSlot && terrain[key] === terrainTier);
+    painting  = true;
+    strokes   = new Map();
+    erases    = new Set();
+    lastKey   = null;
+    tryPaint(gx, gy);
+    e.preventDefault();
+  });
+
+  svg.addEventListener('mousemove', e => {
+    if (!painting) return;
+    const { gx, gy } = getSq(e);
+    tryPaint(gx, gy);
+  });
+
+  const finish = () => { if (painting) { painting = false; commitStroke(); } };
+  svg.addEventListener('mouseup',    finish);
+  svg.addEventListener('mouseleave', finish);
+}
+
+function passTerrainTurn(playerSlot) {
+  const other = playerSlot === 'player1' ? 'player2' : 'player1';
+  const updates = { [`terrainPassed/${playerSlot}`]: true };
+  if ((gameData.terrainPassed || {})[other]) {
+    updates['meta/status'] = 'deployment';
+  }
+  db.ref(`games-kt/${gameId}`).update(updates);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DEPLOYMENT PHASE
+// ═══════════════════════════════════════════════════════════
+
+function selectForDeploy(opId) {
+  deploySelId = (deploySelId === opId) ? null : opId;
+  reRender();
+}
+
+function cancelDeploy() {
+  deploySelId = null;
+  reRenderPhaseBar();
+}
+
+function setupDeployClick(svg, playerSlot) {
+  const isP1 = playerSlot === 'player1';
+  const minY  = isP1 ? BOARD_H - DEPLOY_DEPTH : 0;
+  const maxY  = isP1 ? BOARD_H : DEPLOY_DEPTH;
+
+  svg.style.cursor = 'crosshair';
+
+  svg.addEventListener('click', async e => {
+    if (!deploySelId) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p  = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const sp = snapToGrid(p.x, p.y);
+
+    if (sp.y < minY || sp.y > maxY) return;
+
+    const ops = Object.values(gameData.operatives || {});
+    const blocked = ops.some(o => o.x >= 0 && Math.hypot(o.x - sp.x, o.y - sp.y) < TOKEN_R * 2);
+    if (blocked) return;
+
+    const opId = deploySelId;
+    deploySelId = null;
+
+    await db.ref(`games-kt/${gameId}/operatives/${opId}`).update({ x: sp.x, y: sp.y });
+
+    // Advance to initiative once every operative from both players is placed.
+    const updated = (await db.ref(`games-kt/${gameId}/operatives`).once('value')).val() || {};
+    const anyUndeployed = Object.values(updated).some(o => o.x < 0);
+    if (!anyUndeployed) {
+      await db.ref(`games-kt/${gameId}`).update({ 'meta/status': 'initiative' });
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INITIATIVE PHASE
+// ═══════════════════════════════════════════════════════════
+
+async function rollInitiative(playerSlot) {
+  const roll = Math.ceil(Math.random() * 6) + Math.ceil(Math.random() * 6);
+  await db.ref(`games-kt/${gameId}/initiative/${playerSlot}`).set(roll);
+
+  // Check if both have rolled
+  const snap = await db.ref(`games-kt/${gameId}/initiative`).once('value');
+  const init = snap.val() || {};
+  if (init.player1 != null && init.player2 != null) {
+    if (init.player1 === init.player2) {
+      // Tie — reset and re-roll
+      await db.ref(`games-kt/${gameId}/initiative`).set(null);
+      return;
+    }
+    const winner = init.player1 > init.player2 ? 'player1' : 'player2';
+    // Small delay so both players see the rolls
+    setTimeout(async () => {
+      await startStrategyPhase(winner);
+    }, 1800);
+  }
+}
+
+// overrides: optional extra fields merged into the single update() — used by
+// endTurningPoint to include 'turn/turningPoint' in the same atomic write.
+async function startStrategyPhase(initiativeWinner, overrides = {}) {
+  const ops     = (await db.ref(`games-kt/${gameId}/operatives`).once('value')).val() || {};
+  const cpSnap  = (await db.ref(`games-kt/${gameId}/turn/cp`).once('value')).val() || { player1: 0, player2: 0 };
+  // Use caller-supplied TP if present (so CP calc uses the incoming TP, not the pre-increment value).
+  const tp      = overrides['turn/turningPoint']
+                    ?? ((await db.ref(`games-kt/${gameId}/turn/turningPoint`).once('value')).val() || 1);
+
+  // CP award: both get 1 in TP1; non-initiative player gets 2 in TP2+
+  const isFirstTP = tp === 1;
+  const newCP = {
+    player1: (cpSnap.player1 || 0) + (isFirstTP ? 1 : (initiativeWinner === 'player1' ? 1 : 2)),
+    player2: (cpSnap.player2 || 0) + (isFirstTP ? 1 : (initiativeWinner === 'player2' ? 1 : 2)),
+  };
+
+  // Ready all operatives + reset activatedThisTurn
+  const opUpdates = {};
+  Object.values(ops).forEach(op => {
+    if (op.wounds > 0) {
+      opUpdates[`operatives/${op.id}/ready`]              = true;
+      opUpdates[`operatives/${op.id}/activatedThisTurn`]  = false;
+    }
+  });
+
+  await db.ref(`games-kt/${gameId}`).update({
+    'meta/status':             'active',
+    'turn/phase':              'strategy',
+    'turn/activePlayer':       initiativeWinner,
+    'turn/activatingPlayer':   initiativeWinner,
+    'turn/cp/player1':         newCP.player1,
+    'turn/cp/player2':         newCP.player2,
+    ...opUpdates,
+    ...overrides,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  STRATEGY PHASE
+// ═══════════════════════════════════════════════════════════
+
+async function endStrategyPhase(playerSlot) {
+  // Both players see the strategy phase; only the active player can advance it
+  if (gameData.turn?.activePlayer !== playerSlot) return;
+  await db.ref(`games-kt/${gameId}/turn/phase`).set('firefight');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FIREFIGHT PHASE — ACTIVATION
+// ═══════════════════════════════════════════════════════════
+
+function activateOperative(opId, playerSlot) {
+  const op = (gameData.operatives || {})[opId];
+  if (!op || !op.ready || op.wounds <= 0) return;
+  activation = { opId, apRemaining: op.apl, playerSlot, apSpent: false, hasMoved: false, hasDashed: false, hasShot: false, hasFought: false };
+  reRenderPhaseBar();
+  reRender();
+}
+
+function cancelActivation() {
+  if (!activation || activation.apSpent) return;
+  activation = null;
+  hideRadialMenu();
+  reRenderPhaseBar();
+  reRender();
+}
+
+function toggleOrder(opId, playerSlot) {
+  const op = (gameData.operatives || {})[opId];
+  if (!op) return;
+  const newOrder = op.order === 'engage' ? 'conceal' : 'engage';
+  db.ref(`games-kt/${gameId}/operatives/${opId}/order`).set(newOrder);
+}
+
+async function endActivation(playerSlot) {
+  if (!activation) return;
+  const opId = activation.opId;
+  activation  = null;
+  deploySelId = null;
+  hideRadialMenu();
+
+  await db.ref(`games-kt/${gameId}/operatives/${opId}`).update({
+    ready:              false,
+    activatedThisTurn:  true,
+  });
+
+  advanceActivatingPlayer(playerSlot);
+}
+
+async function advanceActivatingPlayer(justActivatedSlot) {
+  const ops       = (await db.ref(`games-kt/${gameId}/operatives`).once('value')).val() || {};
+  const otherSlot = justActivatedSlot === 'player1' ? 'player2' : 'player1';
+
+  function hasReady(slot) {
+    return Object.values(ops).some(o => o.player === slot && o.ready && o.wounds > 0 && o.x >= 0);
+  }
+
+  const otherReady = hasReady(otherSlot);
+  const myReady    = hasReady(justActivatedSlot);
+
+  if (!otherReady && !myReady) {
+    // All operatives expended — end Turning Point
+    await endTurningPoint();
+    return;
+  }
+
+  // Switch to other player; if they have no ready ops, stay with current
+  const next = otherReady ? otherSlot : justActivatedSlot;
+  await db.ref(`games-kt/${gameId}/turn/activatingPlayer`).set(next);
+}
+
+async function endTurningPoint() {
+  const tp           = gameData.turn?.turningPoint || 1;
+  const activePlayer = gameData.turn?.activePlayer || 'player1';
+
+  if (tp >= 4) {
+    await db.ref(`games-kt/${gameId}`).update({ 'meta/status': 'ended' });
+    return;
+  }
+
+  // Single atomic update: TP increment + strategy phase reset in one write.
+  await startStrategyPhase(activePlayer, { 'turn/turningPoint': tp + 1 });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DRAG TO MOVE
+// ═══════════════════════════════════════════════════════════
+
+function startMove(playerSlot, isDash) {
+  if (!activation) return;
+  if (shootState || gameData.pendingShot) return;
+  hideRadialMenu();
+  const op     = (gameData.operatives || {})[activation.opId];
+  if (!op || op.x < 0) return;
+
+  const maxMove = isDash ? 3 : op.move;
+  const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
+  const svg = boardWrap?.querySelector('svg.board-svg');
+  if (!svg) return;
+
+  // Dim all tokens except active
+  svg.querySelectorAll('.op-token').forEach(g => {
+    g.style.opacity = g.getAttribute('data-op-id') === op.id ? '1' : '0.25';
+  });
+
+  const overlay = svg.querySelector(`#overlay-${playerSlot}`);
+  clearEl(overlay);
+
+  const arcRgb = playerSlot === 'player1' ? '74,158,255' : '201,122,247';
+  dragState = { opId: op.id, startX: op.x, startY: op.y, maxMove, isDash, svg, overlay, playerSlot,
+                maxSightRange: getMaxSightRange(op), arcRgb };
+
+  // Ghost at start position
+  overlay.appendChild(svgEl('circle', {
+    cx: op.x, cy: op.y, r: TOKEN_R * 0.8,
+    fill: 'none', stroke: 'rgba(201,168,76,0.4)', 'stroke-width': 0.1, 'stroke-dasharray': '0.4 0.25',
+  }));
+
+  // Range circle
+  overlay.appendChild(svgEl('circle', {
+    cx: op.x, cy: op.y, r: maxMove,
+    fill: 'rgba(201,168,76,0.04)', stroke: 'rgba(201,168,76,0.25)', 'stroke-width': 0.1, 'stroke-dasharray': '0.5 0.3',
+  }));
+
+  svg.style.cursor = 'crosshair';
+
+  function onMouseMove(e) {
+    if (!dragState) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p   = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const clamped = clampVec(dragState.startX, dragState.startY, p.x, p.y, maxMove);
+    const snapped = snapToGrid(clamped.x, clamped.y);
+    updateDragOverlay(snapped.x, snapped.y);
+  }
+
+  function onMouseUp(e) {
+    if (!dragState) return;
+    svg.removeEventListener('mousemove', onMouseMove);
+    svg.removeEventListener('mouseup',   onMouseUp);
+    svg.style.cursor = '';
+
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p       = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const clamped = clampVec(dragState.startX, dragState.startY, p.x, p.y, maxMove);
+    const snapped = snapToGrid(clamped.x, clamped.y);
+
+    if (activation) {
+      if (isDash) activation.hasDashed = true;
+      else        activation.hasMoved  = true;
+    }
+    commitMove(snapped.x, snapped.y, 1, playerSlot);
+    dragState = null;
+  }
+
+  svg.addEventListener('mousemove', onMouseMove);
+  svg.addEventListener('mouseup',   onMouseUp);
+}
+
+function updateDragOverlay(tx, ty) {
+  if (!dragState) return;
+  const { overlay, startX, startY } = dragState;
+  // Remove old arrow (keep range circle and ghost — first two children)
+  while (overlay.children.length > 2) overlay.removeChild(overlay.lastChild);
+
+  const dist = Math.hypot(tx - startX, ty - startY);
+
+  // Distance line
+  overlay.appendChild(svgEl('line', {
+    x1: startX, y1: startY, x2: tx, y2: ty,
+    stroke: '#c9a84c', 'stroke-width': 0.2, 'stroke-dasharray': '0.5 0.25', opacity: '0.7',
+  }));
+
+  // Destination token preview
+  overlay.appendChild(svgEl('circle', {
+    cx: tx, cy: ty, r: TOKEN_R,
+    fill: 'rgba(201,168,76,0.2)', stroke: '#c9a84c', 'stroke-width': 0.15, opacity: '0.8',
+  }));
+
+  // Distance label
+  const lx = (startX + tx) / 2 + 0.3;
+  const ly = (startY + ty) / 2 - 0.5;
+  overlay.appendChild(svgEl('rect', { x: lx - 0.5, y: ly - 0.5, width: 2.2, height: 0.9, fill: '#0a0a14', rx: 0.2, opacity: '0.85' }));
+  const lbl = svgEl('text', {
+    x: lx + 0.6, y: ly + 0.15,
+    'text-anchor': 'middle', fill: '#c9a84c', 'font-size': 0.75,
+    'font-family': 'sans-serif', 'font-weight': 700,
+  });
+  lbl.textContent = dist.toFixed(1) + '"';
+  overlay.appendChild(lbl);
+
+  // Firing arc — weapon range projected from drag destination
+  if (dragState.maxSightRange > 0) {
+    const { arcRgb, maxSightRange } = dragState;
+    overlay.appendChild(svgEl('circle', {
+      cx: tx, cy: ty, r: maxSightRange,
+      fill: `rgba(${arcRgb},0.10)`,
+      stroke: `rgba(${arcRgb},0.30)`,
+      'stroke-width': 0.12, 'stroke-dasharray': '0.4 0.25',
+    }));
+    const myPlayer = (gameData.operatives[dragState.opId] || {}).player;
+    for (const enemy of Object.values(gameData.operatives || {})) {
+      if (enemy.player === myPlayer || enemy.wounds <= 0 || enemy.x < 0) continue;
+      if (Math.hypot(enemy.x - tx, enemy.y - ty) <= maxSightRange) {
+        overlay.appendChild(svgEl('circle', {
+          cx: enemy.x, cy: enemy.y, r: TOKEN_R + 0.12,
+          fill: 'none', stroke: 'rgba(255,220,50,0.60)', 'stroke-width': 0.14,
+        }));
+      }
+    }
+  }
+}
+
+async function commitMove(tx, ty, apCost, playerSlot) {
+  if (!activation) return;
+  const opId = activation.opId;
+
+  await db.ref(`games-kt/${gameId}/operatives/${opId}`).update({ x: tx, y: ty });
+
+  activation.apSpent = true;
+  activation.apRemaining -= apCost;
+  if (activation.apRemaining <= 0) {
+    await endActivation(playerSlot);
+  } else {
+    reRenderPhaseBar();
+  }
+}
+
+function setupDragMove(svg, playerSlot, unitG, overlay) {
+  svg.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    cancelActivation();
+  });
+
+  svg.addEventListener('click', e => {
+    if (dragState || shootState) return;
+    // Walk up from event target to find an op-token group.
+    let node = e.target;
+    while (node && node !== svg) {
+      if (node.classList?.contains('op-token')) break;
+      node = node.parentElement;
+    }
+    const opId = node?.classList?.contains('op-token') ? node.getAttribute('data-op-id') : null;
+
+    if (opId) {
+      const op = (gameData.operatives || {})[opId];
+      // Already selected with no AP spent — deselect on second click.
+      if (activation?.opId === opId && !activation.apSpent) { cancelActivation(); return; }
+      // My ready operative, my turn to activate, nothing currently active.
+      const myTurn = gameData.turn?.activatingPlayer === playerSlot;
+      if (op?.player === playerSlot && op.ready && op.wounds > 0 && myTurn && !activation) {
+        activateOperative(opId, playerSlot);
+      }
+    } else if (activation && !activation.apSpent) {
+      // Empty-space click — deselect with no AP cost.
+      cancelActivation();
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RADIAL ACTION MENU
+// ═══════════════════════════════════════════════════════════
+
+function showRadialMenu(opId, playerSlot) {
+  const op = (gameData.operatives || {})[opId];
+  if (!op || op.x < 0) { hideRadialMenu(); return; }
+
+  const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
+  const svg = boardWrap?.querySelector('svg.board-svg');
+  if (!svg) { hideRadialMenu(); return; }
+
+  const pt = svg.createSVGPoint();
+  pt.x = op.x; pt.y = op.y;
+  const screen = pt.matrixTransform(svg.getScreenCTM());
+
+  const menu = document.getElementById('radial-menu');
+  if (!menu) return;
+
+  const ap        = activation?.apRemaining ?? 0;
+  const ranged    = getRangedWeapons(op);
+  const melee     = getMeleeWeapons(op);
+  const conceal   = op.order === 'conceal';
+  const hasMoved  = activation?.hasMoved  || false;
+  const hasDashed = activation?.hasDashed || false;
+  const hasShot   = activation?.hasShot   || false;
+  const hasFought = activation?.hasFought || false;
+
+  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal;
+  const fightDisabled = ap < 1 || !melee.length  || !hasFightTarget(op) || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
+  const moveDisabled  = ap < 1 || hasMoved;
+  const dashDisabled  = ap < 1 || hasDashed;
+  const orderDisabled = hasShot;
+
+  const R    = 72;
+  const bSz  = 50;
+  const bOff = -Math.round(bSz / 2);
+  const eSz  = 44;
+  const eOff = -Math.round(eSz / 2);
+
+  const orderLabel = op.order === 'engage' ? 'Conceal' : 'Engage';
+  const orderCls   = op.order === 'engage' ? 'r-conceal' : 'r-engage';
+
+  // locks: comma-sep data-action ids that become restricted if this action is taken
+  const actions = [
+    { id: 'order',  label: orderLabel, ap: null, angle: -90,
+      cls: `r-order ${orderCls}`, fn: `toggleOrder('${opId}','${playerSlot}')`,
+      disabled: orderDisabled, locks: '',
+      title: orderDisabled ? 'Cannot switch to Conceal after shooting' : '' },
+    { id: 'move',   label: 'Move', ap: 1, angle: -30, cls: '',
+      fn: `startMove('${playerSlot}',false)`, disabled: moveDisabled, locks: '',
+      title: hasMoved ? 'Already moved this activation' : '' },
+    { id: 'dash',   label: 'Dash', ap: 1, angle: 30, cls: '',
+      fn: `startMove('${playerSlot}',true)`, disabled: dashDisabled, locks: 'charge',
+      title: hasDashed ? 'Already dashed' : '3″ — combine with Move for max distance' },
+    { id: 'shoot',  label: 'Shoot', ap: 1, angle: 90, cls: 'r-shoot',
+      fn: `startShoot('${playerSlot}')`, disabled: shootDisabled, locks: 'order',
+      title: conceal ? 'Locked: Conceal order' : '' },
+    { id: 'fight',  label: 'Fight',  ap: 1, angle: 150, cls: 'r-fight',
+      fn: `startFight('${playerSlot}')`, disabled: fightDisabled, locks: '',
+      title: hasFought ? 'Already fought this activation' : !hasFightTarget(op) ? 'No enemies in control range (1")' : !melee.length ? 'No melee weapons' : '' },
+    { id: 'charge', label: 'Charge', ap: 1, angle: 210, cls: '', fn: '',
+      disabled: true, locks: 'shoot',
+      title: conceal ? 'Locked: Conceal order' : 'Coming in KT-3' },
+  ];
+
+  const items = actions.map(a => {
+    const rad = a.angle * Math.PI / 180;
+    const ix  = Math.round(R * Math.cos(rad)) + bOff;
+    const iy  = Math.round(R * Math.sin(rad)) + bOff;
+    const handler = !a.disabled && a.fn ? `onclick="${a.fn}"` : '';
+    const titleAttr = a.title ? `title="${a.title}"` : '';
+    return `<button class="radial-item ${a.cls}" style="left:${ix}px;top:${iy}px;" ${a.disabled ? 'disabled' : ''} ${handler} data-action="${a.id}" data-locks="${a.locks}" ${titleAttr}>
+      <span class="ri-label">${a.label}</span>${a.ap != null ? `<span class="ri-ap">${a.ap}AP</span>` : ''}
+    </button>`;
+  }).join('');
+
+  menu.innerHTML = `
+    <button class="radial-end" style="left:${eOff}px;top:${eOff}px;width:${eSz}px;height:${eSz}px;" onclick="endActivation('${playerSlot}')">End</button>
+    ${items}
+  `;
+
+  // Hover restriction display: show red X badge on buttons that would be locked
+  menu.querySelectorAll('.radial-item[data-locks]').forEach(btn => {
+    const lockIds = (btn.dataset.locks || '').split(',').filter(Boolean);
+    if (!lockIds.length) return;
+    btn.addEventListener('mouseenter', () => {
+      lockIds.forEach(id => {
+        menu.querySelectorAll(`[data-action="${id}"]`).forEach(b => b.classList.add('restriction-target'));
+      });
+    });
+    btn.addEventListener('mouseleave', () => {
+      menu.querySelectorAll('.restriction-target').forEach(b => b.classList.remove('restriction-target'));
+    });
+  });
+
+  menu.style.left = screen.x + 'px';
+  menu.style.top  = screen.y + 'px';
+  menu.classList.add('visible');
+}
+
+function hideRadialMenu() {
+  const menu = document.getElementById('radial-menu');
+  if (!menu) return;
+  menu.classList.remove('visible');
+  menu.innerHTML = '';
+}
+
+function refreshRadialIfActive() {
+  if (activation && !dragState && !shootState && !fightState) {
+    showRadialMenu(activation.opId, activation.playerSlot);
+  } else {
+    hideRadialMenu();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SHOOT ACTION — KT-2 Part 2
+// ═══════════════════════════════════════════════════════════
+
+function parseRng(s)  { return parseInt(s  || '0') || 0; }
+function parseHit(s)  { return parseInt(s  || '4') || 4; }
+function parseDmgPair(s) {
+  const p = String(s || '1/1').split('/').map(v => parseInt(v) || 1);
+  return [p[0] || 1, p[1] || p[0] || 1]; // [normalDmg, critDmg]
+}
+function isInjuredOp(op) { return op.wounds > 0 && op.wounds <= op.maxWounds / 2; }
+function getRangedWeapons(op) {
+  return (op.weapons || []).filter(w => parseRng(w.profiles?.RNG) > 0);
+}
+function getMeleeWeapons(op) {
+  return (op.weapons || []).filter(w => w.type === 'melee');
+}
+function getDefaultMeleeWeapon(op) {
+  const melee = getMeleeWeapons(op);
+  return melee.find(w => w.isDefault) || melee[0] || null;
+}
+function getMaxSightRange(op) {
+  let max = 0;
+  for (const w of (op.weapons || [])) {
+    if (w.type !== 'ranged') continue;
+    let r = parseRng(w.profiles?.RNG);
+    if (!r) {
+      const m = /Range\s+(\d+)/i.exec(w.profiles?.WR || '');
+      if (m) r = parseInt(m[1]) || 0;
+    }
+    if (r > max) max = r;
+  }
+  return max;
+}
+function hasFightTarget(op) {
+  return Object.values(gameData.operatives || {}).some(o =>
+    o.player !== op.player && o.wounds > 0 && o.x >= 0 &&
+    Math.hypot(o.x - op.x, o.y - op.y) <= 1
+  );
+}
+
+// Returns { valid, reason, inCover }
+function getShootValidity(attacker, target, weapon) {
+  const terrain = gameData.terrain || {};
+  const range   = parseRng(weapon.profiles.RNG);
+  const dist    = Math.hypot(target.x - attacker.x, target.y - attacker.y);
+
+  if (target.wounds <= 0)         return { valid: false, reason: 'Incapacitated', inCover: false };
+  if (target.order === 'conceal') return { valid: false, reason: 'CONCEALED',     inCover: false };
+  if (dist > range)               return { valid: false, reason: 'Out of range',  inCover: false };
+
+  const los = rayResult(attacker.x, attacker.y, target.x, target.y, terrain);
+  if (los === 'blocked')          return { valid: false, reason: 'LOS blocked',   inCover: false };
+
+  // Don't shoot into melee: attacker has a friendly within 1" of target
+  const friendlyInMelee = Object.values(gameData.operatives || {}).some(o =>
+    o.player === attacker.player && o.id !== attacker.id && o.x >= 0 &&
+    o.wounds > 0 && Math.hypot(o.x - target.x, o.y - target.y) < 1
+  );
+  if (friendlyInMelee) return { valid: false, reason: 'Friendly in melee', inCover: false };
+
+  return { valid: true, reason: null, inCover: los === 'cover' };
+}
+
+function startShoot(playerSlot) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op || op.x < 0) return;
+  const ranged = getRangedWeapons(op);
+  if (!ranged.length) return;
+  hideRadialMenu();
+  if (ranged.length === 1) { beginShootDrag(playerSlot, ranged[0]); return; }
+  shootWeapon = 'picking';
+  reRenderPhaseBar();
+}
+
+function pickWeaponForShoot(playerSlot, idx) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  const w  = getRangedWeapons(op)[idx];
+  if (w) beginShootDrag(playerSlot, w);
+}
+
+function cancelShoot() {
+  shootWeapon = null;
+  if (shootState) {
+    clearEl(shootState.overlay);
+    shootState.svg.style.cursor = '';
+    shootState = null;
+  }
+  const ps = activation?.playerSlot;
+  if (gameId) db.ref(`games-kt/${gameId}/pendingShot`).remove();
+  // AP already spent on target confirmation — if exhausted, end activation
+  if (activation && activation.apSpent && activation.apRemaining <= 0) {
+    endActivation(ps);
+  } else {
+    reRenderPhaseBar();
+    reRender();
+  }
+}
+
+function beginShootDrag(playerSlot, weapon) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op || op.x < 0) return;
+
+  shootWeapon = weapon;
+  reRenderPhaseBar();
+
+  const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
+  const svg = boardWrap?.querySelector('svg.board-svg');
+  if (!svg) return;
+
+  const overlay = svg.querySelector(`#overlay-${playerSlot}`);
+  clearEl(overlay);
+  shootState = { opId: op.id, weapon, svg, overlay, playerSlot };
+  svg.style.cursor = 'crosshair';
+
+  function onMouseMove(e) {
+    if (!shootState) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    updateShootOverlay(pt.matrixTransform(svg.getScreenCTM().inverse()));
+  }
+
+  function onMouseUp(e) {
+    if (!shootState) return;
+    svg.removeEventListener('mousemove', onMouseMove);
+    svg.removeEventListener('mouseup',   onMouseUp);
+
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+
+    const attacker = (gameData.operatives || {})[shootState.opId];
+    const target   = Object.values(gameData.operatives || {}).find(o =>
+      o.player !== attacker?.player && o.wounds > 0 && o.x >= 0 &&
+      Math.hypot(o.x - p.x, o.y - p.y) < TOKEN_R * 1.5
+    );
+
+    const ss = shootState;
+    shootState = null;
+    clearEl(ss.overlay);
+    ss.svg.style.cursor = '';
+
+    if (target && attacker) {
+      const v = getShootValidity(attacker, target, weapon);
+      if (v.valid) { confirmShootTarget(attacker, target, weapon, playerSlot, v.inCover); return; }
+    }
+    shootWeapon = null;
+    reRenderPhaseBar();
+  }
+
+  svg.addEventListener('mousemove', onMouseMove);
+  svg.addEventListener('mouseup',   onMouseUp);
+}
+
+function updateShootOverlay(p) {
+  if (!shootState) return;
+  const { opId, weapon, overlay } = shootState;
+  const attacker = (gameData.operatives || {})[opId];
+  if (!attacker) return;
+
+  clearEl(overlay);
+  const range = parseRng(weapon.profiles.RNG);
+  const mx = p.x, my = p.y;
+
+  // Weapon range circle
+  overlay.appendChild(svgEl('circle', {
+    cx: attacker.x, cy: attacker.y, r: range,
+    fill: 'rgba(200,80,50,0.04)', stroke: 'rgba(200,80,50,0.25)',
+    'stroke-width': 0.1, 'stroke-dasharray': '0.5 0.3',
+  }));
+
+  // Nearest hovered enemy
+  const hoverTarget = Object.values(gameData.operatives || {}).find(o =>
+    o.player !== attacker.player && o.wounds > 0 && o.x >= 0 &&
+    Math.hypot(o.x - mx, o.y - my) < TOKEN_R * 1.5
+  );
+
+  let stroke = 'rgba(160,160,180,0.5)', dash = '0.3 0.2', lw = 0.12, lc = 'rgba(160,160,180,0.9)';
+  let ex = mx, ey = my, labelTxt = Math.hypot(mx - attacker.x, my - attacker.y).toFixed(1) + '"';
+
+  if (hoverTarget) {
+    ex = hoverTarget.x; ey = hoverTarget.y;
+    const v = getShootValidity(attacker, hoverTarget, weapon);
+    const tDist = Math.hypot(ex - attacker.x, ey - attacker.y).toFixed(1);
+    if (!v.valid) {
+      stroke = '#e74c3c'; dash = '0.35 0.2'; lw = 0.15; lc = '#e74c3c';
+      labelTxt = v.reason || 'Invalid';
+    } else if (v.inCover) {
+      stroke = '#e67e22'; dash = 'none'; lw = 0.2; lc = '#e67e22';
+      labelTxt = tDist + '" (Cover)';
+    } else {
+      stroke = '#27ae60'; dash = 'none'; lw = 0.2; lc = '#27ae60';
+      labelTxt = tDist + '"';
+    }
+    const ringCol = !v.valid ? '#e74c3c' : v.inCover ? '#e67e22' : '#f1c40f';
+    overlay.appendChild(svgEl('circle', {
+      cx: ex, cy: ey, r: TOKEN_R * 1.65,
+      fill: 'none', stroke: ringCol, 'stroke-width': 0.14, opacity: '0.85',
+    }));
+  }
+
+  const lineAttrs = { x1: attacker.x, y1: attacker.y, x2: ex, y2: ey, stroke, 'stroke-width': lw };
+  if (dash !== 'none') lineAttrs['stroke-dasharray'] = dash;
+  overlay.appendChild(svgEl('line', lineAttrs));
+
+  const midX = (attacker.x + ex) / 2, midY = (attacker.y + ey) / 2 - 0.55;
+  const lblW  = Math.max(1.4, labelTxt.length * 0.165 + 0.4);
+  overlay.appendChild(svgEl('rect', { x: midX - lblW/2, y: midY - 0.35, width: lblW, height: 0.72, fill: '#0a0a14', rx: 0.15, opacity: '0.9' }));
+  const lbl = svgEl('text', { x: midX, y: midY + 0.12, 'text-anchor': 'middle', fill: lc, 'font-size': 0.6, 'font-family': 'sans-serif', 'font-weight': 700 });
+  lbl.textContent = labelTxt;
+  overlay.appendChild(lbl);
+}
+
+async function confirmShootTarget(attacker, target, weapon, playerSlot, inCover) {
+  if (!activation) return;
+  activation.hasShot      = true;
+  activation.apSpent      = true;
+  activation.apRemaining -= 1;
+
+  await db.ref(`games-kt/${gameId}/pendingShot`).set({
+    attackerOpId: attacker.id,
+    targetOpId:   target.id,
+    attackerSlot: playerSlot,
+    weapon,
+    inCover,
+    useCover:     false,
+    coverDecided: !inCover,  // no cover = decision is instant
+    phase:        'coverChoice',
+  });
+  shootWeapon = null;
+  reRenderPhaseBar();
+}
+
+async function decideCover(useIt) {
+  const p = gameData.pendingShot;
+  if (!p || !p.inCover) return;
+  await db.ref(`games-kt/${gameId}/pendingShot`).update({ useCover: useIt, coverDecided: true });
+}
+
+async function rollShot(playerSlot) {
+  const p = gameData.pendingShot;
+  if (!p || p.phase !== 'coverChoice' || !p.coverDecided) return;
+
+  const attacker = (gameData.operatives || {})[p.attackerOpId];
+  const target   = (gameData.operatives || {})[p.targetOpId];
+  if (!attacker || !target) return;
+
+  const w          = p.weapon;
+  const atkCount   = parseInt(w.profiles.ATK) || 1;
+  const hitStat    = parseHit(w.profiles.HIT);
+  const effectiveHit = isInjuredOp(attacker) ? Math.min(hitStat + 1, 6) : hitStat;
+  const [normalDmg, critDmg] = parseDmgPair(w.profiles.DMG);
+  const saveStat   = target.save || 5;
+  const defCount   = target.def  || 3;
+
+  const atkRolls = Array.from({ length: atkCount }, () => Math.ceil(Math.random() * 6));
+  let   defRolls = Array.from({ length: defCount }, () => Math.ceil(Math.random() * 6));
+
+  if (p.useCover && defCount > 0) {
+    // Convert the lowest non-crit die to an auto normal save
+    let minIdx = -1;
+    for (let i = 0; i < defRolls.length; i++) {
+      if (defRolls[i] !== 6 && (minIdx < 0 || defRolls[i] < defRolls[minIdx])) minIdx = i;
+    }
+    if (minIdx >= 0) defRolls[minIdx] = 'auto';
+  }
+
+  const critHits    = atkRolls.filter(d => d === 6).length;
+  const normalHits  = atkRolls.filter(d => d !== 6 && d !== 1 && d >= effectiveHit).length;
+  const critSaves   = defRolls.filter(d => d === 6).length;
+  const normalSaves = defRolls.filter(d => d === 'auto' || (typeof d === 'number' && d !== 6 && d >= saveStat)).length;
+
+  let rC = critHits, rN = normalHits, rCS = critSaves, rNS = normalSaves;
+  const csForCrit = Math.min(rC, rCS); rC -= csForCrit; rCS -= csForCrit;
+  while (rC > 0 && rNS >= 2) { rC--; rNS -= 2; }
+  const csForNorm = Math.min(rN, rCS); rN -= csForNorm;
+  const nsForNorm = Math.min(rN, rNS); rN -= nsForNorm;
+
+  const totalDamage = rC * critDmg + rN * normalDmg;
+
+  playBeamOnly(p, attacker, target);
+
+  await db.ref(`games-kt/${gameId}/pendingShot`).update({
+    phase: 'rolled', atkRolls, defRolls,
+    remainingCritHits: rC, remainingNormalHits: rN,
+    totalDamage, normalDmg, critDmg, effectiveHit,
+  });
+}
+
+async function confirmShotDamage(playerSlot) {
+  const p = gameData.pendingShot;
+  if (!p || p.phase !== 'rolled') return;
+  const target = (gameData.operatives || {})[p.targetOpId];
+  if (!target) return;
+
+  const newWounds = Math.max(0, (target.wounds || 0) - (p.totalDamage || 0));
+  await db.ref(`games-kt/${gameId}`).update({
+    [`operatives/${target.id}/wounds`]: newWounds,
+    pendingShot: null,
+  });
+
+  if (activation && activation.apRemaining <= 0) {
+    await endActivation(playerSlot);
+  } else {
+    reRenderPhaseBar();
+  }
+}
+
+// ── Shoot resolution render helpers ──────────────────────────
+
+function renderDicePool(rolls, isAtk, hitStat, saveStat) {
+  if (!rolls || !rolls.length) return '<span style="font-size:11px;color:var(--text-dim);">—</span>';
+  const g = { crit: [], hit: [], miss: [], critSave: [], normSave: [], auto: [], fail: [] };
+  rolls.forEach(d => {
+    if (isAtk) {
+      if (d === 6)                             g.crit.push(d);
+      else if (d !== 1 && d >= hitStat)       g.hit.push(d);
+      else                                     g.miss.push(d);
+    } else {
+      if (d === 'auto')                        g.auto.push(d);
+      else if (d === 6)                        g.critSave.push(d);
+      else if (typeof d === 'number' && d >= saveStat) g.normSave.push(d);
+      else                                     g.fail.push(d);
+    }
+  });
+  const defs = isAtk
+    ? [['crit','CRIT','#e74c3c'],['hit','HIT','#27ae60'],['miss','MISS','var(--text-dim)']]
+    : [['critSave','CRIT SAVE','#e74c3c'],['normSave','SAVE','#27ae60'],['auto','COVER','#e67e22'],['fail','FAIL','var(--text-dim)']];
+  return defs.map(([key, lbl, col]) => {
+    const dice = g[key];
+    if (!dice.length) return '';
+    return `<div class="dice-group">
+      <div class="dice-group-dice">${dice.map(d => `<span style="color:${col}">${d === 'auto' ? `<span style="font-size:18px;line-height:1">★</span>` : dieFaceSVG(d, 22)}</span>`).join('')}</div>
+      <div class="dice-group-label" style="color:${col}">${lbl}</div>
+    </div><div class="dice-separator"></div>`;
+  }).join('');
+}
+
+function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp) {
+  const w        = pending.weapon || {};
+  const attName  = attOp?.name || '?';
+  const tgtName  = tgtOp?.name || '?';
+  const hitStat  = pending.effectiveHit || parseHit(w.profiles?.HIT);
+  const saveStat = tgtOp?.save || 5;
+
+  // Cover row (only if target is in cover)
+  let coverHtml = '';
+  if (pending.inCover) {
+    if (!pending.coverDecided) {
+      coverHtml = !iAmAttacker
+        ? `<div style="display:flex;flex-direction:column;gap:6px;">
+             <span style="font-size:11px;color:var(--gold);">You are in cover — use it? Convert one defence die to an automatic normal success, or roll all dice normally.</span>
+             <div style="display:flex;gap:8px;">
+               <button class="action-btn" onclick="decideCover(true)" style="border-color:var(--green);color:var(--green);">Use Cover (+1 auto save)</button>
+               <button class="action-btn" onclick="decideCover(false)">Roll Normally</button>
+             </div>
+           </div>`
+        : `<span style="font-size:11px;color:var(--text-dim);">Cover: waiting for defender's choice…</span>`;
+    } else {
+      const cc = pending.useCover ? '#e67e22' : 'var(--text-dim)';
+      coverHtml = `<span style="font-size:11px;color:${cc};">Cover: ${pending.useCover ? 'USED (+1 auto save)' : 'Not used'}</span>`;
+    }
+  }
+
+  const rollBtn = (pending.phase === 'coverChoice' && pending.coverDecided && iAmAttacker)
+    ? `<button class="action-btn" style="border-color:var(--green);color:var(--green);" onclick="rollShot('${playerSlot}')">Roll Dice</button>`
+    : '';
+
+  const cancelBtn = (iAmAttacker && pending.phase !== 'rolled')
+    ? `<button class="btn" onclick="cancelShoot()">Cancel Shot</button>`
+    : '';
+
+  let diceHtml = '', resultHtml = '';
+  if (pending.phase === 'rolled' && pending.atkRolls) {
+    const animating  = !!diceAnimState;
+    const displayAtk = animating ? (diceAnimState.displayAtk || pending.atkRolls) : pending.atkRolls;
+    const displayDef = animating ? (diceAnimState.displayDef || pending.defRolls) : pending.defRolls;
+
+    diceHtml = `
+      <div style="display:flex;flex-direction:column;gap:6px;width:100%;">
+        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;">Attack (${w.profiles?.ATK || '?'} dice, hit on ${hitStat}+${isInjuredOp(attOp) ? ' — Injured' : ''})</div>
+        <div class="dice-pool">${renderDicePool(displayAtk, true, hitStat, saveStat)}</div>
+        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;">Defence (${tgtOp?.def || 3} dice, save on ${saveStat}+${pending.useCover ? ' + cover' : ''})</div>
+        <div class="dice-pool">${renderDicePool(displayDef, false, hitStat, saveStat)}</div>
+      </div>`;
+
+    if (!animating) {
+      const parts = [];
+      if (pending.remainingCritHits > 0)   parts.push(`${pending.remainingCritHits}× crit (${pending.critDmg} dmg)`);
+      if (pending.remainingNormalHits > 0) parts.push(`${pending.remainingNormalHits}× hit (${pending.normalDmg} dmg)`);
+      const dmgStr = parts.length ? parts.join(' + ') + ` = ${pending.totalDamage} wound${pending.totalDamage !== 1 ? 's' : ''}` : 'All hits saved — 0 damage';
+      resultHtml = `<div class="shoot-result">${dmgStr}</div>`;
+      resultHtml += iAmAttacker
+        ? `<button class="btn btn-primary" onclick="confirmShotDamage('${playerSlot}')">Apply ${pending.totalDamage} Damage to ${escHtml(tgtName)}</button>`
+        : `<span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`;
+    }
+  }
+
+  const label = iAmAttacker ? 'Shooting' : 'Incoming Shot';
+  const vs    = iAmAttacker
+    ? `${escHtml(w.name || '?')} → ${escHtml(tgtName)} &nbsp;|&nbsp; ATK ${w.profiles?.ATK || '?'} / ${w.profiles?.HIT || '?'} / ${w.profiles?.DMG || '?'}`
+    : `${escHtml(w.name || '?')} ← ${escHtml(attName)} &nbsp;|&nbsp; DEF ${tgtOp?.def || 3}d / SAVE ${saveStat}+`;
+
+  return `
+    <span class="phase-bar-label">${label}</span>
+    <div class="phase-bar-body">
+      <div class="shoot-panel">
+        <div class="shoot-panel-header">
+          <strong style="font-size:13px;">${escHtml(iAmAttacker ? attName : tgtName)}</strong>
+          <span class="shoot-stats"><span>${vs}</span></span>
+          ${cancelBtn}
+        </div>
+        ${coverHtml}
+        ${rollBtn}
+        ${diceHtml}
+        ${resultHtml}
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FIGHT ACTION — KT-2 Part 3
+// ═══════════════════════════════════════════════════════════
+
+function startFight(playerSlot) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op || op.x < 0) return;
+  const melee = getMeleeWeapons(op);
+  if (!melee.length) return;
+  hideRadialMenu();
+  if (melee.length === 1) { beginFightDrag(playerSlot, melee[0]); return; }
+  fightWeapon = 'picking';
+  reRenderPhaseBar();
+}
+
+function pickWeaponForFight(playerSlot, idx) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  const w  = getMeleeWeapons(op)[idx];
+  if (w) beginFightDrag(playerSlot, w);
+}
+
+function cancelFight() {
+  fightWeapon = null;
+  if (fightState) {
+    clearEl(fightState.overlay);
+    fightState.svg.style.cursor = '';
+    fightState = null;
+  }
+  reRenderPhaseBar();
+  reRender();
+}
+
+function beginFightDrag(playerSlot, weapon) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op || op.x < 0) return;
+
+  fightWeapon = weapon;
+  reRenderPhaseBar();
+
+  const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
+  const svg = boardWrap?.querySelector('svg.board-svg');
+  if (!svg) return;
+
+  const overlay = svg.querySelector(`#overlay-${playerSlot}`);
+  clearEl(overlay);
+  fightState = { opId: op.id, weapon, svg, overlay, playerSlot };
+  svg.style.cursor = 'crosshair';
+
+  function onMouseMove(e) {
+    if (!fightState) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    updateFightOverlay(pt.matrixTransform(svg.getScreenCTM().inverse()));
+  }
+
+  function onMouseUp(e) {
+    if (!fightState) return;
+    svg.removeEventListener('mousemove', onMouseMove);
+    svg.removeEventListener('mouseup', onMouseUp);
+
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+
+    const attacker = (gameData.operatives || {})[fightState.opId];
+    const target = Object.values(gameData.operatives || {}).find(o =>
+      o.player !== attacker?.player && o.wounds > 0 && o.x >= 0 &&
+      Math.hypot(o.x - p.x, o.y - p.y) < TOKEN_R * 1.5
+    );
+
+    const fs = fightState;
+    fightState = null;
+    clearEl(fs.overlay);
+    fs.svg.style.cursor = '';
+
+    if (target && attacker && Math.hypot(target.x - attacker.x, target.y - attacker.y) <= 1) {
+      confirmFightTarget(attacker, target, weapon, playerSlot);
+      return;
+    }
+    fightWeapon = null;
+    reRenderPhaseBar();
+    reRender();
+  }
+
+  svg.addEventListener('mousemove', onMouseMove);
+  svg.addEventListener('mouseup', onMouseUp);
+}
+
+function updateFightOverlay(p) {
+  if (!fightState) return;
+  const { opId, overlay } = fightState;
+  const attacker = (gameData.operatives || {})[opId];
+  if (!attacker) return;
+
+  clearEl(overlay);
+
+  // 1" control range circle
+  overlay.appendChild(svgEl('circle', {
+    cx: attacker.x, cy: attacker.y, r: 1,
+    fill: 'rgba(200,80,80,0.07)', stroke: 'rgba(200,80,80,0.3)',
+    'stroke-width': 0.1, 'stroke-dasharray': '0.4 0.25',
+  }));
+
+  const hoverTarget = Object.values(gameData.operatives || {}).find(o =>
+    o.player !== attacker.player && o.wounds > 0 && o.x >= 0 &&
+    Math.hypot(o.x - p.x, o.y - p.y) < TOKEN_R * 1.5
+  );
+
+  if (hoverTarget) {
+    const dist  = Math.hypot(hoverTarget.x - attacker.x, hoverTarget.y - attacker.y);
+    const valid = dist <= 1;
+    overlay.appendChild(svgEl('circle', {
+      cx: hoverTarget.x, cy: hoverTarget.y, r: TOKEN_R * 1.65,
+      fill: 'none', stroke: valid ? '#e74c3c' : '#666',
+      'stroke-width': valid ? 0.18 : 0.1, opacity: '0.85',
+    }));
+    const lineAttrs = {
+      x1: attacker.x, y1: attacker.y, x2: hoverTarget.x, y2: hoverTarget.y,
+      stroke: valid ? '#e74c3c' : 'rgba(100,100,100,0.35)',
+      'stroke-width': 0.12, 'stroke-dasharray': '0.35 0.2',
+    };
+    overlay.appendChild(svgEl('line', lineAttrs));
+    const dTxt = valid ? 'FIGHT' : dist.toFixed(1) + '" — out of reach';
+    const midX = (attacker.x + hoverTarget.x) / 2;
+    const midY = (attacker.y + hoverTarget.y) / 2 - 0.55;
+    const lblW = Math.max(1.4, dTxt.length * 0.165 + 0.4);
+    overlay.appendChild(svgEl('rect', { x: midX - lblW/2, y: midY - 0.35, width: lblW, height: 0.72, fill: '#0a0a14', rx: 0.15, opacity: '0.9' }));
+    const lbl = svgEl('text', { x: midX, y: midY + 0.12, 'text-anchor': 'middle', fill: valid ? '#e74c3c' : '#888', 'font-size': 0.6, 'font-family': 'sans-serif', 'font-weight': 700 });
+    lbl.textContent = dTxt;
+    overlay.appendChild(lbl);
+  }
+}
+
+async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
+  if (!activation) return;
+
+  const defWeapon = getDefaultMeleeWeapon(target);
+
+  activation.hasFought    = true;
+  activation.apSpent      = true;
+  activation.apRemaining -= 1;
+
+  const atkHitStat      = parseHit(atkWeapon.profiles.HIT);
+  const defHitStat      = defWeapon ? parseHit(defWeapon.profiles.HIT) : 4;
+  const effectiveAtkHit = isInjuredOp(attacker) ? Math.min(atkHitStat + 1, 6) : atkHitStat;
+  const effectiveDefHit = isInjuredOp(target)   ? Math.min(defHitStat + 1, 6) : defHitStat;
+  const [atkNDmg, atkCDmg] = parseDmgPair(atkWeapon.profiles.DMG);
+  const [defNDmg, defCDmg] = defWeapon ? parseDmgPair(defWeapon.profiles.DMG) : [0, 0];
+
+  const atkCount = parseInt(atkWeapon.profiles.ATK) || 1;
+  const defCount = defWeapon ? (parseInt(defWeapon.profiles.ATK) || 1) : 0;
+
+  const atkRolls = Array.from({ length: atkCount }, () => Math.ceil(Math.random() * 6));
+  const defRolls = Array.from({ length: defCount }, () => Math.ceil(Math.random() * 6));
+
+  // Classify attacker dice
+  const atkAnnotated = atkRolls.map(d => {
+    if (d === 6)                            return 'crit';
+    if (d !== 1 && d >= effectiveAtkHit)   return 'hit';
+    return 'miss';
+  });
+
+  // Classify defender dice (before blocking)
+  const defRaw = defRolls.map(d => {
+    if (d === 6)                            return 'crit';
+    if (d !== 1 && d >= effectiveDefHit)   return 'hit';
+    return 'miss';
+  });
+
+  // Auto-resolve: attacker always strikes; defender blocks optimally then strikes with remainder
+  let rAtkCrits = atkAnnotated.filter(c => c === 'crit').length;
+  let rAtkHits  = atkAnnotated.filter(c => c === 'hit').length;
+  let rDefCrits = defRaw.filter(c => c === 'crit').length;
+  let rDefHits  = defRaw.filter(c => c === 'hit').length;
+
+  // Defender crits block attacker crits first, then normals
+  const dCritBlockC = Math.min(rDefCrits, rAtkCrits);
+  rDefCrits -= dCritBlockC; rAtkCrits -= dCritBlockC;
+  const dCritBlockH = Math.min(rDefCrits, rAtkHits);
+  rDefCrits -= dCritBlockH; rAtkHits -= dCritBlockH;
+  // Defender hits block attacker normals
+  const dHitBlockH = Math.min(rDefHits, rAtkHits);
+  rDefHits -= dHitBlockH; rAtkHits -= dHitBlockH;
+
+  // Remaining defender dice strike attacker
+  const defStrikeCrits = rDefCrits;
+  const defStrikeHits  = rDefHits;
+
+  const dmgToDefender = (atkAnnotated.filter(c=>c==='crit').length - dCritBlockC) * atkCDmg +
+                        (atkAnnotated.filter(c=>c==='hit').length  - dCritBlockH - dHitBlockH) * atkNDmg;
+  const dmgToAttacker = defStrikeCrits * defCDmg + defStrikeHits * defNDmg;
+
+  // Annotate defender dice for display
+  let defCritBlockLeft = dCritBlockC + dCritBlockH;
+  let defHitBlockLeft  = dHitBlockH;
+  const defAnnotated = defRaw.map(c => {
+    if (c === 'crit' && defCritBlockLeft > 0) { defCritBlockLeft--; return 'crit-block'; }
+    if (c === 'hit'  && defHitBlockLeft  > 0) { defHitBlockLeft--;  return 'hit-block'; }
+    if (c === 'crit') return 'crit-strike';
+    if (c === 'hit')  return 'hit-strike';
+    return 'miss';
+  });
+
+  await db.ref(`games-kt/${gameId}/pendingFight`).set({
+    attackerOpId: attacker.id,
+    defenderOpId: target.id,
+    attackerSlot: playerSlot,
+    atkWeapon,
+    defWeapon: defWeapon || null,
+    atkHitStat: effectiveAtkHit,
+    defHitStat: effectiveDefHit,
+    atkNDmg, atkCDmg,
+    defNDmg, defCDmg,
+    phase: 'confirm',
+    atkRolls,
+    defRolls,
+    atkAnnotated,
+    defAnnotated,
+    dmgToDefender,
+    dmgToAttacker,
+  });
+
+  fightWeapon = null;
+  reRenderPhaseBar();
+}
+
+async function confirmFightDamage(playerSlot) {
+  const p = gameData.pendingFight;
+  if (!p || p.phase !== 'confirm') return;
+  if (p.attackerSlot !== playerSlot) return;
+
+  const attacker = (gameData.operatives || {})[p.attackerOpId];
+  const defender = (gameData.operatives || {})[p.defenderOpId];
+  if (!attacker || !defender) return;
+
+  const newAtkWounds = Math.max(0, (attacker.wounds || 0) - (p.dmgToAttacker || 0));
+  const newDefWounds = Math.max(0, (defender.wounds || 0) - (p.dmgToDefender || 0));
+
+  await db.ref(`games-kt/${gameId}`).update({
+    [`operatives/${attacker.id}/wounds`]: newAtkWounds,
+    [`operatives/${defender.id}/wounds`]: newDefWounds,
+    pendingFight: null,
+  });
+
+  if (activation && activation.apRemaining <= 0) {
+    await endActivation(playerSlot);
+  } else {
+    reRenderPhaseBar();
+  }
+}
+
+// ── Fight resolution render (auto-resolve) ─────────────────
+
+function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp, defOp) {
+  const atkRolls    = p.atkRolls    || [];
+  const defRolls    = p.defRolls    || [];
+  const atkAnnot    = p.atkAnnotated || [];
+  const defAnnot    = p.defAnnotated || [];
+
+  const attName = escHtml(attOp?.name || '?');
+  const defName = escHtml(defOp?.name || '?');
+
+  const ATK_STYLE = {
+    crit:  { label: 'CRIT STRIKE', color: '#e74c3c' },
+    hit:   { label: 'STRIKE',      color: '#27ae60' },
+    miss:  { label: 'MISS',        color: 'var(--text-dim)' },
+  };
+  const DEF_STYLE = {
+    'crit-block':   { label: 'CRIT BLOCK ✓',  color: '#27ae60' },
+    'hit-block':    { label: 'BLOCK ✓',        color: '#27ae60' },
+    'crit-strike':  { label: 'CRIT STRIKE',    color: '#e74c3c' },
+    'hit-strike':   { label: 'STRIKE',         color: '#e67e22' },
+    'miss':         { label: 'MISS',           color: 'var(--text-dim)' },
+  };
+
+  function renderDie(roll, style) {
+    const isActive = style.label !== 'MISS';
+    return `<div class="fight-die${isActive ? '' : ' used'}">
+      <span style="color:${style.color}">${dieFaceSVG(roll, 20)}</span>
+      <div class="fight-die-result" style="color:${style.color}">${style.label}</div>
+    </div>`;
+  }
+
+  const atkDice = atkRolls.map((r, i) => renderDie(r, ATK_STYLE[atkAnnot[i] || 'miss'])).join('') ||
+    '<span style="font-size:11px;color:var(--text-dim)">No dice</span>';
+  const defDice = defRolls.map((r, j) => renderDie(r, DEF_STYLE[defAnnot[j] || 'miss'])).join('') ||
+    '<span style="font-size:11px;color:var(--text-dim)">No dice</span>';
+
+  const dmgAtk = p.dmgToDefender || 0;
+  const dmgDef = p.dmgToAttacker || 0;
+
+  const summaryParts = [
+    dmgAtk > 0 ? `${attName} deals <strong>${dmgAtk}</strong> wounds to ${defName}` : null,
+    dmgDef > 0 ? `${defName} deals <strong>${dmgDef}</strong> wounds to ${attName}` : null,
+    dmgAtk === 0 && dmgDef === 0 ? 'No damage dealt.' : null,
+  ].filter(Boolean);
+
+  const confirmHtml = iAmAttacker
+    ? `<div class="shoot-result">${summaryParts.join(' &nbsp;|&nbsp; ')}</div>
+       <button class="btn btn-primary" onclick="confirmFightDamage('${playerSlot}')">Apply Damage</button>`
+    : `<div class="shoot-result">${summaryParts.join(' &nbsp;|&nbsp; ')}</div>
+       <span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`;
+
+  const atkWpn = escHtml(p.atkWeapon?.name || '?');
+  const defWpn = escHtml(p.defWeapon?.name || '?');
+  const label  = iAmAttacker ? 'Close Combat' : 'Incoming Fight!';
+
+  return `
+    <span class="phase-bar-label">${label}</span>
+    <div class="phase-bar-body">
+      <div class="fight-panel">
+        <div class="fight-panel-header">
+          <strong style="font-size:13px;">${attName} ⚔ ${defName}</strong>
+          <span style="font-size:11px;color:var(--text-dim);">${atkWpn} vs ${defWpn}</span>
+        </div>
+        <div class="fight-status">Auto-resolved — attacker strikes, defender blocks crits first then normals, remainder retaliates.</div>
+        <div class="fight-pools">
+          <div class="fight-pool fight-pool-atk">
+            <div class="fight-pool-label">${attName} — ${atkWpn} (ATK ${p.atkWeapon?.profiles?.ATK||'?'}, hit on ${p.atkHitStat}+)</div>
+            <div class="fight-dice">${atkDice}</div>
+            <div class="fight-pool-total" style="color:${dmgAtk>0?'var(--red)':'var(--text-dim)'}">Deals: ${dmgAtk} wounds</div>
+          </div>
+          <div class="fight-pool fight-pool-def">
+            <div class="fight-pool-label">${defName} — ${defWpn} (ATK ${p.defWeapon?.profiles?.ATK||'?'}, hit on ${p.defHitStat}+)</div>
+            <div class="fight-dice">${defDice}</div>
+            <div class="fight-pool-total" style="color:${dmgDef>0?'var(--red)':'var(--text-dim)'}">Deals: ${dmgDef} wounds</div>
+          </div>
+        </div>
+        ${confirmHtml}
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  KT-3 — GRIMDARK VISUAL EFFECTS
+//  All effects are local-only — no Firebase writes.
+//  Triggered by detectAndPlayEffects() after each render().
+// ═══════════════════════════════════════════════════════════
+
+// 'subtle' | 'dramatic' | 'cinematic' from weapon normal damage value
+function getAnimTier(nDmg, cDmg) {
+  let tier = nDmg <= 3 ? 'subtle' : nDmg <= 5 ? 'dramatic' : 'cinematic';
+  if (cDmg >= 8 && tier !== 'cinematic') {
+    tier = tier === 'subtle' ? 'dramatic' : 'cinematic';
+  }
+  return tier;
+}
+
+// Beam color keyed on weapon name substrings
+function getBeamColor(name) {
+  const n = (name || '').toLowerCase();
+  if (/las|laser|lasgun|laspistol|hot.shot/.test(n))          return '#e84040';
+  if (/pulse|tau|ion|rail|burst|pathfinder/.test(n))          return '#40c8e8';
+  if (/bolt|bolter|slugga|dakka|shoota|stub|autogun/.test(n)) return '#e8c840';
+  if (/plasma|melta|fusion|flamer|inferno/.test(n))           return '#e87040';
+  if (/needler|shuriken|catapult|neuro|hallucinogen/.test(n)) return '#40e870';
+  return '#e8e8e8';
+}
+
+// Dark red with slight per-splat hue variation
+function randomSplatColor() {
+  const r = Math.min(220, Math.max(80,  0x8b + ((Math.random() - 0.5) * 50 | 0)));
+  const g = Math.min(60,  Math.max(0,   0x1a + ((Math.random() - 0.5) * 20 | 0)));
+  const b = Math.min(60,  Math.max(0,   0x1a + ((Math.random() - 0.5) * 20 | 0)));
+  return `rgb(${r},${g},${b})`;
+}
+
+// Append SMIL stroke-draw + opacity-fade animations to a line element
+function appendBeamAnims(el, len, dur, initOpacity) {
+  const drawDurS  = (dur * 0.40 / 1000).toFixed(3);
+  const fadeDurS  = (dur * 0.60 / 1000).toFixed(3);
+  const fadeBegin = (dur * 0.40 / 1000).toFixed(3);
+
+  const draw = document.createElementNS(NS, 'animate');
+  draw.setAttribute('attributeName', 'stroke-dashoffset');
+  draw.setAttribute('from', len); draw.setAttribute('to', 0);
+  draw.setAttribute('dur', drawDurS + 's'); draw.setAttribute('fill', 'freeze');
+  el.appendChild(draw);
+
+  const fade = document.createElementNS(NS, 'animate');
+  fade.setAttribute('attributeName', 'opacity');
+  fade.setAttribute('from', String(initOpacity ?? 1)); fade.setAttribute('to', '0');
+  fade.setAttribute('begin', fadeBegin + 's');
+  fade.setAttribute('dur', fadeDurS + 's'); fade.setAttribute('fill', 'freeze');
+  el.appendChild(fade);
+}
+
+// Draw a weapon beam from attacker to target (or 80% for misses)
+function drawBeam(parent, ax, ay, tx, ty, color, tier, hasDamage, durOverride) {
+  const DURS = { subtle: 350, dramatic: 700, cinematic: 1200 };
+  const LW   = { subtle: 0.07, dramatic: 0.11, cinematic: 0.16 };
+  if (!hasDamage && tier === 'subtle') return;
+
+  const dur  = durOverride !== undefined ? durOverride : DURS[tier];
+  const lw   = LW[tier];
+  const frac = hasDamage ? 1 : 0.8;
+  const endX = ax + (tx - ax) * frac;
+  const endY = ay + (ty - ay) * frac;
+  const len  = Math.hypot(endX - ax, endY - ay);
+
+  if (tier !== 'subtle') {
+    const glow = svgEl('line', {
+      x1: ax, y1: ay, x2: endX, y2: endY,
+      stroke: color, 'stroke-width': lw * 5,
+      'stroke-linecap': 'round',
+      'stroke-dasharray': len, 'stroke-dashoffset': len,
+      opacity: 0.22,
+    });
+    appendBeamAnims(glow, len, dur, 0.22);
+    parent.appendChild(glow);
+  }
+
+  const line = svgEl('line', {
+    x1: ax, y1: ay, x2: endX, y2: endY,
+    stroke: color, 'stroke-width': lw,
+    'stroke-linecap': 'round',
+    'stroke-dasharray': len, 'stroke-dashoffset': len,
+    opacity: 1,
+  });
+  appendBeamAnims(line, len, dur, 1);
+  parent.appendChild(line);
+
+  // Cinematic: brief afterimage that fades behind the main beam
+  if (tier === 'cinematic') {
+    const after = svgEl('line', {
+      x1: ax, y1: ay, x2: endX, y2: endY,
+      stroke: color, 'stroke-width': lw * 0.6,
+      'stroke-linecap': 'round',
+      'stroke-dasharray': len, 'stroke-dashoffset': 0,
+      opacity: 0.35,
+    });
+    const af = document.createElementNS(NS, 'animate');
+    af.setAttribute('attributeName', 'opacity');
+    af.setAttribute('from', '0.35'); af.setAttribute('to', '0');
+    af.setAttribute('begin', (dur * 0.25 / 1000).toFixed(3) + 's');
+    af.setAttribute('dur',   (dur * 0.75 / 1000).toFixed(3) + 's');
+    af.setAttribute('fill',  'freeze');
+    after.appendChild(af);
+    parent.appendChild(after);
+    setTimeout(() => { if (parent.contains(after)) parent.removeChild(after); }, dur + 200);
+  }
+
+  setTimeout(() => { if (parent.contains(line)) parent.removeChild(line); }, dur + 200);
+}
+
+// Radial blood/impact burst centered on a board position
+function drawImpactBurst(parent, x, y, tier) {
+  const RS   = { subtle: 0.8, dramatic: 1.2, cinematic: 1.8 };
+  const DURS = { subtle: 350, dramatic: 700, cinematic: 1200 };
+  const r   = RS[tier];
+  const dur = DURS[tier];
+
+  const burst = svgEl('circle', { cx: x, cy: y, r: r * 0.5, fill: '#c0392b', opacity: 0.75 });
+  const grow = document.createElementNS(NS, 'animate');
+  grow.setAttribute('attributeName', 'r');
+  grow.setAttribute('from', r * 0.35); grow.setAttribute('to', r * 1.1);
+  grow.setAttribute('dur', (dur / 1000) + 's'); grow.setAttribute('fill', 'freeze');
+  const fade = document.createElementNS(NS, 'animate');
+  fade.setAttribute('attributeName', 'opacity');
+  fade.setAttribute('from', '0.75'); fade.setAttribute('to', '0');
+  fade.setAttribute('dur', (dur / 1000) + 's'); fade.setAttribute('fill', 'freeze');
+  burst.appendChild(grow); burst.appendChild(fade);
+  parent.appendChild(burst);
+
+  if (tier === 'cinematic') {
+    for (let i = 0; i < 3; i++) {
+      const a  = (i / 3) * Math.PI * 2 + Math.random();
+      const sx = x + Math.cos(a) * r * 0.55;
+      const sy = y + Math.sin(a) * r * 0.55;
+      const s  = svgEl('circle', { cx: sx, cy: sy, r: r * 0.32, fill: '#c0392b', opacity: 0.5 });
+      const sf = document.createElementNS(NS, 'animate');
+      sf.setAttribute('attributeName', 'opacity');
+      sf.setAttribute('from', '0.5'); sf.setAttribute('to', '0');
+      sf.setAttribute('dur', (dur * 0.65 / 1000) + 's'); sf.setAttribute('fill', 'freeze');
+      s.appendChild(sf);
+      parent.appendChild(s);
+      setTimeout(() => { if (parent.contains(s)) parent.removeChild(s); }, dur * 0.65 + 100);
+    }
+  }
+
+  setTimeout(() => { if (parent.contains(burst)) parent.removeChild(burst); }, dur + 200);
+}
+
+// Spark-burst clash indicator at midpoint between two combatants
+function drawClash(parent, ax, ay, dx, dy, totalDmg) {
+  const size = totalDmg === 0 ? 0 : totalDmg < 6 ? 0.4 : totalDmg < 15 ? 0.7 : 1.0;
+  if (size === 0) return;
+  const dur = totalDmg < 6 ? 350 : totalDmg < 15 ? 700 : 1200;
+  const mx  = (ax + dx) / 2;
+  const my  = (ay + dy) / 2;
+
+  const g = svgEl('g');
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const r1 = size * 0.25;
+    const r2 = size * (0.6 + Math.random() * 0.4);
+    const spoke = svgEl('line', {
+      x1: mx + Math.cos(angle) * r1, y1: my + Math.sin(angle) * r1,
+      x2: mx + Math.cos(angle) * r2, y2: my + Math.sin(angle) * r2,
+      stroke: '#e8e840', 'stroke-width': 0.08, 'stroke-linecap': 'round', opacity: 0.9,
+    });
+    const sf = document.createElementNS(NS, 'animate');
+    sf.setAttribute('attributeName', 'opacity');
+    sf.setAttribute('from', '0.9'); sf.setAttribute('to', '0');
+    sf.setAttribute('dur', (dur / 1000) + 's'); sf.setAttribute('fill', 'freeze');
+    spoke.appendChild(sf);
+    g.appendChild(spoke);
+  }
+  const center = svgEl('circle', { cx: mx, cy: my, r: size * 0.18, fill: '#fff', opacity: 0.95 });
+  const cf = document.createElementNS(NS, 'animate');
+  cf.setAttribute('attributeName', 'opacity');
+  cf.setAttribute('from', '0.95'); cf.setAttribute('to', '0');
+  cf.setAttribute('dur', (dur * 0.4 / 1000) + 's'); cf.setAttribute('fill', 'freeze');
+  center.appendChild(cf);
+  g.appendChild(center);
+  parent.appendChild(g);
+  setTimeout(() => { if (parent.contains(g)) parent.removeChild(g); }, dur + 200);
+}
+
+// Brief white flash at operative position on death
+function drawDeathFlash(parent, x, y) {
+  const flash = svgEl('circle', { cx: x, cy: y, r: TOKEN_R * 2.2, fill: '#ffffff', opacity: 1 });
+  const fade  = document.createElementNS(NS, 'animate');
+  fade.setAttribute('attributeName', 'opacity');
+  fade.setAttribute('from', '1'); fade.setAttribute('to', '0');
+  fade.setAttribute('dur', '0.25s'); fade.setAttribute('fill', 'freeze');
+  flash.appendChild(fade);
+  parent.appendChild(flash);
+  setTimeout(() => { if (parent.contains(flash)) parent.removeChild(flash); }, 350);
+}
+
+// Draw a permanent blood splat from splatData entry
+function drawSplat(parent, s) {
+  const age     = Date.now() - (s.bornAt || 0);
+  const isNew   = age < 500;
+
+  // Outer: position + rotation
+  const outer = svgEl('g', { transform: `translate(${s.x},${s.y}) rotate(${s.rotation})` });
+  // Inner: scale (static if old, animated if new)
+  const inner = svgEl('g');
+  inner.appendChild(svgEl('path', { d: SPLAT_PATHS[s.pathIdx], fill: s.color, opacity: 0.72 }));
+  outer.appendChild(inner);
+  parent.appendChild(outer);
+
+  if (isNew) {
+    const remainS = (Math.max(50, 400 - age) / 1000).toFixed(3);
+    const anim = document.createElementNS(NS, 'animateTransform');
+    anim.setAttribute('attributeName', 'transform');
+    anim.setAttribute('type',  'scale');
+    anim.setAttribute('from',  '0');
+    anim.setAttribute('to',    s.scale);
+    anim.setAttribute('dur',   remainS + 's');
+    anim.setAttribute('fill',  'freeze');
+    inner.appendChild(anim);
+  } else {
+    inner.setAttribute('transform', `scale(${s.scale})`);
+  }
+}
+
+// Push a new death stain into splatData (drawn on next render)
+function addDeathSplat(x, y) {
+  if (x < 0 || y < 0) return;
+  splatData.push({
+    x, y,
+    pathIdx:  Math.floor(Math.random() * SPLAT_PATHS.length),
+    rotation: Math.floor(Math.random() * 360),
+    scale:    0.8 + Math.random() * 0.4,
+    color:    randomSplatColor(),
+    bornAt:   Date.now(),
+  });
+}
+
+// Red screen-edge vignette flash (defender's screen)
+function triggerScreenFlash() {
+  const v = document.getElementById('kt3-vignette');
+  if (!v) return;
+  v.classList.remove('flash');
+  void v.offsetWidth; // force reflow to restart animation
+  v.classList.add('flash');
+}
+
+// Play shoot beam + impact burst + screen flash on all visible boards
+function playShootEffects(pending, attacker, target) {
+  const w = pending.weapon || {};
+  const [nDmg, cDmg] = parseDmgPair(w.profiles?.DMG || '1/1');
+  const tier   = getAnimTier(nDmg, cDmg);
+  const color  = getBeamColor(w.name || '');
+  const hasDmg = (pending.totalDamage || 0) > 0;
+
+  const slots = devMode ? ['player1', 'player2'] : [myPlayer];
+  for (const slot of slots) {
+    const beamG  = document.getElementById(`beam-g-${slot}`);
+    const burstG = document.getElementById(`burst-g-${slot}`);
+    if (!beamG) continue;
+
+    drawBeam(beamG, attacker.x, attacker.y, target.x, target.y, color, tier, hasDmg);
+    if (hasDmg && burstG) drawImpactBurst(burstG, target.x, target.y, tier);
+
+    const isDefender = devMode ? (slot === target.player) : (target.player === myPlayer);
+    if (hasDmg && isDefender) triggerScreenFlash();
+  }
+}
+
+// Beam fires on Roll Dice — one beam per ATK die, chained sequentially
+// Each beam's duration = totalDur / atkCount so the full volley takes the same time as one beam
+function playBeamOnly(pending, attacker, target) {
+  const w = pending.weapon || {};
+  const [nDmg, cDmg] = parseDmgPair(w.profiles?.DMG || '1/1');
+  const tier     = getAnimTier(nDmg, cDmg);
+  const color    = getBeamColor(w.name || '');
+  const atkCount = Math.min(parseInt(w.profiles?.ATK || 1), 6);
+  const DURS     = { subtle: 350, dramatic: 700, cinematic: 1200 };
+  const beamDur  = Math.max(60, Math.floor(DURS[tier] / atkCount));
+  const slots    = devMode ? ['player1', 'player2'] : [myPlayer];
+  for (let i = 0; i < atkCount; i++) {
+    setTimeout(() => {
+      for (const slot of slots) {
+        const beamG = document.getElementById(`beam-g-${slot}`);
+        if (!beamG) continue;
+        drawBeam(beamG, attacker.x, attacker.y, target.x, target.y, color, tier, true, beamDur);
+      }
+    }, i * beamDur);
+  }
+}
+
+// Impact burst + screen flash fires at damage confirm
+function playBurstAndFlash(pending, attacker, target) {
+  const w = pending.weapon || {};
+  const [nDmg, cDmg] = parseDmgPair(w.profiles?.DMG || '1/1');
+  const tier   = getAnimTier(nDmg, cDmg);
+  const hasDmg = (pending.totalDamage || 0) > 0;
+  const slots  = devMode ? ['player1', 'player2'] : [myPlayer];
+  for (const slot of slots) {
+    const burstG = document.getElementById(`burst-g-${slot}`);
+    if (!burstG) continue;
+    if (hasDmg) {
+      drawImpactBurst(burstG, target.x, target.y, tier);
+      const isDefender = devMode ? (slot === target.player) : (target.player === myPlayer);
+      if (isDefender) triggerScreenFlash();
+    }
+  }
+}
+
+// Dice tumble animation: cycles through random faces, staggered reveals per tier
+function startDiceAnimation(pending) {
+  if (diceAnimState?._timer) clearTimeout(diceAnimState._timer);
+
+  const w = pending.weapon || {};
+  const [nDmg, cDmg] = parseDmgPair(w.profiles?.DMG || '1/1');
+  const tier = getAnimTier(nDmg, cDmg);
+
+  const TUMBLE   = { subtle: 300, dramatic: 500, cinematic: 700 }[tier];
+  const STAGGER  = { subtle: 30,  dramatic: 60,  cinematic: 80  }[tier];
+  const INTERVAL = 60;
+
+  const atkRolls = pending.atkRolls || [];
+  const defRolls = pending.defRolls || [];
+
+  let dieIdx = 0;
+  const atkStopAt = atkRolls.map(() => TUMBLE + dieIdx++ * STAGGER);
+  const defStopAt = defRolls.map(d => d === 'auto' ? 0 : TUMBLE + dieIdx++ * STAGGER);
+  const totalDur  = dieIdx > 0 ? TUMBLE + (dieIdx - 1) * STAGGER : TUMBLE;
+
+  diceAnimState = { atkRolls, defRolls, atkStopAt, defStopAt, t0: Date.now(), totalDur,
+                    displayAtk: null, displayDef: null, _timer: null };
+
+  const tick = () => {
+    if (!diceAnimState) return;
+    const elapsed = Date.now() - diceAnimState.t0;
+
+    diceAnimState.displayAtk = diceAnimState.atkRolls.map((real, i) =>
+      elapsed >= diceAnimState.atkStopAt[i] ? real : Math.ceil(Math.random() * 6)
+    );
+    diceAnimState.displayDef = diceAnimState.defRolls.map((real, i) => {
+      if (real === 'auto') return 'auto';
+      return elapsed >= diceAnimState.defStopAt[i] ? real : Math.ceil(Math.random() * 6);
+    });
+
+    reRenderPhaseBar();
+
+    if (elapsed >= diceAnimState.totalDur) {
+      diceAnimState = null;
+      reRenderPhaseBar();
+    } else {
+      diceAnimState._timer = setTimeout(tick, INTERVAL);
+    }
+  };
+
+  diceAnimState._timer = setTimeout(tick, INTERVAL);
+}
+
+// Play fight clash + per-operative splats + screen flash on all visible boards
+function playFightEffects(pending, attacker, defender) {
+  const atkW = pending.atkWeapon || {};
+  const [nDmg, cDmg] = parseDmgPair(atkW.profiles?.DMG || '1/1');
+  const tier     = getAnimTier(nDmg, cDmg);
+  const totalDmg = (pending.dmgToDefender || 0) + (pending.dmgToAttacker || 0);
+
+  const slots = devMode ? ['player1', 'player2'] : [myPlayer];
+  for (const slot of slots) {
+    const beamG  = document.getElementById(`beam-g-${slot}`);
+    const burstG = document.getElementById(`burst-g-${slot}`);
+    if (!beamG) continue;
+
+    drawClash(beamG, attacker.x, attacker.y, defender.x, defender.y, totalDmg);
+    if (burstG) {
+      if ((pending.dmgToDefender || 0) > 0) drawImpactBurst(burstG, defender.x, defender.y, tier);
+      if ((pending.dmgToAttacker || 0) > 0) drawImpactBurst(burstG, attacker.x, attacker.y, tier);
+    }
+
+    // Each player flashes if their operative took damage
+    const slotPlayer  = devMode ? slot : myPlayer;
+    const tookDamage  = (slotPlayer === defender.player && pending.dmgToDefender > 0)
+                     || (slotPlayer === attacker.player && pending.dmgToAttacker > 0);
+    if (tookDamage) triggerScreenFlash();
+  }
+}
+
+// Inspect Firebase state transition; fire effects for shots, fights, and deaths
+function detectAndPlayEffects(prev, curr) {
+  if (!prev || !curr) return;
+
+  // Dice tumble animation when dice are rolled
+  if (prev.pendingShot && curr.pendingShot &&
+      prev.pendingShot.phase !== 'rolled' && curr.pendingShot.phase === 'rolled') {
+    startDiceAnimation(curr.pendingShot);
+  }
+
+  // Burst + flash when damage is confirmed (pendingShot cleared after 'rolled' phase)
+  if (prev.pendingShot && !curr.pendingShot && prev.pendingShot.phase === 'rolled') {
+    const p  = prev.pendingShot;
+    const at = (curr.operatives || {})[p.attackerOpId] || (prev.operatives || {})[p.attackerOpId];
+    const tg = (curr.operatives || {})[p.targetOpId]   || (prev.operatives || {})[p.targetOpId];
+    if (at && tg && at.x >= 0 && tg.x >= 0) playBurstAndFlash(p, at, tg);
+  }
+
+  // Fight resolved (pendingFight cleared)
+  if (prev.pendingFight && !curr.pendingFight) {
+    const p  = prev.pendingFight;
+    const at = (curr.operatives || {})[p.attackerOpId] || (prev.operatives || {})[p.attackerOpId];
+    const df = (curr.operatives || {})[p.defenderOpId] || (prev.operatives || {})[p.defenderOpId];
+    if (at && df && at.x >= 0 && df.x >= 0) playFightEffects(p, at, df);
+  }
+
+  // Operative deaths
+  const prevOps = prev.operatives || {};
+  const currOps = curr.operatives || {};
+  for (const [id, op] of Object.entries(currOps)) {
+    const prevOp = prevOps[id];
+    if (prevOp && prevOp.wounds > 0 && op.wounds <= 0 && prevOp.x >= 0) {
+      addDeathSplat(prevOp.x, prevOp.y);
+      const slots = devMode ? ['player1', 'player2'] : [myPlayer];
+      for (const slot of slots) {
+        const beamG = document.getElementById(`beam-g-${slot}`);
+        if (beamG) drawDeathFlash(beamG, prevOp.x, prevOp.y);
+      }
+    }
+  }
+}
+
+// Global Escape key: cancel activation if no AP spent.
+// Registered once; safe to call multiple times (idempotent via flag).
+if (!window._ktEscBound) {
+  window._ktEscBound = true;
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') cancelActivation();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RE-RENDER HELPERS
+// ═══════════════════════════════════════════════════════════
+
+function reRender() {
+  if (devMode) renderDev();
+  else { showScreen('game'); renderGame(myPlayer); }
+  refreshRadialIfActive();
+}
+
+function reRenderPhaseBar() {
+  // Re-render just the phase bar without rebuilding the full game
+  const slots = devMode ? ['player1', 'player2'] : [myPlayer];
+  slots.forEach(slot => {
+    const bar = document.getElementById(`phase-bar-${slot}`);
+    if (!bar || !gameData) return;
+    const status = gameData.meta?.status;
+    const phase  = status === 'active' ? (gameData.turn?.phase || 'strategy') : status;
+    bar.innerHTML = renderPhaseBar(status, phase, slot, gameData.turn || {});
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DEV UTILS
+// ═══════════════════════════════════════════════════════════
+
+async function devNewGame() {
+  if (!confirm('Reset dev game? Current game will be deleted.')) return;
+  // Delete the old game doc so Firebase doesn't hold stale data
+  if (gameId) {
+    try { await db.ref(`games-kt/${gameId}`).remove(); } catch(e) {}
+  }
+  // Reset all local state
+  gameId        = null;
+  gameData      = null;
+  activation    = null;
+  dragState     = null;
+  deploySelId   = null;
+  shootWeapon   = null;
+  shootState    = null;
+  fightWeapon   = null;
+  fightState    = null;
+  terrainActive = false;
+  expandedOps   = new Set();
+  splatData     = [];
+  if (diceAnimState?._timer) clearTimeout(diceAnimState._timer);
+  diceAnimState = null;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('game');
+  window.history.replaceState({}, '', url.toString());
+  bootDev();
+}
+
+async function autoPlaceDev() {
+  const status = gameData?.meta?.status;
+  if (status !== 'terrain' && status !== 'deployment') return;
+
+  const ops    = Object.entries(gameData.operatives || {});
+  const updates = {};
+
+  for (const slot of ['player1', 'player2']) {
+    const isP1  = slot === 'player1';
+    const myOps = ops.filter(([, o]) => o.player === slot && o.x < 0);
+    if (!myOps.length) continue;
+
+    const count = myOps.length;
+    const cols  = Math.min(count, 10);
+    const xStep = BOARD_W / (cols + 1);
+    // P1: bottom zone — start near y=29, step upward
+    // P2: top zone    — start near y=1,  step downward
+    const yStart = isP1 ? BOARD_H - 1 : 1;
+    const yDir   = isP1 ? -1 : 1;
+
+    let col = 0, row = 0;
+    for (const [opId] of myOps) {
+      updates[`operatives/${opId}/x`] = Math.round(xStep * (col + 1));
+      updates[`operatives/${opId}/y`] = yStart + yDir * row * 2;
+      col++;
+      if (col >= cols) { col = 0; row++; }
+    }
+  }
+
+  updates['meta/status'] = 'initiative';
+  await db.ref(`games-kt/${gameId}`).update(updates);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  UI HELPERS
+// ═══════════════════════════════════════════════════════════
+
+function showScreen(name) {
+  document.querySelectorAll('#app .screen').forEach(s => s.classList.remove('active'));
+  const t = document.getElementById(`screen-${name}`);
+  if (t) t.classList.add('active');
+}
+
+function showError(msg) {
+  document.getElementById('error-msg').textContent = msg;
+  showScreen('error');
+}
+
+function buildGameUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('game', gameId);
+  url.searchParams.delete('dev');
+  return url.toString();
+}
+
+function el(tag, props = {}) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'className')       node.className   = v;
+    else if (k === 'textContent') node.textContent = v;
+    else                          node[k]          = v;
+  }
+  return node;
+}
+</script>
+<div id="radial-menu"></div>
+</body>
+</html>
