@@ -995,3 +995,58 @@ the full writeup. Relevant here:
   `gameData/kill-team/bonuses/` yet — pending review.
 - Faction ploy/stratagem replacement-as-bonuses is explicitly BON-3, not
   done yet. Nothing in `killteam/js/` needs to change for BON-1 itself.
+
+## BON-2 double-check (2026-07-04) — brief significantly understates the lift
+
+`BON2_BRIEF.md` (data-pipeline is done: bonus catalog is live in
+`gameData/kill-team/bonuses/`, resolver is 1.2.0, weapons carry compiled
+`bonuses` arrays) asked to wire Shoot/Fight through the resolver. Verified
+against source before touching anything, per the brief's own instruction
+not to trust its claims about `killteam/` internals. **Not implemented
+this pass — this is a report only.**
+
+**What's confirmed true:**
+- No `killteam/js/` directory exists yet (`check-resolver-sync.js` reports
+  ABSENT, matches BON-1's note).
+- Range/distance measurement already exists (`Math.hypot`, used in
+  `getShootValidity` at line ~2421) — a `halfRange` fact is computable from
+  existing infrastructure, not new work.
+- Shoot and Fight really are two separate entry points
+  (`rollShot`/`confirmShotDamage` vs `confirmFightTarget`/
+  `confirmFightDamage`) that could plausibly share one resolver call, as
+  the brief assumes.
+
+**What's NOT true — the brief assumes hooks that don't exist:**
+- **Crits are hardcoded to a natural 6** in both `rollShot` (line ~2649:
+  `atkRolls.filter(d => d === 6)`) and `confirmFightTarget` (line ~2962).
+  There is no variable crit-threshold concept anywhere. "Lethal 5+"
+  (`mod critThreshold cap 5`) has nothing to attach to — implementing it
+  means introducing a threshold variable into both dice-classification
+  loops, not just feeding a resolved number into an existing slot.
+- **Hit/save/damage numbers are read straight off the weapon profile
+  text** (`parseHit(w.profiles.HIT)`, `parseDmgPair(w.profiles.DMG)`) with
+  exactly one existing modifier: a flat +1 to the hit threshold when
+  injured. No Accurate (retainNormal), Piercing (defDice reduction),
+  Devastating/Melta (dmgCrit add), Balanced/Ceaseless/Relentless (rerolls)
+  — none of these have a variable to modify. Same gap in both shoot and
+  fight.
+- **`buildOperatives()` (line 736) drops weapon bonuses at game-creation
+  time.** It rebuilds each weapon into a new object with an explicit field
+  whitelist — `id, name, type, profiles: {ATK, HIT, DMG, RNG, WR}` — and
+  `bonuses` (and `keywords`) aren't in it. Even a roster export that
+  correctly carries compiled bonuses end-to-end would have them silently
+  discarded the moment a game is created. This is a hard blocker, found
+  exactly where the brief said to check ("verify that game-creation's
+  roster import actually preserves the weapons' bonuses arrays").
+  Separately unverified: whether `roster/`'s publish step even puts
+  `bonuses` into the export in the first place (out of scope per the
+  brief — `roster/` wasn't touched).
+
+**Bottom line:** BON-2 isn't "plug resolved numbers into existing slots."
+It's introducing variable crit-threshold/defDice/atkDice/reroll mechanics
+into two dice-resolution functions that currently have none, on top of
+fixing the operative-build passthrough. Recommend scoping it as its own
+pass with the actual rewrite shape decided first (e.g. does `rollShot`
+call `resolveStats` once up front and destructure everything, or gate each
+mechanic individually), rather than treating this brief's Part 3 as
+ready-to-implement as written.
