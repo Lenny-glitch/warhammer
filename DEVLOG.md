@@ -333,8 +333,15 @@ With read open, ran the Draft Cleaner's exact logic (exact-match → strip
 trailing `-\d+` → name-match within the faction) directly against
 production data instead of needing the browser. Result: **1 draft roster
 total, 0 repairs needed** — all 11 unit references already resolved
-against current `gameData` (they were already using clean slugs, same
-ones the BSData pipeline produces). The BON-1c/upload overwrite did not
+against current `gameData`.
+
+**Amendment (2026-07-04, per Nox):** that "0 repairs needed" reflects the
+state *after* the actual Draft Cleaner had already run in the browser and
+applied 11 ID fixes to that same Kommandos draft — this check just
+confirmed the fix had already taken. It wasn't that nothing needed fixing;
+it's that it had already been fixed by the time this ran. (They were
+already using clean slugs, same ones the BSData pipeline produces.) The
+BON-1c/upload overwrite did not
 break it. The other 6 roster entries are `published`/`ready` — out of
 Draft Cleaner scope by design, denormalized exports, unaffected.
 
