@@ -348,3 +348,13 @@ weapon might carry — see `killteam/DEVLOG.md`'s BON-2 double-check entry.
 Not a data-pipeline concern, but relevant context for whoever picks up
 BON-2: the catalog and per-weapon `bonuses` arrays this repo produces
 aren't reaching the KT game engine yet, for a reason on the app side.
+
+## 2026-07-04 — `firebase-rules.json` committed
+
+The console is no longer the only witness to the RTDB rules. Saved as
+`firebase-rules.json` at repo root — a copy of what Nox applied directly
+in the Firebase console (the `rosters` parent `.read: true` fix). This is
+a record, not a deploy source: no Firebase CLI/admin credentials exist on
+this machine (see earlier entry), so there's no automated push/pull
+between this file and the live console rules — if the console rules
+change again, this file needs a manual re-copy to stay accurate.
