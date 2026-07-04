@@ -1355,6 +1355,7 @@
     .rv-legal-badge.legal { background: rgba(76,175,116,0.12); border-color: var(--green); color: var(--green); }
     .rv-legal-badge.draft     { background: rgba(204,96,96,0.12);    border-color: var(--red);    color: var(--red);    }
     .rv-legal-badge.published { background: rgba(124,106,247,0.12); border-color: var(--accent); color: var(--accent); }
+    .rv-legal-badge.unvalidated { background: rgba(153,153,153,0.12); border-color: var(--text-dim); color: var(--text-dim); }
 
     .rv-meta { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
 
@@ -2988,7 +2989,7 @@
 
       const slotsHTML = st.slots.map((slot, si) => `
         <div style="border:1px solid #444;border-radius:6px;padding:0.6rem;margin-bottom:0.6rem;">
-          <input class="uf-input" placeholder="Slot name (e.g. \\"Replace flamer\\")"
+          <input class="uf-input" placeholder="Slot name (e.g. &quot;Replace flamer&quot;)"
                  value="${(slot.name || '').replace(/"/g, '&quot;')}"
                  oninput="RosterBuilder._loadoutAuthorState.slots[${si}].name = this.value">
           <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.4rem;">
@@ -3243,7 +3244,14 @@
     _checkLegality() {
       const rules = RosterBuilder.state.compositionRules;
       const ops   = RosterBuilder.state.operatives;
-      if (!rules) return { legal: true, violations: [] };
+      // legal: null means "not validated" (no compositionRules exist for
+      // this faction yet — true for all of 40k right now) — a THIRD state,
+      // deliberately distinct from true/false. Returning legal:true here
+      // was fine when compositionRules was always populated for every real
+      // faction; 40k is the first legitimate case where it's null, and
+      // that vacuous-true default is exactly what stamped a "Legal" badge
+      // on 40k drafts no check had actually run against.
+      if (!rules) return { legal: null, violations: [] };
 
       const violations = [];
       const total = ops.reduce((s, op) => s + (op.countsAs || 1), 0);
@@ -3474,10 +3482,15 @@
           units,
         };
 
-        // Write export and mark draft published in parallel
+        // Write export and mark draft published in parallel. isLegal was
+        // previously hardcoded true here — harmless while the Publish
+        // button's own disabled-without-rules gate was the only way to
+        // reach this code, but a defense-in-depth fix belongs here too:
+        // record what was actually checked, not an assumption.
+        const { legal: publishLegal } = RosterBuilder._checkLegality();
         await Promise.all([
           App.db.ref(`exports/${s.system}/${s.rosterId}`).set(exportData),
-          App.db.ref(`rosters/${s.rosterId}/meta`).update({ status: 'published', isLegal: true }),
+          App.db.ref(`rosters/${s.rosterId}/meta`).update({ status: 'published', isLegal: publishLegal }),
         ]);
 
         const publishedId = s.rosterId;
@@ -3644,10 +3657,16 @@
       const countParts = [`${total} operative${total === 1 ? '' : 's'}`];
       if (pts > 0) countParts.push(`${pts} pts`);
 
-      const isPublished = meta.status === 'published';
-      const isLegal     = meta.isLegal === true;
-      const badgeClass  = isPublished ? 'published' : (isLegal ? 'legal' : 'draft');
-      const badgeLabel  = isPublished ? 'Published'  : (isLegal ? 'Legal'  : 'Draft');
+      const isPublished  = meta.status === 'published';
+      const isLegal      = meta.isLegal === true;
+      // meta.isLegal is null/undefined when no compositionRules exist for
+      // this faction yet (all of 40k today) — a real "not validated" state,
+      // not the same as "checked and failed" (false) or "checked and
+      // passed" (true). Surfacing it as its own badge is the whole point:
+      // a green "Legal" here was claiming a check that never ran.
+      const notValidated = meta.isLegal == null;
+      const badgeClass  = isPublished ? 'published' : (notValidated ? 'unvalidated' : (isLegal ? 'legal' : 'draft'));
+      const badgeLabel  = isPublished ? 'Published'  : (notValidated ? 'Not Validated' : (isLegal ? 'Legal' : 'Draft'));
 
       const opRows = ops.map(op => {
         const tmpl    = unitTemplates[op.unitId];
