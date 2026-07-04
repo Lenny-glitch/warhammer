@@ -526,3 +526,123 @@ generic bonus/modifier schema (see data-pipeline/DEVLOG.md). Relevant here:
   builder will have a second, more structured source it could pull from
   (`gameData/{system}/bonuses/`) — no action needed until then.
 
+---
+
+## Roster 3b Part 2 v3 — 40k build flow (2026-07-04)
+
+**Commit:** `3e8c3eb` (branch `deploy` — this repo's convention post-GIT-1:
+work lands directly on `deploy`, Netlify serves it from there).
+
+### Background: three brief revisions, each correcting a wrong assumption
+
+- **v1** assumed BSData-parsed 40k units (`gameData/warhammer-40k/
+  factions/.../units`) had squad-size/loadout structure to read. They
+  don't — confirmed by reading the raw BSData XML directly.
+- A follow-up brief (PIPE-2) tried deriving `squadSize`/`pointsTable`/
+  `loadoutSlots` from BSData's raw selection-entry XML. Prototyped against
+  real data: 25% confident-derivation coverage, and a real semantic
+  ambiguity (sibling model-entries in one group can be *alternative
+  variants of the same slot* or *independent additional slots* — BSData's
+  structure doesn't disambiguate this, and guessing wrong silently
+  corrupts squad sizes rather than just under-covering them). Rejected;
+  not implemented.
+- **v2** pivoted to hand-authoring composition lazily via the Unit
+  Creator. Correct in spirit, but built on top of `UnitSearch` — which
+  turned out to read from an entirely different, older dataset
+  (`gameData/warhammer-40k/{factionSlug}`, flat) than the one RosterBuilder
+  actually uses for adding units to a roster (`.../factions/.../units`,
+  BSData). Two disjoint 40k unit sources existed simultaneously.
+- **v3** (this one, implemented): investigated the flat pool directly —
+  it already has 100% `squadSize`/`pointsTable` coverage on both factions
+  (134 Astra Militarum + 97 Craftworlds Eldar units, zero gaps beyond one:
+  `shadow-spectres`' `pointsTable` rows are missing their `models` label).
+  Decision: the flat pool is canonical going forward; the BSData subtree
+  is deprecated (kept, not read, deleted in a later pass). Weapon
+  `bonuses` arrays — confirmed absent from the flat pool entirely — are
+  explicitly dropped from this brief's scope, deferred to a BON-4-era
+  enrichment pass (flat-pool keywords are already near-glossary uppercase
+  strings, e.g. `"MELTA 2"`, `"SUSTAINED HITS 1"` — that future enrichment
+  should be mechanical, reusing `compile-keywords.js`'s existing mapping
+  tables, not a new derivation effort).
+
+### What shipped
+
+- `RosterBuilder._load()` branches on `system === 'warhammer-40k'`: reads
+  the flat pool directly, transforms each unit via a new
+  `UnitSearch._transformForRoster()`. KT's original confirmed-library read
+  is untouched below the branch.
+- **`_parseWargear` — two real bugs fixed** (shared code, benefits
+  `UnitSearch`'s original preview screen too): "X **can be** replaced"
+  phrasing was mis-parsed as `"Replace be"` (the regex assumed "can have
+  their/its/the X replaced" specifically); "**N** of the following"
+  (numeral) wasn't recognized at all, only the word "one" — Dark Reapers'
+  Exarch weapon swap is the concrete case that was falling through to
+  unparsed before this fix.
+- **New: `_matchWeaponIds`/`_resolveLoadoutOptions`** — bridges
+  `_parseWargear`'s option name *strings* to the `{slot, weaponIds}` shape
+  the loadout UI needs (which references weapons by *id*). Handles
+  possessive-prefixed replaced-item names ("Platform's shuriken cannon")
+  and one-to-many prefix matches (generic "missile launcher" prose maps to
+  *both* the starshot and sunburst variants on Guardian Defenders — offers
+  both as real choices rather than guessing one).
+- **New: `_normalizePointsTable`** — `[{models: "10 models", points}]` →
+  `{"10": pts}`. Never infers a missing `models` label from row position;
+  `shadow-spectres` (the one unit with this gap) falls back to flat points
+  with a visible caveat.
+- **Squad-size picker** — renders only when `squadSize.min !== .max`;
+  changing it recomputes `points` live from the normalized table.
+- **Lazy hand-author fallback hook** — for units whose wargear prose
+  didn't resolve into a pickable choice (Cadian Shock Troops' "for every
+  10 models... special weapon" text is the concrete case — its two
+  Sergeant sidearm swaps parse fine, but the actual special-weapon choice
+  is embedded in "for every N models" phrasing that's deliberately left
+  as unparsed reference text, by design, not a bug). A small dedicated
+  editor (not a full `UnitForm` reuse) writes straight to the flat pool
+  unit's own record — the canonical source, not the deprecated subtree.
+  Skippable; skipping just leaves the reference-text notice visible next
+  time, which doubles as the "not yet authored" marker without a separate
+  flag.
+- **Fixed a real bug in Publish**: it unconditionally re-fetched unit
+  templates from the deprecated BSData subtree at publish time, which has
+  no `loadoutOptions` at all — every 40k roster would have silently
+  published with an empty `chosenLoadout`, discarding every loadout choice
+  a player made. Now reuses the already-correct in-memory `unitLibrary`
+  for 40k; KT's original fresh-fetch-from-confirmed-library is untouched.
+- Unit browser gained an inline filter for 40k (134/97 units per faction —
+  the old "Search Source Pool" button, which sent players to a separate
+  screen, no longer has a purpose now that `RosterBuilder` reads the pool
+  directly. Left the now-dead `sessionStorage['unitSearchReturn']`
+  return-navigation code in place — inert, not broken, not worth touching
+  without being asked).
+
+### Verification
+
+Ran the actual transform/resolver code (extracted from `index.html`,
+executed in Node against live Firebase data — no headless browser
+available in this environment) against the acceptance unit and the known
+edge case:
+- Cadian Shock Troops: `squadSize: {min:10,max:20}`, `pointsTable:
+  {"10":65,"20":120}`, 2 correctly-resolved loadout slots, 1 unparsed
+  entry (the special-weapon text) correctly triggering the fallback hook.
+  Live points recompute correctly for both squad sizes (65 / 120).
+- `shadow-spectres`: `pointsTable: null`, caveat shown, flat price (115)
+  used — confirms no positional guessing on the missing-`models` gap.
+- KT regression: verified by code tracing, not a live click-through. Every
+  new UI branch (`squadSize`, `pointsCaveat`, `unparsedWargear`) is
+  `undefined` on KT units, so `_squadSizeHTML`/`_wargearNoticesHTML`
+  short-circuit to `''` and `_pointsFor` falls through to the original
+  `unit.points` behavior unchanged. KT's publish path is the untouched
+  `else` branch. **Not verified with an actual click-through build/save/
+  publish** — flagging this honestly rather than claiming full confidence,
+  since no browser was available to drive one.
+
+### Known gaps / not done here
+- Composition validation banner (legality warnings) — explicitly next
+  brief, not this one; `compositionRules` is `null` for 40k for now.
+- Weapon `bonuses` arrays on 40k exports — deferred to BON-4-era flat-pool
+  enrichment, not in this brief's scope.
+- The two `_parseWargear` regex fixes only cover the two confirmed bug
+  patterns; "for every N models" wrapping (19 units total across both
+  factions) is deliberately NOT parsed — those units rely on the fallback
+  hook, by design, per the amendment.
+
