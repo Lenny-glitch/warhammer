@@ -1,0 +1,44 @@
+KNOWN GAPS — parse-40k.js output
+Last updated: 2026-06-30
+
+These are confirmed, root-caused parsing gaps that were deliberately
+NOT fixed before upload. Documented here so they aren't rediscovered
+as surprises later.
+
+--------------------------------------------------------------------
+1. Corsair Legends bands — null stats (3 units)
+--------------------------------------------------------------------
+Units: Corsair Cloud Dancer Band [Legends], Corsair Reaver Band
+       [Legends], Corsair Skyreaver Band [Legends]
+File:  40k-craftworlds-eldar.json
+
+Root cause: third stat-inheritance pattern, not yet diagnosed.
+Not the "model" pattern (fixed) or the "parent unit-level inline
+profile" pattern (fixed 2026-06-30, see parse-40k.js
+extractUnitStats). The Unit-typeName profile for these three isn't
+on the model entry or the immediate parent unit entry — needs
+tracing through the Aeldari Library catalogue to find where it
+actually lives.
+
+Priority: LOW. These are GW "Legends" units — officially unsupported
+in matched play. Won't appear in real games. Weapons parse fine
+(fixed by the selectionEntryGroup recursion); only stats are missing.
+
+--------------------------------------------------------------------
+2. Talos — 0 weapons (1 unit)
+--------------------------------------------------------------------
+Unit:  Talos
+File:  40k-craftworlds-eldar.json
+
+Root cause: third weapon-nesting pattern, not yet diagnosed. Not the
+"direct selectionEntries on model" pattern or the "named
+selectionEntryGroup one level deep" pattern (both fixed 2026-06-30,
+see parse-40k.js collectWeapons). Talos is a Dark Eldar unit reached
+via cross-faction reference inside the Aeldari Library, similar to
+how Kabalite Warriors/Wyches were reached — but its weapon options
+sit in a structure collectWeapons still doesn't walk. Stats parse
+fine (fixed by the parent-entry fallback).
+
+Priority: MEDIUM. Single unit, but Talos is a real, playable model
+(not Legends) — worth fixing before this faction file is treated as
+fully trustworthy. Just not a blocker for the current upload.

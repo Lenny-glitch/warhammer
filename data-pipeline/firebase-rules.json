@@ -1,0 +1,35 @@
+{
+  "rules": {
+    "games": {
+      "$gameId": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "games-kt": {
+      "$gameId": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "gameData": {
+      ".read": true,
+      ".write": true
+    },
+    "rosters": {
+      ".read": true,
+      "$rosterId": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "rosterSchemas": {
+      ".read": true,
+      ".write": true
+    },
+    "exports": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "system": "kill-team",
+    "faction": "tau-pathfinders",
+    "unit": "mb3-recon-drone",
+    "field": "countsAs",
+    "value": 2,
+    "reason": "counts as two operatives for roster size (manual correction, pre-dates pipeline)"
+  },
+  {
+    "system": "kill-team",
+    "faction": "ork-kommandos",
+    "unit": "bomb-squig",
+    "field": "countsAs",
+    "value": 0.5,
+    "reason": "counts as half an operative (manual correction, pre-dates pipeline)"
+  }
+]
