@@ -1,0 +1,25 @@
+{
+  "dependencies": {
+    "jsdom": "^29.1.1",
+    "playwright": "^1.61.0"
+  },
+  "name": "warhammer40k",
+  "version": "1.0.0",
+  "description": "",
+  "main": "build.js",
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://***REMOVED***@github.com/Lenny-glitch/40k.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Lenny-glitch/40k/issues"
+  },
+  "homepage": "https://github.com/Lenny-glitch/40k#readme"
+}
