@@ -96,7 +96,7 @@ test('condition effects accepted and surfaced, no state kept across calls', () =
   const b = bonus({ id: 'markerlight-token', effects: [{ type: 'condition', condition: 'markerlight', stacks: 1, max: 4 }] });
   const r1 = resolveStats({}, [b], { trigger: 'onShoot' });
   assert.strictEqual(r1.conditions.length, 1);
-  assert.deepStrictEqual(r1.conditions[0], { bonusId: 'markerlight-token', condition: 'markerlight', stacks: 1, max: 4 });
+  assert.deepStrictEqual(r1.conditions[0], { bonusId: 'markerlight-token', condition: 'markerlight', stacks: 1, max: 4, appliesTo: 'actor' });
   // a fresh call with no prior knowledge produces the same single entry —
   // the resolver never accumulates state between calls.
   const r2 = resolveStats({}, [b], { trigger: 'onShoot' });
@@ -119,6 +119,99 @@ test('conditional (`when`) effect does NOT apply without the matching fact', () 
   });
   const { stats } = resolveStats({ defDice: 3 }, [b], { trigger: 'onShoot', facts: [] });
   assert.strictEqual(stats.defDice, 3);
+});
+
+// BON-1b Decision 1: "when" vocab additions (halfRange, noCritScored). The
+// mechanism (effectApplies checking context.facts) is already generic — no
+// resolver code changed — so these just prove the two new values work like
+// critScored does.
+test('when: "halfRange" applies with the fact present (Melta-style)', () => {
+  const b = bonus({
+    id: 'melta-2',
+    effects: [{ type: 'mod', stat: 'dmgNormal', op: 'add', value: 2, when: 'halfRange' }],
+  });
+  const { stats } = resolveStats({ dmgNormal: 4 }, [b], { trigger: 'onShoot', facts: ['halfRange'] });
+  assert.strictEqual(stats.dmgNormal, 6);
+});
+
+test('when: "halfRange" does NOT apply without the fact', () => {
+  const b = bonus({
+    id: 'melta-2',
+    effects: [{ type: 'mod', stat: 'dmgNormal', op: 'add', value: 2, when: 'halfRange' }],
+  });
+  const { stats } = resolveStats({ dmgNormal: 4 }, [b], { trigger: 'onShoot', facts: [] });
+  assert.strictEqual(stats.dmgNormal, 4);
+});
+
+test('when: "noCritScored" applies with the fact present (Severe-style)', () => {
+  const b = bonus({
+    id: 'severe',
+    effects: [{ type: 'mod', stat: 'retainNormal', op: 'add', value: 1, when: 'noCritScored' }],
+  });
+  const { stats } = resolveStats({ retainNormal: 0 }, [b], { trigger: 'onShoot', facts: ['noCritScored'] });
+  assert.strictEqual(stats.retainNormal, 1);
+});
+
+test('when: "noCritScored" does NOT apply without the fact', () => {
+  const b = bonus({
+    id: 'severe',
+    effects: [{ type: 'mod', stat: 'retainNormal', op: 'add', value: 1, when: 'noCritScored' }],
+  });
+  const { stats } = resolveStats({ retainNormal: 0 }, [b], { trigger: 'onShoot', facts: ['critScored'] });
+  assert.strictEqual(stats.retainNormal, 0);
+});
+
+console.log('appliesTo (BON-1c Fix 1)');
+
+test('appliesTo defaults to "actor" and is inert to resolveStats — default behavior unchanged', () => {
+  const b = bonus({ id: 'actor-directed', effects: [{ type: 'mod', stat: 'atkDice', op: 'add', value: 1 }] });
+  const { stats, applied } = resolveStats({ atkDice: 3 }, [b], { trigger: 'onShoot' });
+  assert.strictEqual(stats.atkDice, 4);
+  assert.strictEqual(applied[0].effect.appliesTo, undefined, 'no appliesTo on the effect means no appliesTo on the applied record either');
+});
+
+test('appliesTo: "target" still applies its arithmetic to whatever baseStats the caller passed in', () => {
+  // resolveStats is single-sided and agnostic to appliesTo (BON-1c Fix 1
+  // decision) — a real engine calls resolveStats once per side and only
+  // feeds target-directed effects into the call using the target's
+  // baseStats. This test proves the field doesn't break that call or get
+  // silently dropped, not that resolveStats does the routing itself.
+  const b = bonus({
+    id: 'piercing-1',
+    effects: [{ type: 'mod', stat: 'defDice', op: 'add', value: -1, appliesTo: 'target' }],
+  });
+  const { stats, applied } = resolveStats({ defDice: 3 }, [b], { trigger: 'onShoot' });
+  assert.strictEqual(stats.defDice, 2);
+  assert.strictEqual(applied[0].effect.appliesTo, 'target');
+});
+
+test('appliesTo: "target" on a condition effect is carried through onto the conditions entry', () => {
+  const b = bonus({
+    id: 'stun',
+    effects: [{ type: 'condition', condition: 'stunned', stacks: 1, max: 1, when: 'critScored', appliesTo: 'target' }],
+  });
+  const { conditions } = resolveStats({}, [b], { trigger: 'onShoot', facts: ['critScored'] });
+  assert.strictEqual(conditions.length, 1);
+  assert.strictEqual(conditions[0].appliesTo, 'target');
+});
+
+test('condition effect with no appliesTo defaults to "actor" on the conditions entry', () => {
+  const b = bonus({
+    id: 'markerlight-token',
+    effects: [{ type: 'condition', condition: 'markerlight', stacks: 1, max: 4 }],
+  });
+  const { conditions } = resolveStats({}, [b], { trigger: 'onShoot' });
+  assert.strictEqual(conditions[0].appliesTo, 'actor');
+});
+
+test('validateBonus accepts appliesTo: "actor" | "target", rejects unknown values', () => {
+  const good = bonus({ effects: [{ type: 'mod', stat: 'hit', op: 'add', value: 1, appliesTo: 'target' }] });
+  assert.strictEqual(validateBonus(good).valid, true);
+
+  const bad = bonus({ effects: [{ type: 'mod', stat: 'hit', op: 'add', value: 1, appliesTo: 'enemy' }] });
+  const { valid, errors } = validateBonus(bad);
+  assert.strictEqual(valid, false);
+  assert.ok(errors.some(e => e.includes('appliesTo')));
 });
 
 console.log('eligibleBonuses — gating');

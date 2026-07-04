@@ -4,10 +4,16 @@
 const fs   = require('fs');
 const path = require('path');
 const { XMLParser } = require('fast-xml-parser');
+const { loadPatches, applyPatches } = require('./apply-patches');
 
 const KT_DIR  = path.join(process.env.HOME, 'projects/bsdata-killteam');
 const OUT_DIR = path.join(__dirname, '../output');
 const GLOSSARY_PATH = path.join(OUT_DIR, 'rules-glossary-kt.json');
+// Cross-glossary fallback (BON-1b item 3): a few real, universal weapon
+// rules (e.g. PSYCHIC) show up in KT source data but were never formalized
+// as a KT sharedRule — only the 40k .gst defines them. When the KT glossary
+// has no match, fall back to the 40k glossary before giving up.
+const W40K_GLOSSARY_PATH = path.join(OUT_DIR, 'rules-glossary-40k.json');
 
 // ── Faction slug lookup ────────────────────────────────────────────────────────
 // cat name (from "2024 - {name}.cat") → Firebase faction slug
@@ -130,30 +136,116 @@ function extractRange(wrString) {
   return m ? m[1] + '"' : null;
 }
 
-function parseWeaponRules(wrString, glossary) {
+// Candidate forms tried against a glossary, in order: exact, trailing-number
+// parametric ("Lethal 5+"→"Lethal x+", "Piercing 2"→"Piercing x"), the same
+// with an embedded "Crits" qualifier stripped first ("Piercing Crits 2" →
+// "Piercing 2" → "Piercing x" — Piercing Crits x was never authored as its
+// own literal alias, only "Piercing Crits 1" was, so every other Crits value
+// fell through the old single-shape parametric fallback), a leading-distance
+// qualifier stripped ('1" Devastating 3' → "Devastating 3" — Devastating's
+// documented area-effect variant), and a missing space before a glued
+// trailing number ("Piercing1" → "Piercing 1" — the old fallback's `\b`
+// anchor never fires between two word characters, so a glued number was
+// silently never converted).
+function buildCandidates(clean) {
+  const numeric           = clean.replace(/\b(\d+\+?)$/, 'x');
+  const critsStripped     = clean.replace(/\bCrits\s+/i, '');
+  const critsNumeric      = critsStripped.replace(/\b(\d+\+?)$/, 'x');
+  const distanceStripped  = clean.replace(/^\d+"\s+/, '');
+  const deglued           = clean.replace(/([A-Za-z])(\d)/, '$1 $2');
+  const degluedNumeric    = deglued.replace(/\b(\d+\+?)$/, 'x');
+
+  return [...new Set([clean, numeric, critsStripped, critsNumeric, distanceStripped, deglued, degluedNumeric])];
+}
+
+function normalizeForMatch(s) {
+  // \s matches Unicode whitespace incl. U+00A0 (non-breaking space) — at
+  // least one real BSData line uses an NBSP where every other line uses a
+  // plain space ("Heavy (Reposition only)"), which fails a literal
+  // string-equality check even though it's visually identical.
+  return s.toLowerCase().replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function matchAgainstGlossaries(clean, glossaries) {
+  const candidates = buildCandidates(clean).map(normalizeForMatch);
+  for (const glossary of glossaries) {
+    const match = glossary.find(r => {
+      const nameNorm   = normalizeForMatch(r.name);
+      const aliasNorms = r.aliases.map(normalizeForMatch);
+      return candidates.some(c => c === nameNorm || aliasNorms.includes(c));
+    });
+    if (match) return match;
+  }
+  return null;
+}
+
+// A handful of KT source lines are missing a comma between two rules
+// ("Brutal Severe" for "Brutal, Severe"; "Blast 1\" Heavy (Reposition only)"
+// for "Blast 1\", Heavy (Reposition only)") — genuine upstream data typos,
+// not something to guess generally. Recovered only when a single split
+// point exists where BOTH halves independently and exactly match a known
+// glossary entry.
+function trySplitCompound(clean, glossaries) {
+  for (let i = 0; i < clean.length; i++) {
+    if (clean[i] !== ' ') continue;
+    const left  = clean.slice(0, i).trim();
+    const right = clean.slice(i + 1).trim();
+    if (!left || !right) continue;
+    const leftMatch = matchAgainstGlossaries(left, glossaries);
+    if (!leftMatch) continue;
+    const rightMatch = matchAgainstGlossaries(right, glossaries);
+    if (!rightMatch) continue;
+    return [{ text: left, match: leftMatch }, { text: right, match: rightMatch }];
+  }
+  return null;
+}
+
+function parseWeaponRules(wrString, glossary, crossGlossary) {
   if (!wrString || wrString.trim() === '-') return [];
-  return wrString.split(', ').map(token => {
-    const clean = token.trim().replace(/\*$/, '');
-    if (/^Range \d+"?$/.test(clean)) return null; // pulled into rng field
+  const glossaries = [glossary, crossGlossary].filter(Boolean);
 
-    const isCustom = token.trim().endsWith('*');
-    // Parametric fallback: "Limited 1" → try matching rule named "Limited x"
-    const parametric = clean.replace(/\b(\d+\+?)$/, 'x').replace(/\b(\d+")$/, 'x"');
-    const match = glossary.find(r =>
-      r.name === clean ||
-      r.aliases.includes(clean) ||
-      r.aliases.map(a => a.replace(/\*\*/g, '')).includes(clean) ||
-      (parametric !== clean && (r.name === parametric || r.aliases.includes(parametric)))
-    );
+  return wrString.split(', ').flatMap(token => {
+    let clean = token.trim();
 
-    return {
-      raw:     clean,
-      id:      match ? match.id : null,
-      name:    match ? match.name : clean,
-      custom:  isCustom,
-      unknown: !match && !isCustom,
-    };
-  }).filter(Boolean);
+    // Markdown bold wrapping ("**PSYCHIC**") is formatting, not the trailing
+    // "*" custom-rule marker below (which is asymmetric — only ever
+    // trailing, never doubled or leading). Unwrap it first so the old
+    // single-star-strip doesn't mangle it into "**PSYCHIC*".
+    const bold = clean.match(/^\*\*(.+)\*\*$/);
+    if (bold) clean = bold[1];
+
+    // A couple of bespoke local rules carry a stray trailing straight quote
+    // in the source data ("Twin Torrent'", "Wreathed'") — a data artifact,
+    // not part of the rule name.
+    clean = clean.replace(/'+$/, '');
+
+    const isCustom = clean.endsWith('*');
+    clean = clean.replace(/\*$/, '').trim();
+
+    if (/^Range \d+"?$/.test(clean)) return []; // pulled into rng field
+
+    const direct = matchAgainstGlossaries(clean, glossaries);
+    if (direct) {
+      return [{ raw: clean, id: direct.id, name: direct.name, custom: isCustom, unknown: false }];
+    }
+
+    if (!isCustom) {
+      // Own glossary only, deliberately — the cross-glossary fallback exists
+      // for whole-token universal concepts (PSYCHIC), not split recovery.
+      // Allowing it here let a bad early split point (e.g. "Blast" alone
+      // cross-matching 40k's bare "Blast" flag before "Blast 1\"" got a
+      // chance to match KT's own "blast-x" as one unit) win over the
+      // correct split.
+      const split = trySplitCompound(clean, [glossary]);
+      if (split) {
+        return split.map(({ text, match }) => ({
+          raw: text, id: match.id, name: match.name, custom: false, unknown: false,
+        }));
+      }
+    }
+
+    return [{ raw: clean, id: null, name: clean, custom: isCustom, unknown: !isCustom }];
+  });
 }
 
 // ── Weapon extraction ──────────────────────────────────────────────────────────
@@ -163,7 +255,7 @@ function weaponProfilesFromEntry(entry) {
     .filter(p => attrStr(p, '@_typeName') === 'Weapons');
 }
 
-function buildWeapon(profile, glossary) {
+function buildWeapon(profile, glossary, crossGlossary) {
   const rawName = attrStr(profile, '@_name');
   const isRanged = rawName.startsWith('⌖');
   const isMelee  = rawName.startsWith('⚔');
@@ -179,7 +271,7 @@ function buildWeapon(profile, glossary) {
 
   const wrString = chars.WR || '-';
   const rng      = isRanged ? extractRange(wrString) : null;
-  const keywords = parseWeaponRules(wrString, glossary);
+  const keywords = parseWeaponRules(wrString, glossary, crossGlossary);
 
   return {
     id:       slugify(cleanName),
@@ -196,12 +288,12 @@ function buildWeapon(profile, glossary) {
   };
 }
 
-function collectWeapons(modelEntry, sharedById, glossary) {
+function collectWeapons(modelEntry, sharedById, glossary, crossGlossary) {
   const weapons = [];
 
   function extractFromEntry(entry) {
     for (const p of weaponProfilesFromEntry(entry)) {
-      const w = buildWeapon(p, glossary);
+      const w = buildWeapon(p, glossary, crossGlossary);
       if (w) weapons.push(w);
     }
   }
@@ -357,7 +449,7 @@ function extractComposition(catalogue) {
 
 // ── Main parse ─────────────────────────────────────────────────────────────────
 
-function parseCat(catPath, glossary) {
+function parseCat(catPath, glossary, crossGlossary) {
   const xml    = fs.readFileSync(catPath, 'utf8');
   const parser = new XMLParser(PARSER_OPTS);
   const doc    = parser.parse(xml);
@@ -393,7 +485,7 @@ function parseCat(catPath, glossary) {
       continue;
     }
 
-    const weapons   = collectWeapons(entry, byId, glossary);
+    const weapons   = collectWeapons(entry, byId, glossary, crossGlossary);
     const abilities = collectAbilities(entry);
     const keywords  = extractKeywords(entry);
 
@@ -443,6 +535,9 @@ function main() {
     process.exit(1);
   }
   const glossary = JSON.parse(fs.readFileSync(GLOSSARY_PATH, 'utf8'));
+  const crossGlossary = fs.existsSync(W40K_GLOSSARY_PATH)
+    ? JSON.parse(fs.readFileSync(W40K_GLOSSARY_PATH, 'utf8'))
+    : [];
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   const catFiles = fs.readdirSync(KT_DIR)
@@ -451,6 +546,8 @@ function main() {
 
   console.log(`Found ${catFiles.length} 2024 faction files\n`);
 
+  const patches = loadPatches();
+  const patchesApplied = [];
   const results = [];
 
   for (const catPath of catFiles) {
@@ -458,16 +555,36 @@ function main() {
     console.log(`Parsing: ${catName}`);
 
     try {
-      const faction = parseCat(catPath, glossary);
+      const faction = parseCat(catPath, glossary, crossGlossary);
       if (!faction) continue;
+
+      // Fails loud (throws, aborting the whole run) if a patch no longer
+      // matches a unit — see apply-patches.js.
+      const applied = applyPatches(faction, patches, 'operatives');
+      if (applied.length) {
+        patchesApplied.push(...applied);
+        for (const p of applied) console.log(`  patch: ${p.unit}.${p.field} = ${JSON.stringify(p.value)} (${p.reason})`);
+      }
 
       const outFile = path.join(OUT_DIR, `kt-${faction.id}.json`);
       fs.writeFileSync(outFile, JSON.stringify(faction, null, 2));
       console.log(`  → kt-${faction.id}.json  (${faction.operatives.length} operatives)`);
       results.push({ slug: faction.id, name: faction.name, operatives: faction.operatives.length });
     } catch (err) {
+      // A patch that no longer matches a unit must fail the whole run, not
+      // just this one faction — per-file parse errors are recoverable
+      // (other factions still parse fine), a dangling correction isn't.
+      if (err.message.startsWith('patches.json entry')) {
+        console.error(`\nFATAL: ${err.message}`);
+        process.exit(1);
+      }
       console.error(`  ERROR: ${err.message}`);
     }
+  }
+
+  if (patches.length) {
+    const targetedFactions = new Set(patches.map(p => p.faction)).size;
+    console.log(`\nPatches applied: ${patchesApplied.length} of ${patches.length} (across ${targetedFactions} faction(s) targeted)`);
   }
 
   console.log('\n── Summary ──────────────────────────────────────────────────');

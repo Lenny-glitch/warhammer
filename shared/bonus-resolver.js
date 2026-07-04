@@ -13,11 +13,12 @@
 // Re-running upload.js must not change the rules of a game in progress.
 //
 // Pure functions only. No UI, no dice, no Firebase, no game-specific logic.
-// See ~/Downloads/BONUS_ENGINE_BRIEF.md (v2) for the full schema writeup.
+// See BONUS_ENGINE_BRIEF.md (v3) and BON1B_ADDENDUM_BRIEF.md in this repo
+// for the full schema writeup and the Decision log behind each addition.
 
 'use strict';
 
-const BONUS_RESOLVER_VERSION = '1.0.0';
+const BONUS_RESOLVER_VERSION = '1.2.0';
 
 // Stats where a LOWER number is better (roll-target stats: you're trying to
 // beat this number on a die). Every other stat in the abstract vocabulary is
@@ -33,8 +34,16 @@ const SCOPE_TARGETS = new Set(['self', 'ally', 'team', 'enemy']);
 const SYSTEMS = new Set(['kill-team', 'warhammer-40k', 'warhammer-fantasy', 'any']);
 const SOURCES = new Set(['keyword', 'ploy', 'stratagem', 'ability', 'aura', 'magic', 'user']);
 const EFFECT_TYPES = new Set(['mod', 'flag', 'condition']);
+const APPLIES_TO = new Set(['actor', 'target']);
+const APPLIES_TO_DEFAULT = 'actor';
 const MOD_OPS = ['set', 'add', 'improve', 'cap']; // fixed application order, do not reorder
 const WHEN_DEFAULT = 'always';
+// "when" vocabulary (v1.1, BON-1b Decision 1): always | critScored |
+// halfRange | noCritScored. Open vocabulary, same as flags — effectApplies
+// below already checks arbitrary fact strings against context.facts, so
+// adding a value here is documentation, not new logic. halfRange = attack
+// made within half the weapon's range (Melta x, Rapid Fire x). noCritScored
+// = no critical hit was scored in the sequence (Severe).
 
 // ── validateBonus ────────────────────────────────────────────────────────
 
@@ -104,6 +113,14 @@ function validateBonus(bonus) {
       if (!EFFECT_TYPES.has(effect.type)) {
         err(`effects[${i}].type must be one of ${[...EFFECT_TYPES].join('|')}, got: ${JSON.stringify(effect.type)}`);
         return;
+      }
+      // appliesTo (v1.2, BON-1c Fix 1) is valid on any effect type — it's
+      // metadata the CALLER reads to decide which side's stats a given
+      // effect belongs to (see resolveStats' doc comment below); resolveStats
+      // itself is agnostic to it and just applies whatever baseStats it was
+      // given, so this is the only place it's actually checked.
+      if (effect.appliesTo !== undefined && !APPLIES_TO.has(effect.appliesTo)) {
+        err(`effects[${i}].appliesTo must be one of ${[...APPLIES_TO].join('|')}, got: ${JSON.stringify(effect.appliesTo)}`);
       }
       if (effect.type === 'mod') {
         if (typeof effect.stat !== 'string' || effect.stat.trim() === '') err(`effects[${i}].stat must be a non-empty string`);
@@ -202,7 +219,18 @@ function effectApplies(effect, context) {
   return Boolean(context.facts && context.facts.includes(when));
 }
 
-// baseStats: { [stat]: number }
+// baseStats: { [stat]: number } — belongs to ONE side of the interaction.
+//   resolveStats stays single-sided on purpose (BON-1c Fix 1 decision): it
+//   does not take an actor+target pair and does not know which side
+//   `baseStats` represents. An effect's `appliesTo` ("actor" | "target",
+//   default "actor") is pure metadata for the CALLER — to get a
+//   target-directed effect (e.g. Piercing's -1 defDice) to actually land,
+//   the calling engine must call resolveStats a second time with the
+//   target's own baseStats and only the subset of activeBonuses/effects
+//   whose appliesTo is "target". resolveStats does not filter by appliesTo
+//   itself; it applies every mod effect it's given to whatever baseStats it
+//   was handed, and passes appliesTo through untouched on `applied` and
+//   `conditions` entries so the caller can also inspect it after the fact.
 // activeBonuses: Bonus[] — already filtered by eligibleBonuses; order matters
 //   for tie-breaking within the same op (first-seen wins ties), so callers
 //   should pass them in a stable, deterministic order.
@@ -229,7 +257,10 @@ function resolveStats(baseStats, activeBonuses, context) {
         if (!flags.includes(effect.flag)) flags.push(effect.flag);
         applied.push({ bonusId: bonus.id, effect });
       } else if (effect.type === 'condition') {
-        conditions.push({ bonusId: bonus.id, condition: effect.condition, stacks: effect.stacks, max: effect.max });
+        conditions.push({
+          bonusId: bonus.id, condition: effect.condition, stacks: effect.stacks, max: effect.max,
+          appliesTo: effect.appliesTo || APPLIES_TO_DEFAULT,
+        });
         applied.push({ bonusId: bonus.id, effect });
       }
     }

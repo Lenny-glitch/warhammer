@@ -17,6 +17,12 @@ const STRATS_DIR = path.join(__dirname, '../stratagems');
 
 const FORCE = process.argv.includes('--force');
 const DRY_RUN = process.argv.includes('--dry-run');
+// --only=slug1,slug2 — targeted re-upload (PATCH_OVERLAY_BRIEF.md Part 1):
+// runs just the matching KT/40k faction files, skips rules/ploys/
+// stratagems/bonuses entirely. For re-pushing a small correction (e.g. a
+// patches.json fix) without re-running the whole catalog.
+const ONLY_ARG = process.argv.find(a => a.startsWith('--only='));
+const ONLY = ONLY_ARG ? ONLY_ARG.slice('--only='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
 
 // ── Firebase config loader ─────────────────────────────────────────────────────
 
@@ -30,9 +36,17 @@ function loadFirebaseConfig() {
 
 // ── Firebase REST helpers ──────────────────────────────────────────────────────
 
-function firebaseRequest(method, dbUrl, fbPath, data) {
+function firebaseRequest(method, dbUrl, fbPath, data, query) {
   return new Promise((resolve, reject) => {
     const url = new URL(`${fbPath}.json`, dbUrl);
+    // Query params (e.g. shallow=true) must be set on the URL object AFTER
+    // ".json" is appended to the path, not baked into fbPath beforehand —
+    // doing the latter produced ".../info?shallow=true.json" (the ".json"
+    // landing inside the query string value), which Firebase 301-redirects
+    // instead of answering. exists() silently caught that as "false" for
+    // every single call — every skip-if-exists check in this file has been
+    // dead code since this function was written.
+    if (query) for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
     const body = data ? JSON.stringify(data) : null;
     const options = {
       hostname: url.hostname,
@@ -63,7 +77,7 @@ function firebaseRequest(method, dbUrl, fbPath, data) {
 
 async function exists(dbUrl, fbPath) {
   try {
-    const result = await firebaseRequest('GET', dbUrl, `${fbPath}?shallow=true`);
+    const result = await firebaseRequest('GET', dbUrl, fbPath, null, { shallow: 'true' });
     return result !== null;
   } catch {
     return false;
@@ -100,12 +114,11 @@ async function uploadKtFaction(dbUrl, file) {
   const unitCount = (data.operatives || []).length;
   console.log(`\nKT faction: ${data.name} (${slug}) — ${unitCount} operatives`);
 
-  const infoPath = `${base}/info`;
-  if (!FORCE && await exists(dbUrl, infoPath)) {
-    console.log(`  SKIP: ${slug} already exists in Firebase (use --force to overwrite)`);
-    return { skipped: true };
-  }
-
+  // No skip-if-exists here (removed per PATCH_OVERLAY_BRIEF.md guard note):
+  // the pipeline is now authoritative, so an existing faction isn't data to
+  // protect from overwrite, it's the normal case. The pre-upload manifest
+  // in main() already told the operator which factions this run will
+  // overwrite; this per-item YES prompt is the actual write gate.
   const answer = await confirm(`  About to write ${unitCount} operatives for ${data.name}. Type YES to continue: `);
   if (answer !== 'YES') {
     console.log('  Aborted.');
@@ -177,12 +190,7 @@ async function upload40kFaction(dbUrl, file) {
 
   console.log(`\n40k faction: ${data.name} (${slug}) — ${unitCount} units`);
 
-  const infoPath = `${base}/info`;
-  if (!FORCE && await exists(dbUrl, infoPath)) {
-    console.log(`  SKIP: ${slug} already exists in Firebase (use --force to overwrite)`);
-    return { skipped: true };
-  }
-
+  // No skip-if-exists here — see the matching note in uploadKtFaction.
   const answer = await confirm(`  About to write ${unitCount} units for ${data.name}. Type YES to continue: `);
   if (answer !== 'YES') { console.log('  Aborted.'); return { skipped: true }; }
 
@@ -284,31 +292,74 @@ async function upload40kRules(dbUrl) {
   console.log(`  ✓ Wrote 40k rules`);
 }
 
+// ── Pre-upload manifest ─────────────────────────────────────────────────────
+// PATCH_OVERLAY_BRIEF.md guard note: uploadKtFaction/upload40kFaction no
+// longer skip existing factions silently (the pipeline is authoritative now
+// — an existing faction is the normal case, not protected data). In
+// exchange, this prints an upfront summary of which factions in THIS run
+// already exist and will be overwritten, with one confirmation gate for the
+// whole batch, before the per-item write prompts start.
+async function preUploadManifest(dbUrl, ktFiles, w40kFiles) {
+  const existingKt = [];
+  for (const f of ktFiles) {
+    const slug = JSON.parse(fs.readFileSync(f, 'utf8')).id;
+    if (await exists(dbUrl, `gameData/kill-team/factions/${slug}/info`)) existingKt.push(slug);
+  }
+  const existingW40k = [];
+  for (const f of w40kFiles) {
+    const slug = JSON.parse(fs.readFileSync(f, 'utf8')).id;
+    if (await exists(dbUrl, `gameData/warhammer-40k/factions/${slug}/info`)) existingW40k.push(slug);
+  }
+
+  const total = existingKt.length + existingW40k.length;
+  if (total === 0) return true;
+
+  console.log(`\n⚠ Pre-upload manifest: ${total} faction(s) already exist and WILL BE OVERWRITTEN`);
+  console.log('  (the pipeline is authoritative — this is expected, not a bug):');
+  if (existingKt.length) console.log(`  kill-team: ${existingKt.join(', ')}`);
+  if (existingW40k.length) console.log(`  warhammer-40k: ${existingW40k.join(', ')}`);
+
+  if (FORCE) return true;
+  const answer = await confirm('\nProceed with this upload plan? Type YES to continue: ');
+  return answer === 'YES';
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log('=== Firebase Upload ===');
   if (DRY_RUN) console.log('[DRY-RUN MODE — no actual writes]');
   if (FORCE)   console.log('[FORCE MODE — will overwrite existing data]');
+  if (ONLY)    console.log(`[--only MODE — targeted faction re-upload: ${ONLY.join(', ')}]`);
 
   const { databaseURL } = loadFirebaseConfig();
   console.log(`Firebase: ${databaseURL}`);
 
-  // ── Kill Team ──────────────────────────────────────────────────────────────
-
-  // Weapon rules glossary
-  await uploadKtRules(databaseURL);
-
-  // All KT faction files in output/
-  const ktFiles = fs.readdirSync(OUT_DIR)
+  let ktFiles = fs.readdirSync(OUT_DIR)
     .filter(f => f.startsWith('kt-') && f.endsWith('.json'))
     .map(f => path.join(OUT_DIR, f));
+  let w40kFiles = fs.readdirSync(OUT_DIR)
+    .filter(f => f.startsWith('40k-') && f.endsWith('.json'))
+    .map(f => path.join(OUT_DIR, f));
+
+  if (ONLY) {
+    ktFiles = ktFiles.filter(f => ONLY.includes(JSON.parse(fs.readFileSync(f, 'utf8')).id));
+    w40kFiles = w40kFiles.filter(f => ONLY.includes(JSON.parse(fs.readFileSync(f, 'utf8')).id));
+  }
+
+  const proceed = await preUploadManifest(databaseURL, ktFiles, w40kFiles);
+  if (!proceed) { console.log('\nAborted at pre-upload manifest.'); return; }
+
+  // ── Kill Team ──────────────────────────────────────────────────────────────
+
+  if (!ONLY) await uploadKtRules(databaseURL);
+
   for (const file of ktFiles) {
     await uploadKtFaction(databaseURL, file);
   }
 
   // KT ploys (hand-authored)
-  if (fs.existsSync(PLOYS_DIR)) {
+  if (!ONLY && fs.existsSync(PLOYS_DIR)) {
     const ployFiles = fs.readdirSync(PLOYS_DIR).filter(f => f.endsWith('.json'));
     for (const f of ployFiles) {
       await uploadKtPloys(databaseURL, path.join(PLOYS_DIR, f));
@@ -317,19 +368,14 @@ async function main() {
 
   // ── Warhammer 40k ─────────────────────────────────────────────────────────
 
-  // Weapon rules glossary
-  await upload40kRules(databaseURL);
+  if (!ONLY) await upload40kRules(databaseURL);
 
-  // All 40k faction files in output/
-  const w40kFiles = fs.readdirSync(OUT_DIR)
-    .filter(f => f.startsWith('40k-') && f.endsWith('.json'))
-    .map(f => path.join(OUT_DIR, f));
   for (const file of w40kFiles) {
     await upload40kFaction(databaseURL, file);
   }
 
   // 40k stratagems (hand-authored)
-  if (fs.existsSync(STRATS_DIR)) {
+  if (!ONLY && fs.existsSync(STRATS_DIR)) {
     const stratFiles = fs.readdirSync(STRATS_DIR).filter(f => f.endsWith('.json'));
     for (const f of stratFiles) {
       await upload40kStratagems(databaseURL, path.join(STRATS_DIR, f));
@@ -337,7 +383,7 @@ async function main() {
   }
 
   // ── Bonus engine catalog (BON-1) ──────────────────────────────────────────
-  await uploadBonusesCatalog(databaseURL);
+  if (!ONLY) await uploadBonusesCatalog(databaseURL);
 
   console.log('\n=== Done ===');
 }
