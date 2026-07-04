@@ -2616,7 +2616,7 @@
       return {
         rosterId: null, name: '', system, factionId,
         factionName: '', operatives: [], compositionRules: null,
-        unitLibrary: [], _iCtr: 0, created: null,
+        unitLibrary: [], _iCtr: 0, created: null, browserFilter: '',
       };
     },
 
@@ -2672,6 +2672,34 @@
     async _load() {
       const { system, factionId } = RosterBuilder.state;
       try {
+        // Roster 3b Part 2 v3: for 40k, the flat pool (gameData/{system}/
+        // {factionId}, keyed directly by unitId) is the canonical unit
+        // source — it has squadSize/pointsTable, the BSData-pipeline
+        // subtree (gameData/{system}/factions/{factionId}/units) doesn't
+        // and is deprecated. KT is unaffected: unchanged confirmed-library
+        // read below.
+        if (system === 'warhammer-40k') {
+          const poolSnap = await App.db.ref(`gameData/${system}/${factionId}`).once('value');
+          const val = poolSnap.val() || {};
+
+          RosterBuilder.state.factionName      = factionId.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          RosterBuilder.state.compositionRules = null; // no legality banner for 40k yet — next roster brief
+
+          const defName = `${RosterBuilder.state.factionName} Roster`;
+          if (!RosterBuilder.state.name) RosterBuilder.state.name = defName;
+          const nameEl = document.getElementById('rb-name');
+          if (nameEl && !nameEl.value) nameEl.value = RosterBuilder.state.name;
+          document.getElementById('rb-faction').textContent = RosterBuilder.state.factionName;
+
+          RosterBuilder.state.unitLibrary = Object.entries(val)
+            .map(([id, raw]) => UnitSearch._transformForRoster(id, raw))
+            .sort((a, b) => (a.role || '').localeCompare(b.role || '') || (a.name || '').localeCompare(b.name || ''));
+
+          RosterBuilder._renderBrowser();
+          RosterBuilder._updateHeader();
+          return;
+        }
+
         const [infoSnap, unitsSnap] = await Promise.all([
           App.db.ref(`gameData/${system}/factions/${factionId}/info`).once('value'),
           App.db.ref(`gameData/${system}/factions/${factionId}/units`).once('value'),
@@ -2740,14 +2768,42 @@
         const ids = RosterBuilder._arr(slot.weaponIds);
         if (ids.length) chosenLoadout[slot.slot] = ids[0];
       });
+      // Roster 3b Part 2 v3: variable-size 40k squads default to their
+      // minimum and get a live-points recompute when changed (see
+      // _setModelCount) — fixed-size/KT units have no squadSize, modelCount
+      // stays null and points stays the flat value untouched.
+      const hasVariableSize = unit.squadSize && unit.squadSize.min !== unit.squadSize.max;
+      const modelCount = hasVariableSize ? unit.squadSize.min : null;
       RosterBuilder.state.operatives.push({
         instanceId, unitId: unit.id, unitName: unit.name,
-        points: unit.points != null ? unit.points : null,
+        points: RosterBuilder._pointsFor(unit, modelCount),
         countsAs: unit.countsAs || 1, role: unit.role || null,
-        chosenLoadout, notes: '', expanded: false,
+        chosenLoadout, modelCount, notes: '', expanded: false,
       });
       RosterBuilder._renderOperatives();
       RosterBuilder._renderBrowser();
+      RosterBuilder._updateHeader();
+    },
+
+    // unit.pointsTable is normalized to { "<modelCount>": pts } by
+    // _transformForRoster; falls back to the flat unit.points when there's
+    // no modelCount yet, no table, or this count isn't a table key.
+    _pointsFor(unit, modelCount) {
+      if (modelCount != null && unit.pointsTable && unit.pointsTable[String(modelCount)] != null) {
+        return unit.pointsTable[String(modelCount)];
+      }
+      return unit.points != null ? unit.points : null;
+    },
+
+    _setModelCount(instanceId, modelCount) {
+      const op = RosterBuilder.state.operatives.find(o => o.instanceId === instanceId);
+      if (!op) return;
+      const unit = RosterBuilder.state.unitLibrary.find(u => u.id === op.unitId);
+      if (!unit) return;
+      RosterBuilder._invalidatePublish();
+      op.modelCount = Number(modelCount);
+      op.points = RosterBuilder._pointsFor(unit, op.modelCount);
+      RosterBuilder._renderOperatives();
       RosterBuilder._updateHeader();
     },
 
@@ -2805,17 +2861,60 @@
       `;
     },
 
+    // Squad-size stepper (40k variable-size units only — squadSize.min !==
+    // .max). Fixed-size and KT units have no squadSize, so this is a no-op
+    // there.
+    _squadSizeHTML(op, unit) {
+      if (!unit.squadSize || unit.squadSize.min === unit.squadSize.max) return '';
+      const { min, max } = unit.squadSize;
+      const options = [];
+      for (let n = min; n <= max; n++) options.push(n);
+      return `
+        <div class="rb-squad-size">
+          <label>Squad size</label>
+          <select class="uf-input" onchange="RosterBuilder._setModelCount('${op.instanceId}', this.value)">
+            ${options.map(n => `<option value="${n}" ${op.modelCount === n ? 'selected' : ''}>${n} models</option>`).join('')}
+          </select>
+        </div>
+      `;
+    },
+
+    // Points caveat (shadow-spectres-style pointsTable gaps — see
+    // _normalizePointsTable) and the raw prose _parseWargear couldn't turn
+    // into a clickable choice (Cadian Shock Troops' "for every N models"
+    // special-weapon text is the acceptance case for this).
+    _wargearNoticesHTML(unit) {
+      const parts = [];
+      if (unit.pointsCaveat) parts.push(`<div class="rb-points-caveat">${unit.pointsCaveat}</div>`);
+      if (!unit.loadoutIsHandAuthored && (unit.unparsedWargear || []).length) {
+        parts.push(`
+          <div class="rb-wargear-unparsed">
+            <div class="rb-wargear-unparsed-label">Additional wargear (not yet a pickable choice):</div>
+            ${unit.unparsedWargear.map(u => `<div class="rb-wargear-unparsed-row">${u.rawText}</div>`).join('')}
+            <button class="btn btn-secondary rb-author-loadout-btn" onclick="RosterBuilder._openLoadoutAuthor('${unit.id}')">
+              Author this loadout…
+            </button>
+          </div>
+        `);
+      }
+      return parts.join('');
+    },
+
     _loadoutPanel(op, unit) {
       const slots   = RosterBuilder._arr(unit.loadoutOptions);
       const weapons = RosterBuilder._arr(unit.weapons);
       const schema  = App.schemas[RosterBuilder.state.system];
       const table   = RosterBuilder._profileTableHTML(unit, op.chosenLoadout, schema, op.instanceId);
+      const squadSizeHTML = RosterBuilder._squadSizeHTML(op, unit);
+      const noticesHTML   = RosterBuilder._wargearNoticesHTML(unit);
 
       if (!slots.length) {
         return `
           <div class="rb-loadout-panel">
+            ${squadSizeHTML}
             <div class="rb-fixed-label">Fixed Loadout</div>
             ${table}
+            ${noticesHTML}
           </div>
         `;
       }
@@ -2844,10 +2943,122 @@
 
       return `
         <div class="rb-loadout-panel">
+          ${squadSizeHTML}
           ${radioGroups}
           <div class="rb-wp-section">${table}</div>
+          ${noticesHTML}
         </div>
       `;
+    },
+
+    // ── Lazy hand-author fallback hook (Roster 3b Part 2 v3, Scope #2) ──
+    // Small dedicated editor, not a full UnitForm reuse — writes straight
+    // back into the flat pool's own record (gameData/{system}/{factionId}/
+    // {unitId}/loadoutOptions), the canonical source per the v3 decision,
+    // NOT the deprecated gameData/{system}/factions/.../units subtree.
+    // Skippable: closing without saving leaves the unit exactly as it was
+    // (unparsedWargear notice still visible next time), which is the
+    // "visibly marked as not authored" state — no separate flag needed.
+    _loadoutAuthorState: null,
+
+    _openLoadoutAuthor(unitId) {
+      const unit = RosterBuilder.state.unitLibrary.find(u => u.id === unitId);
+      if (!unit) return;
+      RosterBuilder._loadoutAuthorState = { unitId, slots: [{ name: '', weaponIds: [] }] };
+      RosterBuilder._renderLoadoutAuthor(unit);
+    },
+
+    _closeLoadoutAuthor() {
+      RosterBuilder._loadoutAuthorState = null;
+      const el = document.getElementById('rb-loadout-author-overlay');
+      if (el) el.remove();
+    },
+
+    _renderLoadoutAuthor(unit) {
+      let el = document.getElementById('rb-loadout-author-overlay');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'rb-loadout-author-overlay';
+        el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;';
+        document.body.appendChild(el);
+      }
+
+      const st = RosterBuilder._loadoutAuthorState;
+      const weapons = RosterBuilder._arr(unit.weapons);
+
+      const slotsHTML = st.slots.map((slot, si) => `
+        <div style="border:1px solid #444;border-radius:6px;padding:0.6rem;margin-bottom:0.6rem;">
+          <input class="uf-input" placeholder="Slot name (e.g. \\"Replace flamer\\")"
+                 value="${(slot.name || '').replace(/"/g, '&quot;')}"
+                 oninput="RosterBuilder._loadoutAuthorState.slots[${si}].name = this.value">
+          <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.4rem;">
+            ${weapons.map(w => `
+              <label style="display:flex;align-items:center;gap:0.25rem;font-size:0.8rem;">
+                <input type="checkbox" ${slot.weaponIds.includes(w.id) ? 'checked' : ''}
+                       onchange="RosterBuilder._toggleAuthorWeapon(${si}, '${w.id}', this.checked)">
+                ${w.name}
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+
+      el.innerHTML = `
+        <div style="background:#1a1a1a;border:1px solid #555;border-radius:8px;padding:1rem;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;">
+          <h3 style="margin-top:0;">Author loadout — ${unit.name}</h3>
+          <div style="font-size:0.8rem;color:#999;margin-bottom:0.8rem;">
+            Reference text for this unit's wargear is in the operative panel — use it to decide slots.
+            Each slot becomes a radio-button choice; check every weapon that's a valid option for it.
+          </div>
+          <div id="rb-loadout-author-slots">${slotsHTML}</div>
+          <button class="btn btn-secondary" onclick="RosterBuilder._addAuthorSlot('${unit.id}')">+ Add slot</button>
+          <div style="display:flex;gap:0.5rem;margin-top:1rem;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="RosterBuilder._closeLoadoutAuthor()">Skip — author later</button>
+            <button class="btn btn-primary" onclick="RosterBuilder._saveLoadoutAuthor()">Save</button>
+          </div>
+        </div>
+      `;
+    },
+
+    _toggleAuthorWeapon(slotIdx, weaponId, checked) {
+      const slot = RosterBuilder._loadoutAuthorState.slots[slotIdx];
+      if (checked) { if (!slot.weaponIds.includes(weaponId)) slot.weaponIds.push(weaponId); }
+      else slot.weaponIds = slot.weaponIds.filter(id => id !== weaponId);
+    },
+
+    _addAuthorSlot(unitId) {
+      RosterBuilder._loadoutAuthorState.slots.push({ name: '', weaponIds: [] });
+      const unit = RosterBuilder.state.unitLibrary.find(u => u.id === unitId);
+      RosterBuilder._renderLoadoutAuthor(unit);
+    },
+
+    async _saveLoadoutAuthor() {
+      const st = RosterBuilder._loadoutAuthorState;
+      const { system, factionId } = RosterBuilder.state;
+      const loadoutOptions = st.slots
+        .filter(s => s.name.trim() && s.weaponIds.length)
+        .map(s => ({ slot: s.name.trim(), weaponIds: s.weaponIds }));
+
+      if (!loadoutOptions.length) { alert('Add at least one named slot with a weapon checked.'); return; }
+
+      try {
+        await App.db.ref(`gameData/${system}/${factionId}/${st.unitId}/loadoutOptions`).set(loadoutOptions);
+      } catch (err) {
+        alert(`Could not save: ${err.message}`);
+        return;
+      }
+
+      // Reflect immediately without a full reload — mirrors what the
+      // transform would produce on next load (hand-authored takes
+      // precedence, unparsed notice clears).
+      const unit = RosterBuilder.state.unitLibrary.find(u => u.id === st.unitId);
+      if (unit) {
+        unit.loadoutOptions = loadoutOptions;
+        unit.loadoutIsHandAuthored = true;
+        unit.unparsedWargear = [];
+      }
+      RosterBuilder._closeLoadoutAuthor();
+      RosterBuilder._renderOperatives();
     },
 
     _profileTableHTML(unit, chosenLoadout, schema, iid) {
@@ -2917,30 +3128,42 @@
       });
     },
 
+    // 40k's flat pool is 100+ units per faction — RosterBuilder now reads it
+    // directly (Roster 3b Part 2 v3), so the old "go search a separate
+    // screen, then come back" button no longer has a purpose; an inline
+    // filter on this same browser does the job the search screen used to.
     _renderBrowser() {
       const browser  = document.getElementById('rb-browser');
-      const units    = RosterBuilder.state.unitLibrary;
-      const { system, factionId } = RosterBuilder.state;
+      const { system } = RosterBuilder.state;
+      const filter   = (RosterBuilder.state.browserFilter || '').trim().toLowerCase();
+      const allUnits = RosterBuilder.state.unitLibrary;
+      const units    = (system === 'warhammer-40k' && filter)
+        ? allUnits.filter(u => (u.name || '').toLowerCase().includes(filter))
+        : allUnits;
 
-      const searchBtnHTML = system === 'warhammer-40k' ? `
-        <div class="rb-search-link">
-          <button class="btn btn-secondary rb-search-pool-btn"
-                  onclick="sessionStorage.setItem('unitSearchReturn',location.hash);location.hash='#unit-search/${system}/${factionId}'">
-            Search Source Pool
-          </button>
-          <span class="rb-search-hint">Add units from the 40k database</span>
+      const filterHTML = system === 'warhammer-40k' ? `
+        <div class="rb-browser-filter">
+          <input class="uf-input" id="rb-browser-search" type="text"
+                 placeholder="Filter ${allUnits.length} units…"
+                 value="${(RosterBuilder.state.browserFilter || '').replace(/"/g, '&quot;')}"
+                 oninput="RosterBuilder._onBrowserFilterInput(this.value)">
         </div>` : '';
 
-      if (!units.length) {
-        browser.innerHTML = searchBtnHTML + `<div class="rb-op-empty">${
+      if (!allUnits.length) {
+        browser.innerHTML = filterHTML + `<div class="rb-op-empty">${
           system === 'warhammer-40k'
-            ? 'No confirmed units yet — search above to add.'
+            ? 'No units found for this faction.'
             : 'No units in library for this faction yet.'
         }</div>`;
         return;
       }
 
-      browser.innerHTML = searchBtnHTML + units.map(u => {
+      if (!units.length) {
+        browser.innerHTML = filterHTML + '<div class="rb-op-empty">No units match.</div>';
+        return;
+      }
+
+      browser.innerHTML = filterHTML + units.map(u => {
         const chk = RosterBuilder._checkMaxed(u);
         return `
           <div class="rb-unit-row${chk.maxed ? ' maxed' : ''}">
@@ -2954,6 +3177,18 @@
           </div>
         `;
       }).join('');
+    },
+
+    // Filtering re-renders the whole browser innerHTML (same pattern as
+    // every other RosterBuilder update) — restore focus/cursor so typing
+    // doesn't visibly lose the input each keystroke.
+    _onBrowserFilterInput(value) {
+      RosterBuilder.state.browserFilter = value;
+      const el = document.getElementById('rb-browser-search');
+      const pos = el ? el.selectionStart : null;
+      RosterBuilder._renderBrowser();
+      const newEl = document.getElementById('rb-browser-search');
+      if (newEl) { newEl.focus(); if (pos != null) newEl.setSelectionRange(pos, pos); }
     },
 
     _updateHeader() {
@@ -3175,18 +3410,32 @@
 
         const pts = s.operatives.reduce((sum, op) => sum + (op.points || 0), 0);
 
-        // Load full unit templates for denormalization
-        const tSnap = await App.db
-          .ref(`gameData/${s.system}/factions/${s.factionId}/units`)
-          .once('value');
-        const templates = tSnap.val() || {};
-
         const arr = v => !v ? [] : Array.isArray(v) ? v : Object.values(v);
+
+        // Roster 3b Part 2 v3: for 40k, templates come from the already-
+        // transformed unitLibrary in memory (flat pool, canonical) — NOT a
+        // fresh fetch from the deprecated gameData/{system}/factions/...
+        // subtree, which has no loadoutOptions at all and would silently
+        // publish every 40k roster with an empty chosenLoadout. KT keeps
+        // its original fresh-fetch-from-confirmed-library behavior,
+        // unchanged, below.
+        let templates;
+        if (s.system === 'warhammer-40k') {
+          templates = {};
+          for (const u of s.unitLibrary) templates[u.id] = u;
+        } else {
+          const tSnap = await App.db
+            .ref(`gameData/${s.system}/factions/${s.factionId}/units`)
+            .once('value');
+          templates = tSnap.val() || {};
+        }
 
         const units = s.operatives.map(op => {
           const tmpl    = templates[op.unitId] || {};
           const weapons = arr(tmpl.weapons);
-          // Resolve chosenLoadout IDs → full weapon objects
+          // Resolve chosenLoadout IDs → full weapon objects (each weapon
+          // object already carries its own `bonuses` array, if any, since
+          // it's copied whole — nothing strips it).
           const chosenLoadout = {};
           arr(tmpl.loadoutOptions).forEach(slot => {
             const wid    = (op.chosenLoadout && op.chosenLoadout[slot.slot])
@@ -3201,6 +3450,7 @@
             role:         op.role       || null,
             points:       op.points     ?? null,
             countsAs:     op.countsAs   || 1,
+            modelCount:   op.modelCount ?? null,
             stats:        tmpl.stats    || {},
             weapons:      weapons.map(w => ({ ...w })),
             chosenLoadout,
@@ -3591,8 +3841,24 @@
         return '';
       });
 
+      // Pattern 1c: "X can be replaced with (one|N) of the following: opts" — run BEFORE p1.
+      // p1 assumes "can have their/its/the X replaced"; when the phrasing is instead
+      // "X can be replaced" (X comes before "can", not after), p1's lazy capture group
+      // matched the literal word "be" as if it were the replaced item ("Replace be").
+      const p1c = /([^.]*?)\s+can be replaced with (?:one|\d+) of the following[*]?\s*:\s*([^.]+)/gi;
+      text = text.replace(p1c, (_, replaces, optText) => {
+        const options = UnitSearch._parseOptionsList(optText);
+        if (options.length) {
+          const r = UnitSearch._cleanRef(replaces);
+          parsed.push({ type: 'one-of', name: `Replace ${r}`, replaces: r, options });
+        }
+        return '';
+      });
+
       // Pattern 1: "…can [each] [have their] X replaced with one of the following[*]: opts"
-      const p1 = /[^.]*?can (?:each )?(?:have (?:their|its|the) )?(.+?)\s+replaced with one of the following[*]?\s*:\s*([^.]+)/gi;
+      // Accepts "N of the following" too (BSData sometimes writes "1 of the following"
+      // instead of "one of the following" — same meaning, different wording).
+      const p1 = /[^.]*?can (?:each )?(?:have (?:their|its|the) )?(.+?)\s+replaced with (?:one|\d+) of the following[*]?\s*:\s*([^.]+)/gi;
       text = text.replace(p1, (_, replaces, optText) => {
         const options = UnitSearch._parseOptionsList(optText);
         if (options.length) {
@@ -3622,7 +3888,7 @@
       });
 
       // Pattern 3: "Up to N models can replace X with one of the following: opts"
-      const p3 = /[Uu]p to (\d+) [^.]+?one of the following[*]?\s*:\s*([^.]+)/g;
+      const p3 = /[Uu]p to (\d+) [^.]+?(?:one|\d+) of the following[*]?\s*:\s*([^.]+)/g;
       text = text.replace(p3, (_, n, optText) => {
         const options = UnitSearch._parseOptionsList(optText);
         if (options.length) {
@@ -3654,6 +3920,175 @@
         .replace(/\s+and\s+.*$/i, '')
         .replace(/[*]$/, '')
         .trim();
+    },
+
+    // ── Roster 3b Part 2 v3 — bridges _parseWargear's name-string options to
+    // the weaponIds RosterBuilder's loadout UI expects (KT-native shape). ──
+
+    _weaponNameNorm(s) { return (s || '').toLowerCase().replace(/[\s-]+/g, ''); },
+
+    // Matches an option/replaces name string against a unit's own weapons
+    // object by name. Tries, in order: exact name, exact name after a
+    // possessive prefix is stripped ("Platform's shuriken cannon" →
+    // "shuriken cannon" — common in this prose), space/dash-normalized
+    // exact match, then normalized PREFIX match. A prefix match can return
+    // MULTIPLE weapon ids on purpose — e.g. "missile launcher" prose maps to
+    // both "Missile launcher – starshot" and "Missile launcher – sunburst"
+    // on the same unit, and there's no way to know which one prose means
+    // without guessing, so both are offered as real choices.
+    _matchWeaponIds(name, weaponsObj) {
+      const candidates = [name];
+      const possessive = name.match(/'s\s+(.+)$/i);
+      if (possessive) candidates.push(possessive[1]);
+
+      for (const cand of candidates) {
+        const exact = cand.toLowerCase().trim();
+        for (const [wid, w] of Object.entries(weaponsObj || {})) {
+          if ((w.name || '').toLowerCase().trim() === exact) return [wid];
+        }
+        const target = UnitSearch._weaponNameNorm(cand);
+        if (!target) continue;
+        for (const [wid, w] of Object.entries(weaponsObj || {})) {
+          if (UnitSearch._weaponNameNorm(w.name) === target) return [wid];
+        }
+        const prefixMatches = Object.entries(weaponsObj || {})
+          .filter(([, w]) => UnitSearch._weaponNameNorm(w.name).startsWith(target));
+        if (prefixMatches.length) return prefixMatches.map(([wid]) => wid);
+      }
+      return [];
+    },
+
+    // parsedEntries: _parseWargear's output. weaponsObj: the flat-pool unit's
+    // own `weapons` object (keyed, BSData-flat-pool shape). Returns
+    // { loadoutOptions: [{slot, weaponIds}], unparsed: [...] } — unparsed
+    // carries forward both _parseWargear's own unparsed entries AND any
+    // parsed entry whose option names didn't resolve to a real weapon id
+    // (never silently dropped — surfaced as reference text instead).
+    _resolveLoadoutOptions(parsedEntries, weaponsObj) {
+      const resolved = [];
+      const unparsed = [];
+      const seenNames = {};
+      for (const entry of parsedEntries) {
+        if (entry.type === 'unparsed') { unparsed.push(entry); continue; }
+
+        const optionIds = [];
+        const unresolvedOptions = [];
+        for (const o of (entry.options || [])) {
+          const ids = UnitSearch._matchWeaponIds(o, weaponsObj);
+          if (ids.length) optionIds.push(...ids);
+          else unresolvedOptions.push(o);
+        }
+        const uniqueIds = [...new Set(optionIds)];
+
+        if (!uniqueIds.length) {
+          unparsed.push({
+            type: 'unparsed',
+            rawText: `${entry.name}: ${(entry.options || []).join(', ')} (no matching weapon id on this unit)`,
+          });
+          continue;
+        }
+
+        let weaponIds = uniqueIds;
+        if (entry.type === 'one-of' && entry.replaces) {
+          const defaultIds = UnitSearch._matchWeaponIds(entry.replaces, weaponsObj);
+          for (const d of defaultIds) if (!weaponIds.includes(d)) weaponIds = [d, ...weaponIds];
+        }
+
+        // Same "replaces" name can legitimately produce two independent slots
+        // (e.g. Cadian Sergeant: pistol-only swap AND pistol+melee swap, both
+        // literally named "Replace laspistol") — keep both, disambiguate the
+        // slot label rather than silently merging two different choices.
+        let slotName = entry.name, n = 2;
+        while (seenNames[slotName]) { slotName = `${entry.name} (${n++})`; }
+        seenNames[slotName] = true;
+
+        resolved.push({ slot: slotName, weaponIds });
+        if (unresolvedOptions.length) {
+          unparsed.push({
+            type: 'unparsed',
+            rawText: `${entry.name}: ${unresolvedOptions.join(', ')} (no matching weapon id — not offered as a choice)`,
+          });
+        }
+      }
+      return { loadoutOptions: resolved, unparsed };
+    },
+
+    // pointsTable: [{models: "10 models", points: N}, ...] (flat-pool shape).
+    // Never guesses the model count from position — a row missing `models`
+    // (confirmed gap: shadow-spectres) is dropped and flagged, not inferred
+    // from squadSize.min/max by row order.
+    _normalizePointsTable(pointsTable) {
+      const table = {};
+      const droppedRows = [];
+      for (const row of (pointsTable || [])) {
+        const m = String(row.models || '').match(/^(\d+)\s*model/i);
+        if (m) table[m[1]] = row.points;
+        else droppedRows.push(row);
+      }
+      return { table, droppedRows, usable: Object.keys(table).length > 0 && droppedRows.length === 0 };
+    },
+
+    // Flat-pool unit (keyed weapons object, prose wargearOptions) →
+    // RosterBuilder-compatible shape (array weapons, {slot,weaponIds}
+    // loadoutOptions — same fields UnitForm/_loadoutPanel already consume
+    // for hand-authored KT units, so the rest of RosterBuilder needs no
+    // system-specific branching once this transform has run).
+    _transformForRoster(unitId, raw) {
+      const weapons = Object.entries(raw.weapons || {}).map(([wid, w]) => ({
+        id: wid,
+        name: w.name || wid,
+        type: w.type || 'ranged',
+        isDefault: true,
+        keywords: w.keywords || [],
+        profiles: {
+          'RANGE': (w.type === 'melee' || w.range === 0) ? 'Melee' : `${w.range}"`,
+          'A':     String(w.attacks ?? ''),
+          'BS/WS': w.skill != null ? `${w.skill}+` : '',
+          'S':     String(w.S  ?? ''),
+          'AP':    String(w.AP ?? ''),
+          'D':     String(w.D  ?? ''),
+        },
+      }));
+
+      const wargearText = Array.isArray(raw.wargearOptions) ? raw.wargearOptions.join(' ') : (raw.wargearOptions || '');
+      const parsed = UnitSearch._parseWargear(wargearText);
+      const { loadoutOptions: parsedSlots, unparsed } = UnitSearch._resolveLoadoutOptions(parsed, raw.weapons || {});
+
+      // Hand-authored override (lazy fallback hook) takes precedence over
+      // the automatic prose parse — it exists specifically because the
+      // parse was insufficient for this unit.
+      const loadoutOptions = (raw.loadoutOptions && raw.loadoutOptions.length)
+        ? raw.loadoutOptions
+        : parsedSlots;
+      const loadoutIsHandAuthored = !!(raw.loadoutOptions && raw.loadoutOptions.length);
+
+      const { table: pointsTable, usable: pointsTableUsable } = UnitSearch._normalizePointsTable(raw.pointsTable);
+
+      return {
+        id: unitId,
+        name: raw.name || unitId,
+        role: raw.category || null,
+        category: raw.category || null,
+        points: raw.points ?? null,
+        pointsTable: pointsTableUsable ? pointsTable : null,
+        pointsCaveat: !pointsTableUsable && raw.pointsTable && raw.pointsTable.length
+          ? 'Points vary by squad size — see composition text; showing base price.'
+          : null,
+        squadSize: raw.squadSize || null,
+        stats: raw.stats || {},
+        weapons,
+        loadoutOptions,
+        loadoutIsHandAuthored,
+        unparsedWargear: loadoutIsHandAuthored ? [] : unparsed,
+        keywords: raw.keywords || [],
+        countsAs: raw.countsAs || 1,
+        isCharacter: raw.isCharacter || false,
+        isPsyker: raw.isPsyker || false,
+        isVehicle: raw.isVehicle || false,
+        abilities: !raw.abilities ? []
+          : Array.isArray(raw.abilities) ? raw.abilities : Object.values(raw.abilities),
+        composition: raw.composition || null,
+      };
     },
 
     _renderPreview(unit) {
