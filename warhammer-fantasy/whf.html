@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Warhammer Fantasy Battle</title>
+  <link rel="stylesheet" href="whf.css">
+</head>
+<body>
+
+  <div id="app">
+
+    <header id="topbar">
+      <div>
+        <div id="topbar-title">Warhammer Fantasy Battle</div>
+        <div id="topbar-sub">WHF-2 — Movement Phase</div>
+      </div>
+      <div id="phase-tracker">
+        <span class="phase-tab" data-phase="movement">Movement</span>
+        <span class="phase-sep">→</span>
+        <span class="phase-tab" data-phase="magic">Magic</span>
+        <span class="phase-sep">→</span>
+        <span class="phase-tab" data-phase="shooting">Shooting</span>
+        <span class="phase-sep">→</span>
+        <span class="phase-tab" data-phase="combat">Combat</span>
+        <span class="phase-sep">→</span>
+        <span class="phase-tab" data-phase="end">End Turn</span>
+      </div>
+    </header>
+
+    <div id="board-wrap">
+      <svg id="board" width="1200" height="900" viewBox="0 0 1200 900">
+        <rect id="board-bg" x="0" y="0" width="1200" height="900" />
+        <g id="grid-layer"></g>
+        <g id="units-layer"></g>
+        <g id="ghost-layer"></g>
+        <g id="overlay-layer"></g>
+      </svg>
+    </div>
+
+    <div id="end-phase-bar">
+      <button id="btn-end-phase">End Movement Phase →</button>
+    </div>
+
+    <div id="hint-bar">
+      Click unit to inspect &nbsp;·&nbsp; Right-click model to remove &nbsp;·&nbsp; Esc to deselect
+    </div>
+
+  </div>
+
+  <div id="stat-panel">
+    <div id="panel-content"></div>
+  </div>
+
+  <script src="whf.js"></script>
+</body>
+</html>

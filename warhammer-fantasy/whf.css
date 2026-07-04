@@ -1,0 +1,378 @@
+/* ── Variables ─────────────────────────────────────────────────────────────── */
+:root {
+  --bg-dark:           #0a0a0f;
+  --bg-panel:          #12121a;
+  --bg-board:          #1a1a0f;
+  --border-dark:       #2a2a3a;
+  --border-accent:     #4a3a1a;
+  --text-primary:      #c8b89a;
+  --text-dim:          #6a5a4a;
+  --text-bright:       #e8d8b0;
+
+  --empire-red:        #8b1a1a;
+  --empire-red-dim:    #5a1010;
+  --empire-gold:       #8b6914;
+  --bretonnia-blue:    #1a3a6b;
+  --bretonnia-blue-dim:#0e2040;
+  --bretonnia-gold:    #9b7a14;
+
+  --health-high:       #2d6e2d;
+  --health-mid:        #8b6914;
+  --health-low:        #8b1a1a;
+  --selected-ring:     #e8c84a;
+  --dead-model:        #2a2a2a;
+  --grid-line:         #222218;
+  --violation-red:     #cc2200;
+}
+
+/* ── Reset ─────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg-dark);
+  color: var(--text-primary);
+  font-family: 'Courier New', Courier, monospace;
+  min-height: 100vh;
+  overflow-x: auto;
+}
+
+/* ── App shell ─────────────────────────────────────────────────────────────── */
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ── Header bar ────────────────────────────────────────────────────────────── */
+#topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1.25rem;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-dark);
+  flex-shrink: 0;
+}
+
+#topbar-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--empire-gold);
+}
+
+#topbar-sub {
+  font-size: 0.62rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* ── Phase tracker ─────────────────────────────────────────────────────────── */
+#phase-tracker {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.phase-tab {
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 0.2rem 0.45rem;
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+.phase-tab.active {
+  color: var(--empire-gold);
+  border-color: var(--border-accent);
+}
+
+.phase-sep {
+  color: var(--text-dim);
+  font-size: 0.6rem;
+  opacity: 0.5;
+}
+
+/* ── Board wrap ────────────────────────────────────────────────────────────── */
+#board-wrap {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+}
+
+/* ── SVG board ─────────────────────────────────────────────────────────────── */
+#board {
+  display: block;
+  background: var(--bg-board);
+  border: 1px solid var(--border-accent);
+}
+
+#board-bg {
+  fill: var(--bg-board);
+}
+
+/* ── SVG text ──────────────────────────────────────────────────────────────── */
+.unit-label {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 11px;
+  fill: var(--text-dim);
+  pointer-events: none;
+}
+
+/* ── Ghost flash animation ─────────────────────────────────────────────────── */
+@keyframes ghost-violation-flash {
+  0%, 100% { opacity: 0.35; }
+  50%       { opacity: 0.85; }
+}
+
+#ghost-layer.ghost-violation {
+  animation: ghost-violation-flash 0.18s ease-in-out 3;
+}
+
+/* ── End phase bar ─────────────────────────────────────────────────────────── */
+#end-phase-bar {
+  display: none;
+  text-align: center;
+  padding: 0.5rem;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border-accent);
+  flex-shrink: 0;
+}
+
+#end-phase-bar.visible {
+  display: block;
+}
+
+#btn-end-phase {
+  background: transparent;
+  border: 1px solid var(--empire-gold);
+  color: var(--empire-gold);
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.35rem 1.5rem;
+  cursor: pointer;
+}
+
+#btn-end-phase:hover {
+  background: var(--empire-gold);
+  color: var(--bg-dark);
+}
+
+/* ── Stat panel ────────────────────────────────────────────────────────────── */
+#stat-panel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  height: 100vh;
+  width: 300px;
+  transform: translateX(100%);
+  transition: transform 0.18s ease;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-dark);
+  overflow-y: auto;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+}
+
+#stat-panel.panel-open {
+  transform: translateX(0);
+}
+
+.panel-header {
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--border-accent);
+}
+
+.panel-name {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-bright);
+  margin-bottom: 0.2rem;
+}
+
+.panel-faction {
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.panel-section {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-dark);
+}
+
+.panel-section-title {
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 0.45rem;
+}
+
+.panel-row {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  margin-bottom: 0.2rem;
+}
+
+.panel-row strong {
+  color: var(--text-bright);
+}
+
+.panel-row.dim {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.panel-done {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ── Stat table ────────────────────────────────────────────────────────────── */
+.stat-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin-bottom: 0;
+}
+
+.stat-table th {
+  color: var(--text-dim);
+  font-weight: 400;
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0 0.25rem 0.1rem;
+  text-align: center;
+}
+
+.stat-table td {
+  color: var(--text-bright);
+  font-weight: 700;
+  padding: 0.1rem 0.25rem;
+  text-align: center;
+}
+
+/* ── Weapon / ability lists ────────────────────────────────────────────────── */
+.panel-list {
+  list-style: none;
+  padding: 0;
+}
+
+.panel-list li {
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  padding: 0.15rem 0;
+  padding-left: 0.8rem;
+  position: relative;
+}
+
+.panel-list li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--text-dim);
+}
+
+.panel-sub {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+.panel-none {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ── Movement controls ─────────────────────────────────────────────────────── */
+.move-btns {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.move-btn {
+  background: var(--bg-dark);
+  border: 1px solid var(--border-accent);
+  color: var(--text-primary);
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.07em;
+  padding: 0.28rem 0.55rem;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.move-btn:hover:not(:disabled) {
+  background: var(--border-accent);
+  color: var(--text-bright);
+}
+
+.move-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.done-btn {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.35rem;
+  border-color: var(--border-dark);
+  text-align: center;
+}
+
+.done-btn:hover {
+  border-color: var(--empire-gold);
+  color: var(--empire-gold);
+}
+
+/* ── Reform rank stepper ───────────────────────────────────────────────────── */
+.rw-control {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.4rem 0;
+}
+
+.rw-label {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.rw-value {
+  color: var(--text-bright);
+  font-size: 1rem;
+  font-weight: 700;
+  min-width: 1.8rem;
+  text-align: center;
+}
+
+.rw-btn {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.9rem;
+}
+
+/* ── Hint bar ──────────────────────────────────────────────────────────────── */
+#hint-bar {
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  text-align: center;
+  padding: 0.3rem;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border-dark);
+  flex-shrink: 0;
+}
