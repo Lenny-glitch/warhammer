@@ -1,0 +1,15 @@
+[build]
+  base = "roster"
+  command = "node build.js"
+  publish = "."
+
+[build.ignore]
+  # Netlify's own documented monorepo pattern: exit 0 (skip) when nothing
+  # changed in this build's scope, non-zero (build) otherwise. $CACHED_COMMIT_REF
+  # and $COMMIT_REF are Netlify-provided env vars for the last-deployed and
+  # current commit — using these instead of raw `HEAD^ HEAD` (what an earlier
+  # draft of this file had) matters because Netlify's checkout isn't always a
+  # normal full-history clone where HEAD^ means what you'd expect.
+  # `-- .` is evaluated from `base` (roster/), so this only looks at diffs
+  # within roster/ — a killteam/ or data-pipeline/ commit exits 0 (skip).
+  command = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ."

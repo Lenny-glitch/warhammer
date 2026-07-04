@@ -1,0 +1,5 @@
+- [User: Warhammer portfolio](user-warhammer-portfolio.md) — Jonathan's multi-repo Warhammer app portfolio, AI team split, "Nox" persona
+- [Feedback: verify briefs against source](feedback-verify-briefs-against-source.md) — briefs often wrong about the codebase; check before implementing, report divergence
+- [Reference: Firebase warhammer-5f2f4](reference-firebase-warhammer5f2f4.md) — shared Firebase project, no auth/no admin creds/console-only rules
+- [Project: bonus engine status](project-bonus-engine-status.md) — BON-1/1b/1c done and live; BON-2 (killteam consuming it) not started, bigger lift than scoped
+- [Project: deployment topology](project-deployment-topology.md) — roster + warhammer40k live on Netlify via deploy branch; killteam is local-only, no live audience
