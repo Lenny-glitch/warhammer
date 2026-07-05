@@ -3504,7 +3504,7 @@
         const b = document.getElementById('rb-publish');
         if (b) {
           const { legal } = RosterBuilder._checkLegality();
-          b.disabled    = !legal;
+          b.disabled    = legal === false; // null (unvalidated) is publishable
           b.textContent = 'Publish';
         }
       }
@@ -3515,16 +3515,17 @@
       const publish = document.getElementById('rb-publish');
       if (!banner) return;
 
-      const rules = RosterBuilder.state.compositionRules;
-      if (!rules) {
-        banner.className = 'rb-legality-banner';
-        if (publish) publish.disabled = true;
-        return;
-      }
-
+      // AMENDMENT 1 (BUG_40K_PUBLISH_1): null legality — no compositionRules
+      // for this faction (all of 40k today) — is PUBLISHABLE. Only an
+      // explicit legal === false blocks Publish; unvalidated is not the same
+      // as forbidden. This used to return early with publish.disabled=true
+      // for any faction lacking rules, which locked 40k publishing entirely.
       const { legal, violations } = RosterBuilder._checkLegality();
 
-      if (legal) {
+      if (legal === null) {
+        banner.className   = 'rb-legality-banner';
+        banner.textContent = 'Not validated — no composition rules for this faction yet';
+      } else if (legal) {
         banner.className  = 'rb-legality-banner legal';
         banner.textContent = 'Roster is legal';
       } else {
@@ -3532,7 +3533,7 @@
         banner.innerHTML = violations.map(v => `<div>• ${v}</div>`).join('');
       }
 
-      if (publish) publish.disabled = !legal;
+      if (publish) publish.disabled = legal === false;
     },
 
     _bind() {

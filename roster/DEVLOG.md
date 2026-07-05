@@ -670,3 +670,65 @@ manually from the archived `roster-old/firebase-config.js` so this app
 still runs locally. Same gitignore convention continues in the new
 location.
 
+---
+
+## BUG_40K_PUBLISH_1: Publish button unlocked for null legality (2026-07-05)
+
+Verified against live Firebase and current source before touching
+anything, per this brief's own "code-trace alone does not close this"
+instruction — and the verification changed the diagnosis.
+
+**`/rosters/undefined` is NOT the misdirected Eldar export.** Its content
+is a Kill Team roster (`gameSystem: "kill-team"`, faction `ork-kommandos`,
+"Kommandos Roster 1"), created 2026-06-26 — over a week before this bug
+was reported and for a different game system and faction entirely. There's
+a companion node at `exports/kill-team/undefined` (a shallow scan the
+brief didn't ask for but turned up) whose `publishedAt` is 69ms after
+`rosters/undefined`'s `created` timestamp — the same `Promise.all` pair
+`_doPublish` writes on every publish, confirming this was a real (if
+old, KT-only) instance of the same failure *shape*: `s.rosterId` was the
+literal string `"undefined"` at publish time. **Left both nodes in place
+rather than deleting them** — they're real roster data, not garbage, and
+deleting them wasn't something this diagnosis actually established as
+necessary. No `warhammer-40k` key exists anywhere under `rosters/` or
+`exports/` with a similar malformed shape; all three live Craftworlds
+Eldar drafts are still `status: "draft"` (`exports/warhammer-40k` doesn't
+exist at all yet, confirming the original symptom).
+
+**The reproducible bug is Amendment 1's second symptom.**
+`_updateLegalityBanner()` had an early-return branch —
+`if (!rules) { publish.disabled = true; return; }` — that unconditionally
+locked the Publish button for any faction with no `compositionRules`
+(all of 40k, permanently, since 40k has none). A second, parallel hardcode
+in `_doPublish`'s `finally` block (`b.disabled = !legal`) had the same
+effect: `!null === true`, so even reaching the button's re-enable logic
+after a publish attempt would re-lock it. `_checkLegality()` itself was
+already correctly tri-state (`legal: null` for unvalidated, from the
+earlier false-LEGAL-badge fix) — the bug was entirely in these two call
+sites not treating `null` as anything but falsy. Fixed both to
+`disabled = legal === false`, matching the amendment's decision: null
+(unvalidated) is publishable, only an explicit violation blocks it. The
+banner now shows a neutral "Not validated — no composition rules for this
+faction yet" message for the null case instead of silently returning.
+
+**The original path bug (bug #3 on this path) — not found on a fresh-eyes
+read.** `_doPublish` generates `s.rosterId` via a synchronous
+`App.db.ref('rosters').push().key` guarded by `if (!s.rosterId)` before
+either write, and `s.system` is set from `_fresh()`'s `system` argument
+(populated from the URL hash for new rosters, or from
+`data.meta.gameSystem` when editing an existing draft) — no path found
+where either is undefined at the `exports/${s.system}/${s.rosterId}` write.
+Most likely this was already fixed as a side effect of the earlier
+Roster 3b Part 2 v3 rewrite of this same function (which touched the
+40k-vs-KT template-source branch right next to this write) without being
+explicitly logged as closing this brief. **Not claiming this closed on
+code-trace alone** — per the brief's own three-strikes rule, this needs
+Nox to actually republish a 40k roster and confirm
+`exports/warhammer-40k/{id}` appears with `chosenLoadout` and
+`modelCount` populated.
+
+**KT publish path:** untouched by this fix — both call sites' `legal`
+values are unaffected for factions that do have `compositionRules` (the
+`legal === false` / `legal === true` branches behave exactly as before,
+only the `null` branch changed).
+
