@@ -732,3 +732,67 @@ values are unaffected for factions that do have `compositionRules` (the
 `legal === false` / `legal === true` branches behave exactly as before,
 only the `null` branch changed).
 
+---
+
+## BUG_40K_PUBLISH_2 Amendment 2: Firebase-forbidden keys in the export (2026-07-05)
+
+Confirms Nox's republish result: the path + button fixes above worked —
+the write targeted `exports/warhammer-40k/-OwoAQwxVjMCNbt3ZBaG`, a real
+push key. Firebase then rejected the payload outright: `invalid key
+(BS/WS) in ...units.0.weapons.0.profiles`.
+
+**Root cause:** `App.schemas['warhammer-40k'].weaponProfiles` (line ~1580)
+uses `'BS/WS'` as a single combined ballistic-/weapon-skill column — a
+real, load-bearing key used throughout the roster-builder UI
+(`schema.weaponProfiles` drives the profile edit form, the weapon-profile
+table headers, etc.), not scrape noise. `_transformForRoster` and
+`UnitSearch._transform` both build `weapon.profiles` with this literal
+key, and `_doPublish` copies it into the export verbatim
+(`weapons.map(w => ({ ...w }))` is only a shallow spread — the nested
+`profiles` object's bad key rides along unchanged). Firebase Realtime
+Database keys forbid `. # $ / [ ]`; `/` is the one at fault here.
+
+**Fix:** `RosterBuilder._sanitizeFirebaseKey`/`_sanitizeKeyedObject`,
+applied in `_doPublish` only — not in `_transformForRoster`, so the live
+builder UI keeps the pretty `'BS/WS'` key matching the schema, and only
+the exported/published copy carries the clean one. A fixed, documented
+map (`_FIREBASE_KEY_MAP = { 'BS/WS': 'bsws' }`) handles the one known key;
+anything else forbidden falls through to a general character-strip so a
+future scrape quirk doesn't reintroduce this exact failure silently.
+
+**Sweep, as asked ("don't just patch BS/WS"):** the `profiles` object's
+keys are always exactly the 6 literals in `weaponProfiles`
+(`RANGE, A, BS/WS, S, AP, D`) for every unit in both 40k factions — not
+scraped per-unit, so there's nothing else to find there. But `profiles`
+isn't the only export-time object keyed by untrusted text:
+`chosenLoadout` is keyed by `slot.slot`, which comes from
+`_parseWargear`'s prose parsing — far less constrained than a fixed
+schema list. Ran the actual `_parseWargear`/`_resolveLoadoutOptions`
+functions (extracted from this file, not reimplemented) against every
+unit's real `wargearOptions` text in both `craftworlds-eldar` and
+`astra-militarum` (87 distinct slot names total) and found **3 units
+whose parse produces a slot label with a literal period** — a genuine
+`_parseWargear` mis-split, not just an unlucky character:
+- `ynnari-kabalite-warriors`: `"Replace be equipped with 1 phantasm
+  grenade launcher.. 1 Kabalite Warrior's splinter rifle can be"`
+- `hippogriff-afv`: `"Replace heavy stubber replaced with 1 meltagun.
+  Any number of models can each have their vigilator cannon"`
+- `kasrkin`: `"Replace be equipped with 1 vox-caster (that model's
+  hot-shot lasgun cannot be replaced). The Kasrkin Sergeant's chainsword
+  can be"`
+
+Applied the same sanitizer to `chosenLoadout`'s keys defensively, so these
+3 units' publish doesn't hit the identical Firebase rejection next.
+**Did not fix the underlying mis-parse** — these slot labels are garbled
+nonsense even once Firebase-safe, and the units still need real loadout
+options; that's a `_parseWargear` quality bug in its own right, worth a
+dedicated brief rather than a drive-by fix here. Verified no sanitized-key
+collisions occur within any single unit's `chosenLoadout` across either
+faction's real data (the 3 bad units each have exactly one malformed slot,
+and the general strip doesn't collapse any two distinct real slot names
+into the same string anywhere in the current dataset).
+
+Not claiming this closed on code-trace alone, same as before — needs
+Nox's republish to confirm `exports/warhammer-40k` carries the sanitized
+keys end to end.
+

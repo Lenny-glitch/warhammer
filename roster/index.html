@@ -3403,6 +3403,35 @@
       if (div) div.classList.remove('visible');
     },
 
+    // BUG_40K_PUBLISH_2 Amendment 2: Firebase forbids . # $ / [ ] in keys.
+    // 40k's weaponProfiles schema uses 'BS/WS' as a single combined
+    // ballistic-/weapon-skill column (schema.weaponProfiles, line ~1580) —
+    // that key reaches the export verbatim via _transformForRoster's
+    // profiles object and gets rejected on write. Fixed 1:1 renames go
+    // here first (documented, since Part 3's sim reads these exact export
+    // keys); anything else forbidden falls through to a general strip so
+    // one bad key doesn't reappear as a silent publish failure elsewhere.
+    // Also applied to chosenLoadout's keys: those come from _parseWargear's
+    // prose-derived slot names, which are far less constrained than a fixed
+    // schema list — a live sweep of both 40k factions' real wargear text
+    // found 3 units (ynnari-kabalite-warriors, hippogriff-afv, kasrkin)
+    // where a parser mis-split produces a garbled slot label containing a
+    // literal period. That's a distinct _parseWargear quality bug (garbage
+    // slot text, not just a forbidden character) worth its own brief —
+    // not fixed here — but sanitizing defensively at the export boundary
+    // still stops it from breaking publish for those 3 units today.
+    _FIREBASE_KEY_MAP: { 'BS/WS': 'bsws' },
+    _sanitizeFirebaseKey(key) {
+      const map = RosterBuilder._FIREBASE_KEY_MAP;
+      if (Object.prototype.hasOwnProperty.call(map, key)) return map[key];
+      return /[.#$/\[\]]/.test(key) ? key.replace(/[.#$/\[\]]/g, '') : key;
+    },
+    _sanitizeKeyedObject(obj) {
+      const out = {};
+      for (const [k, v] of Object.entries(obj || {})) out[RosterBuilder._sanitizeFirebaseKey(k)] = v;
+      return out;
+    },
+
     async _doPublish() {
       const btn = document.getElementById('rb-publish');
       if (btn) { btn.disabled = true; btn.textContent = 'Publishing…'; }
@@ -3440,16 +3469,23 @@
 
         const units = s.operatives.map(op => {
           const tmpl    = templates[op.unitId] || {};
-          const weapons = arr(tmpl.weapons);
+          const rawWeapons = arr(tmpl.weapons);
+          // Sanitize weapon profile keys before anything else derives from
+          // this array, so chosenLoadout (built below from these same
+          // weapon objects) inherits clean keys too rather than needing a
+          // second pass.
+          const weapons = rawWeapons.map(w => ({ ...w, profiles: RosterBuilder._sanitizeKeyedObject(w.profiles) }));
           // Resolve chosenLoadout IDs → full weapon objects (each weapon
           // object already carries its own `bonuses` array, if any, since
-          // it's copied whole — nothing strips it).
+          // it's copied whole — nothing strips it). Slot keys are also
+          // sanitized: they're prose-derived (_parseWargear), not a fixed
+          // schema list, so they're not guaranteed clean.
           const chosenLoadout = {};
           arr(tmpl.loadoutOptions).forEach(slot => {
             const wid    = (op.chosenLoadout && op.chosenLoadout[slot.slot])
                            || arr(slot.weaponIds)[0];
             const weapon = weapons.find(w => w.id === wid);
-            if (weapon) chosenLoadout[slot.slot] = { ...weapon };
+            if (weapon) chosenLoadout[RosterBuilder._sanitizeFirebaseKey(slot.slot)] = { ...weapon };
           });
           return {
             instanceId:   op.instanceId,
