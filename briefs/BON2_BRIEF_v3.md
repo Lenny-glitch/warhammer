@@ -1,5 +1,7 @@
 # BON-2 v3 — Profile Refactor + Bonus Integration (monorepo edition)
 
+CLAIMED: 2026-07-05
+
 ## Orientation
 Repo: ~/projects/warhammer, work in killteam/. Supersedes all
 prior BON-2 briefs (v2 was never persisted to disk — this is the
