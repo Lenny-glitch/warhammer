@@ -19,7 +19,7 @@
 
 'use strict';
 
-const BONUS_RESOLVER_VERSION = '1.2.0';
+const BONUS_RESOLVER_VERSION = '1.2.1';
 
 // Stats where a LOWER number is better (roll-target stats: you're trying to
 // beat this number on a die). Every other stat in the abstract vocabulary is
@@ -283,10 +283,25 @@ function resolveStats(baseStats, activeBonuses, context) {
   return { stats, flags, conditions, applied };
 }
 
-module.exports = {
+const BonusResolver = {
   BONUS_RESOLVER_VERSION,
   ROLL_TARGET_STATS,
   resolveStats,
   eligibleBonuses,
   validateBonus,
 };
+
+// BON-2b (2026-07-05): game apps load this file with a plain
+// <script src="../shared/bonus-resolver.js"> tag (killteam/index.html has
+// no bundler and is one giant inline <script>, not an ES module — adding
+// `export` here and switching that tag to type="module" would put the
+// whole existing 4700+ line script under strict-mode module scoping for no
+// reason). `module.exports` alone doesn't run in a browser (no `module`
+// global), so Node stays on its normal path and the browser gets the same
+// object attached to `window.BonusResolver` — one file, two load
+// mechanisms, no vendored copy either way.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = BonusResolver;
+} else if (typeof window !== 'undefined') {
+  window.BonusResolver = BonusResolver;
+}
