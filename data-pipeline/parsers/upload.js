@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // upload.js — upload parsed JSON files to Firebase RTDB
 // Run ONLY after Nox has reviewed and approved all output JSON files.
-// Reads Firebase config at runtime from roster/firebase-config.js — no hardcoded credentials.
+// Reads Firebase config at runtime from ../roster/firebase-config.js — no
+// hardcoded credentials.
 
 const fs       = require('fs');
 const path     = require('path');
@@ -10,7 +11,11 @@ const readline = require('readline');
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
-const FIREBASE_CONFIG_PATH = path.join(process.env.HOME, 'projects/roster/firebase-config.js');
+// GIT-2 monorepo migration: data-pipeline/ and roster/ are now siblings
+// under the same repo root, so this is relative to this file instead of
+// hardcoded against $HOME/projects/roster (the old separate-repos layout,
+// which broke the moment roster/ moved to warhammer/roster/).
+const FIREBASE_CONFIG_PATH = path.join(__dirname, '../../roster/firebase-config.js');
 const OUT_DIR   = path.join(__dirname, '../output');
 const PLOYS_DIR = path.join(__dirname, '../ploys');
 const STRATS_DIR = path.join(__dirname, '../stratagems');

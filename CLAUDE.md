@@ -59,10 +59,15 @@ visible to any other session.
   risk from ambiguous sibling selection-entries).
 
 ## Layout
-- `roster/` — the only live deployment (Netlify, this repo, `master`).
-  Everything else here is local-only.
-- `killteam/`, `warhammer40k/`, `data-pipeline/`, `warhammer-fantasy/`,
-  `age-of-sigmar/` — subprojects, each still has its own `DEVLOG.md`.
+- **No live deployments exist** (Netlify hosting dropped 2026-07-04, build
+  minutes exhausted — everything runs on local servers against live
+  Firebase until there's a usable product). Push-to-`master` on any
+  subproject carries zero ship risk right now. `netlify.toml` stays in the
+  repo, dormant — the revival kit if hosting comes back (likely Firebase
+  Hosting, decided later), not a currently-active config.
+- `roster/`, `killteam/`, `warhammer40k/`, `data-pipeline/`,
+  `warhammer-fantasy/`, `age-of-sigmar/` — subprojects, each still has its
+  own `DEVLOG.md`.
 - `shared/bonus-resolver.js` — the ONE copy (no more per-app vendored
   copies; that pattern and its drift-checker were deleted in the GIT-2
   monorepo migration). Reference it directly, e.g. `../shared/` from a
@@ -72,3 +77,12 @@ visible to any other session.
   here because the repo is the source of truth, not a private cache.
 - `PROJECT_STATE.md` — regenerated at milestones by Nox's planner;
   read this first, every session.
+- **Local setup (fresh clone):** `roster/`, `killteam/`, and
+  `warhammer40k/` each need a gitignored `firebase-config.js` in their own
+  directory before they'll run (each has a `firebase-config.example.js` —
+  copy it and fill in real values, or ask Nox for the real file directly).
+  `warhammer-fantasy/` doesn't have one yet — that subproject never got a
+  live Firebase config set up. `data-pipeline/parsers/upload.js` reads its
+  config from `../roster/firebase-config.js` (a sibling-directory relative
+  path — this broke once already when `roster/` moved into the monorepo,
+  fixed post-migration; don't re-hardcode an absolute path here again).

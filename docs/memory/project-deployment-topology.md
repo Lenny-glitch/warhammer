@@ -1,35 +1,40 @@
 ---
 name: project-deployment-topology
-description: Which repos in the Warhammer portfolio are actually live on Netlify vs run locally only — matters for whether a branch push is safe to make without a deploy gate.
+description: "No live deployments exist anywhere in the Warhammer portfolio as of 2026-07-04 — Netlify hosting was dropped entirely; this memory records that plus what came before it, for context if it changes again."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 15f145b3-221a-49c7-94f6-ee885a549083
 ---
 
-Confirmed directly by Jonathan (2026-07-04):
+**Current state (2026-07-04, supersedes everything below):** Jonathan
+dropped Netlify hosting entirely — build minutes exhausted, and hosting
+comes back only once there's a usable product (likely via Firebase Hosting
+next time, not decided yet). **No live deployment exists anywhere.**
+Push-to-`master` on any subproject now carries zero ship risk. Everything
+runs on local servers against live Firebase.
 
-- **`roster`** — live on Netlify, ships from the `deploy` branch. Convention:
-  `master` = dev work, merging `master` → `deploy` is the deliberate "ship"
-  action. `deploy` is currently a strict superset of `master` (kept that
-  way as of the 2026-07-04 fast-forward + `feat/killteam-phase2` cleanup).
-- **`killteam`** — **local only, not deployed anywhere.** It has a `deploy`
-  branch with `netlify.toml`/`build.sh` prepared back on 2026-06-26 (see
-  its DEVLOG's "Deploy branch" entry) as hosting *prep*, but that
-  connection was never activated — there's no live audience. `master` and
-  `deploy` have genuinely diverged (13 feature commits sit on `master`
-  that `deploy` lacks; `deploy` only has 2 Netlify-plumbing commits) but
-  this is *not* a live-production risk the way it would be for roster,
-  since nothing is actually being served from either branch.
-- **`warhammer40k`** — has `netlify.toml`, `deploy` is a near-superset of
-  `master`. Per its own DEVLOG ("Phase 16 complete + Netlify deploy"),
-  this one does appear to be actually live — treat pushes here with the
-  same care as roster, not the same laxity as killteam.
+This coincided with [[project-monorepo-migration]]: all six repos
+(roster, killteam, warhammer40k, data-pipeline, warhammer-fantasy,
+age-of-sigmar) were merged into one repo at `~/projects/warhammer`
+(history-preserving `git subtree` merges), single `master` branch, no
+`deploy` branch anymore. The original separate repos were archived as
+`{name}-old` right after (Netlify cutover verification — the thing that
+was gating that archival — got cancelled along with the hosting itself,
+not just postponed).
 
-**Why this matters:** before any branch reconciliation or "does this need
-a deploy gate" question, check whether the target repo is actually live
-first — killteam's branch divergence looked alarming (same shape as a
-missing-deploy-gate risk) until Jonathan clarified it's local-only, which
-changes the answer from "pause and add a gate" to "no urgency."
+**Superseded history, kept for context:** before 2026-07-04, `roster` was
+the one live Netlify deployment (via its own `deploy` branch), while
+`killteam` and `warhammer40k` had `netlify.toml`/`deploy` branches prepared
+but never actually connected to a live site (this took real investigation
+to establish — killteam's branch divergence looked alarming, like a
+missing-deploy-gate risk, until directly confirmed as local-only). That
+distinction no longer matters now that nothing is live anywhere, but the
+lesson behind it still does: **before treating a repo's branch state as a
+live-production risk, check whether it's actually deployed anywhere first**
+— don't infer liveness from the mere presence of a `deploy` branch or a
+`netlify.toml`.
 
-See [[project-bonus-engine-status]] for the BON-2/2a work this bears on.
+See [[project-bonus-engine-status]] for the BON-2/2a work this bears on,
+and [[reference-firebase-warhammer5f2f4]] for the Firebase side (unaffected
+by any of this — Firebase was never the thing that went away).

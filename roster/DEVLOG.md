@@ -646,3 +646,27 @@ edge case:
   factions) is deliberately NOT parsed — those units rely on the fallback
   hook, by design, per the amendment.
 
+---
+
+## GIT-2: monorepo migration + Netlify hosting dropped (2026-07-04)
+
+This repo no longer lives at `~/projects/roster` — it's now
+`~/projects/warhammer/roster/`, one of six subprojects merged into a
+single monorepo (full history preserved via `git subtree`). The old
+standalone repo was renamed `roster-old` and archived; don't develop
+against it.
+
+**Netlify hosting dropped entirely** (build minutes exhausted) — this repo
+was the one live deployment in the whole portfolio (`deploy` branch,
+"pushes go live" was the accepted-risk convention documented throughout
+this log). That's no longer true. No live deployment exists anywhere.
+`master` is now the only branch; push carries zero ship risk. `netlify.toml`
+stays in the monorepo root, dormant, as the revival kit if hosting comes
+back (likely Firebase Hosting next time, not decided).
+
+`firebase-config.js` didn't carry over automatically (it was gitignored,
+and the subtree merge only carries git-tracked history) — copied over
+manually from the archived `roster-old/firebase-config.js` so this app
+still runs locally. Same gitignore convention continues in the new
+location.
+

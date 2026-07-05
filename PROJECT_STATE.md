@@ -30,13 +30,17 @@ other systems (40k, WHF, AoS) against the rules-agnostic core.
 - No hand-edits to Firebase gameData/ ever; patches.json is the home.
 
 ## GIT CONVENTION
-- roster: canonical branch = deploy, pushes go LIVE via Netlify
-  (accepted risk while Nox is the only user). master deleted
-  after GIT-1.
-- killteam / warhammer40k / data-pipeline: master, local only.
+- GIT-1 ran, then GIT-2 (monorepo migration) superseded it: all six
+  subprojects now live in one repo (~/projects/warhammer), single
+  `master` branch, full pre-migration history preserved via subtree
+  merge. Old separate repos renamed *-old (2026-07-04) — archived,
+  never pushed anywhere (some still have a leaked-then-revoked
+  token in their history; harmless locally, must stay local).
+- Netlify hosting DROPPED 2026-07-04 (build minutes exhausted) —
+  no live deployment exists anywhere right now. Push-to-master
+  carries zero ship risk on any subproject until that changes.
+  `netlify.toml` stays in the repo, dormant, as the revival kit.
 - Commits per milestone, push before reporting, reports cite hashes.
-- GIT-1 (branch inventory/consolidation brief): status unknown —
-  confirm it ran; no recency shortcuts, ancestry checks only.
 
 ## DONE (recent)
 - Pipeline complete: BSData upload, patches overlay (fail-loud),
@@ -54,8 +58,10 @@ other systems (40k, WHF, AoS) against the rules-agnostic core.
 ## ACTIVE / NEXT (Nyx, in order)
 1. GIT-1 if not yet run
 2. BON-2a: KT combat profile refactor + replay-identity test
-   (brief: killteam/BON2_BRIEF_v2.md) → NOX CHECKPOINT: play one
-   game, combat feels identical, say go
+   (brief: briefs/BON2_BRIEF.md — path already updated for the GIT-2
+   move; "BON2_BRIEF_v2.md" named here previously doesn't exist
+   anywhere on disk, only BON2_BRIEF.md does) → NOX CHECKPOINT: play
+   one game, combat feels identical, say go
 3. BON-2b: bonuses resolve in KT shoot/fight + dice readout
    (+ catch-up summary banner if cheap — records exist from 2b on)
 4. Roster 3b Part 3: 40k sim reads chosenLoadout, retires KL-1/KL-2
@@ -82,7 +88,15 @@ other systems (40k, WHF, AoS) against the rules-agnostic core.
   enrichment + deprecated subtree deletion.
 
 ## STANDING ASSUMPTIONS
-- Roster = only live deployment (Netlify/deploy). Others local.
+- No live deployments exist anywhere (Netlify dropped 2026-07-04).
+  Everything runs on local servers against live Firebase until
+  there's a usable product worth hosting again.
+- firebase-config.js stays gitignored, local-only, per subproject
+  (roster/, killteam/, warhammer40k/ each need their own — copy
+  from that dir's firebase-config.example.js. warhammer-fantasy/
+  doesn't have one yet). data-pipeline/parsers/upload.js reads
+  ../roster/firebase-config.js (sibling-relative — this broke once
+  already from a leftover absolute path after GIT-2, fixed).
 - Player 2 = Nox until playable, then brother. No auth anywhere;
   links are access.
 - Loadouts chosen in ROSTER only; games read chosenLoadout.
