@@ -1,11 +1,11 @@
 // bonus-resolver.js — BON-1 generic modifier resolver
 //
-// MASTER COPY. Lives at ~/projects/data-pipeline/shared/bonus-resolver.js.
-// killteam/js/ and warhammer40k/js/ vendor a manual copy of this file — there
-// is no npm package, no build step, no symlink. Run
-// parsers/check-resolver-sync.js from data-pipeline after changing this file
-// to see which vendored copies have drifted, and update BONUS_RESOLVER_VERSION
-// below whenever the resolver's behavior changes.
+// GIT-2 (monorepo migration): lives at shared/bonus-resolver.js, repo root.
+// killteam/ and warhammer40k/ reference this file directly (e.g.
+// ../shared/bonus-resolver.js) — the old manual-copy vendoring pattern and
+// its parsers/check-resolver-sync.js drift-checker are OBSOLETE now that
+// there's one real file instead of N copies, and have been deleted. Update
+// BONUS_RESOLVER_VERSION below whenever the resolver's behavior changes.
 //
 // SNAPSHOT RULE: game apps copy the relevant bonus catalog entries into the
 // game document (games-kt/{gameId}/bonuses, and the 40k equivalent) at game
@@ -13,8 +13,9 @@
 // Re-running upload.js must not change the rules of a game in progress.
 //
 // Pure functions only. No UI, no dice, no Firebase, no game-specific logic.
-// See BONUS_ENGINE_BRIEF.md (v3) and BON1B_ADDENDUM_BRIEF.md in this repo
-// for the full schema writeup and the Decision log behind each addition.
+// See data-pipeline/briefs/BONUS_ENGINE_BRIEF.md (v3) and
+// BON1B_ADDENDUM_BRIEF.md for the full schema writeup and the Decision log
+// behind each addition.
 
 'use strict';
 
