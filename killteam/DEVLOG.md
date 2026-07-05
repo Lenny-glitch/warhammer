@@ -1050,3 +1050,85 @@ pass with the actual rewrite shape decided first (e.g. does `rollShot`
 call `resolveStats` once up front and destructure everything, or gate each
 mechanic individually), rather than treating this brief's Part 3 as
 ready-to-implement as written.
+
+## BON-2a — profile extraction, zero behavior change (2026-07-05)
+
+Implemented `BON2_BRIEF_v3.md`'s first half against the gaps the double-check
+above found. Verified line numbers were unchanged since that pass before
+touching anything.
+
+**What changed:**
+- New `buildAttackProfile(weapon, op)` → `{ atkDice, hit, critThreshold: 6,
+  dmgNormal, dmgCrit }` and `buildDefenseProfile(op)` → `{ defDice, save }`.
+  Field names match `shared/bonus-resolver.js`'s stat vocabulary exactly, so
+  BON-2b can call `resolveStats` on these objects with no renames.
+- `rollShot` and `confirmFightTarget` now build a profile, then call two new
+  pure functions — `resolveShotOutcome(attackProfile, defenseProfile,
+  atkRolls, defRolls, useCover)` and `resolveFightOutcome(atkProfile,
+  defProfile, atkRolls, defRolls)` — that consume only profiles and
+  pre-rolled dice. Neither calls `Math.random`; dice generation stays in the
+  two callers. No bare numeric literals remain at either function's
+  roll-classification sites — crit is now `d >= profile.critThreshold`, not
+  `d === 6`. `critThreshold` is currently always `6` so this is
+  behaviorally identical today, but stops silently excluding actual 6s the
+  moment Lethal x+ lowers the threshold in BON-2b.
+- `rollShot`/`confirmFightTarget` still write the exact same flattened
+  Firebase field names as before (`effectiveHit`, `totalDamage`,
+  `atkAnnotated`, `dmgToDefender`, etc.) — the resolution-bar rendering
+  needed zero changes.
+- Fight builds both combatants' profiles through the same
+  `buildAttackProfile` (KT melee has both sides "attack," no separate save
+  roll). A defender with no melee weapon gets a synthetic zero-dice profile
+  — `{ atkDice: 0, hit: <4 or 5 if injured>, critThreshold: 6, dmgNormal: 0,
+  dmgCrit: 0 }`. Not `{ hit: 4 }` unconditionally: the old inline code
+  applied the injured +1 hit-stat boost to the no-weapon base of 4
+  regardless of whether a weapon existed (`isInjuredOp` never checked for
+  one), so a bare `hit: 4` would have quietly changed what an injured,
+  weaponless defender's stat line displays. Damage output is unaffected
+  either way (zero dice rolled), but the replay harness below caught the
+  stored-field regression before it shipped.
+- `buildOperatives()` (line 736): confirmed why it stripped bonuses/
+  keywords — the weapon whitelist copy (`id, name, type, profiles: {...}`)
+  predates both fields entirely (written before BON-1 existed), not a
+  deliberate trim. Added `bonuses: Array.isArray(w.bonuses) ? w.bonuses :
+  []` and the same for `keywords`; older exports without either field still
+  build fine (empty array, no bonuses resolve — BON-2b territory).
+
+**Roll-site literal check:** grepped the file for `=== 6`/`>= 6`/`!== 1`
+outside the two resolution functions. One more hit: `renderDicePool` (line
+~2801), a display-only helper that re-classifies already-rolled dice for
+color-grouping in the dice-pool UI, independently of `resolveShotOutcome`/
+`resolveFightOutcome` and using its own hardcoded `6`. It doesn't affect any
+resolution or stored outcome — purely cosmetic dice coloring — so it's out
+of this pass's "no roll-site literals" scope, which the brief ties to
+`rollShot`/`confirmFightTarget` specifically. Flagging it now because it
+will silently mis-color dice the first time BON-2b lowers a critThreshold
+below 6 (a 5 that resolved as a crit would still render grouped as a
+"hit"). Worth threading `critThreshold` into `renderDicePool` as part of
+BON-2b's display work, not deferred indefinitely.
+
+**Replay-identity proof:** built a harness
+(not checked into the repo — a throwaway Node script) that extracts the
+actual shipped `buildAttackProfile`/`buildDefenseProfile`/
+`resolveShotOutcome`/`resolveFightOutcome` out of `index.html` via regex
+(so it tests the real shipped code, not a hand-copied stand-in), and diffs
+their output against a line-by-line reproduction of the pre-refactor inline
+formulas (reconstructed from the last commit touching this file,
+`5a797fd`, not from memory). Swept: 3 ranged weapon profiles × 3 operative
+states (healthy / injured / exactly-half-wounds) × exhaustive 1–2-die combos
+× cover on/off for shooting; 2 melee weapons × {weapon, weapon, no-weapon}
+defender × 3 operative states × representative miss/hit/crit dice for
+fighting. **51,948 cases, 0 mismatches** after the no-weapon-defender fix
+above (72 mismatches before it, all in that one fallback path, all in the
+stored-but-damage-inert `defHitStat` field). Everything in scope was
+replay-testable — no dice-generation randomness needed for this proof since
+both resolution functions take pre-rolled dice as input.
+
+**2a done-when checklist:** no roll-site literals (in `rollShot`/
+`confirmFightTarget`; `renderDicePool` flagged above, deliberately out of
+scope) — met. Replay diff empty — met. Bonuses/keywords survive game
+creation — met, root cause reported. DEVLOG — this entry. Commits — see
+next commit in this repo's history.
+
+**CHECKPOINT:** per the brief, BON-2b does not start until Nox plays a
+build of this and confirms combat feels identical.

@@ -773,6 +773,12 @@ function buildOperatives(exportData, playerSlot) {
         RNG: w.profiles?.RNG || '',
         WR:  w.profiles?.WR  || '',
       },
+      // BON-2a: this was a whitelist copy predating bonuses/keywords
+      // entirely (written before BON-1 existed) — not a deliberate trim.
+      // Adding them here is the fix; absent on older exports is fine
+      // (empty array, no bonuses resolve, zero errors — BON-2b territory).
+      bonuses:  Array.isArray(w.bonuses)  ? w.bonuses  : [],
+      keywords: Array.isArray(w.keywords) ? w.keywords : [],
     }));
 
     const abilArr = Array.isArray(u.abilities) ? u.abilities : Object.values(u.abilities || {});
@@ -2387,6 +2393,128 @@ function parseDmgPair(s) {
   return [p[0] || 1, p[1] || p[0] || 1]; // [normalDmg, critDmg]
 }
 function isInjuredOp(op) { return op.wounds > 0 && op.wounds <= op.maxWounds / 2; }
+
+// BON-2a — profile extraction (pure refactor, no behavior change).
+//
+// Field names match shared/bonus-resolver.js's abstract stat vocabulary
+// exactly (atkDice, hit, critThreshold, dmgNormal, dmgCrit, defDice, save)
+// so BON-2b can call resolveStats(profile, bonuses, context) and plug the
+// result straight back in — no renames at the integration point.
+//
+// critThreshold always holds 6 today (nothing sets it otherwise yet) — it
+// exists as a real field, not a literal, specifically so Lethal x+ has
+// somewhere to land in BON-2b without another pass through these
+// functions. Same weapon/op inputs as before; only WHERE the numbers live
+// changed.
+function buildAttackProfile(weapon, op) {
+  const hitStat = parseHit(weapon.profiles.HIT);
+  const [dmgNormal, dmgCrit] = parseDmgPair(weapon.profiles.DMG);
+  return {
+    atkDice: parseInt(weapon.profiles.ATK) || 1,
+    hit: isInjuredOp(op) ? Math.min(hitStat + 1, 6) : hitStat,
+    critThreshold: 6,
+    dmgNormal,
+    dmgCrit,
+  };
+}
+
+function buildDefenseProfile(op) {
+  return {
+    defDice: op.def  || 3,
+    save:    op.save || 5,
+  };
+}
+
+// A natural 6 is an unmodifiable crit-save in KT — unlike attack crits
+// (Lethal x+ can lower attackProfile.critThreshold), no keyword touches
+// the defender's save-crit face. Not part of buildDefenseProfile's shape
+// (that shape is fixed by the resolver vocabulary) — a plain constant so
+// there's still no bare numeric literal at the defense roll-classification
+// site below.
+const DEFENSE_CRIT_FACE = 6;
+
+// Pure: takes ALREADY-ROLLED dice (never calls Math.random itself), so it's
+// directly testable — this is what the replay-identity harness runs
+// against. Mirrors the pre-refactor inline logic exactly, with one
+// intentional widening: crit-hit classification changed from `d === 6` to
+// `d >= profile.critThreshold`. Behaviorally identical today (critThreshold
+// is always 6, and nothing rolls above 6 on a d6) — but `===` would
+// silently exclude actual 6s the moment Lethal x+ lowers the threshold
+// below 6 in BON-2b, so this is a latent-bug fix riding along with the
+// extraction, not scope creep.
+function resolveShotOutcome(attackProfile, defenseProfile, atkRolls, defRolls, useCover) {
+  defRolls = defRolls.slice();
+
+  if (useCover && defRolls.length > 0) {
+    // Convert the lowest non-crit die to an auto normal save.
+    let minIdx = -1;
+    for (let i = 0; i < defRolls.length; i++) {
+      if (defRolls[i] !== DEFENSE_CRIT_FACE && (minIdx < 0 || defRolls[i] < defRolls[minIdx])) minIdx = i;
+    }
+    if (minIdx >= 0) defRolls[minIdx] = 'auto';
+  }
+
+  const critHits    = atkRolls.filter(d => d >= attackProfile.critThreshold).length;
+  const normalHits  = atkRolls.filter(d => d < attackProfile.critThreshold && d !== 1 && d >= attackProfile.hit).length;
+  const critSaves   = defRolls.filter(d => d === DEFENSE_CRIT_FACE).length;
+  const normalSaves = defRolls.filter(d => d === 'auto' || (typeof d === 'number' && d !== DEFENSE_CRIT_FACE && d >= defenseProfile.save)).length;
+
+  let rC = critHits, rN = normalHits, rCS = critSaves, rNS = normalSaves;
+  const csForCrit = Math.min(rC, rCS); rC -= csForCrit; rCS -= csForCrit;
+  while (rC > 0 && rNS >= 2) { rC--; rNS -= 2; }
+  const csForNorm = Math.min(rN, rCS); rN -= csForNorm;
+  const nsForNorm = Math.min(rN, rNS); rN -= nsForNorm;
+
+  const totalDamage = rC * attackProfile.dmgCrit + rN * attackProfile.dmgNormal;
+
+  return { defRolls, remainingCritHits: rC, remainingNormalHits: rN, totalDamage };
+}
+
+// Pure, same shape as resolveShotOutcome — both combatants in a fight are
+// "attacking" (KT melee has no separate save roll, both sides roll to-hit
+// and block), so both get an attackProfile via the SAME buildAttackProfile
+// call, not a defenseProfile. One construction path, two consumers, per
+// the brief.
+function resolveFightOutcome(atkProfile, defProfile, atkRolls, defRolls) {
+  const classify = (d, profile) => {
+    if (d >= profile.critThreshold) return 'crit';
+    if (d !== 1 && d >= profile.hit) return 'hit';
+    return 'miss';
+  };
+  const atkAnnotated = atkRolls.map(d => classify(d, atkProfile));
+  const defRaw        = defRolls.map(d => classify(d, defProfile));
+
+  let rAtkCrits = atkAnnotated.filter(c => c === 'crit').length;
+  let rAtkHits  = atkAnnotated.filter(c => c === 'hit').length;
+  let rDefCrits = defRaw.filter(c => c === 'crit').length;
+  let rDefHits  = defRaw.filter(c => c === 'hit').length;
+
+  const dCritBlockC = Math.min(rDefCrits, rAtkCrits);
+  rDefCrits -= dCritBlockC; rAtkCrits -= dCritBlockC;
+  const dCritBlockH = Math.min(rDefCrits, rAtkHits);
+  rDefCrits -= dCritBlockH; rAtkHits -= dCritBlockH;
+  const dHitBlockH = Math.min(rDefHits, rAtkHits);
+  rDefHits -= dHitBlockH; rAtkHits -= dHitBlockH;
+
+  const defStrikeCrits = rDefCrits;
+  const defStrikeHits  = rDefHits;
+
+  const dmgToDefender = (atkAnnotated.filter(c => c === 'crit').length - dCritBlockC) * atkProfile.dmgCrit +
+                        (atkAnnotated.filter(c => c === 'hit').length  - dCritBlockH - dHitBlockH) * atkProfile.dmgNormal;
+  const dmgToAttacker = defStrikeCrits * defProfile.dmgCrit + defStrikeHits * defProfile.dmgNormal;
+
+  let defCritBlockLeft = dCritBlockC + dCritBlockH;
+  let defHitBlockLeft  = dHitBlockH;
+  const defAnnotated = defRaw.map(c => {
+    if (c === 'crit' && defCritBlockLeft > 0) { defCritBlockLeft--; return 'crit-block'; }
+    if (c === 'hit'  && defHitBlockLeft  > 0) { defHitBlockLeft--;  return 'hit-block'; }
+    if (c === 'crit') return 'crit-strike';
+    if (c === 'hit')  return 'hit-strike';
+    return 'miss';
+  });
+
+  return { atkAnnotated, defAnnotated, dmgToDefender, dmgToAttacker };
+}
 function getRangedWeapons(op) {
   return (op.weapons || []).filter(w => parseRng(w.profiles?.RNG) > 0);
 }
@@ -2626,45 +2754,26 @@ async function rollShot(playerSlot) {
   const target   = (gameData.operatives || {})[p.targetOpId];
   if (!attacker || !target) return;
 
-  const w          = p.weapon;
-  const atkCount   = parseInt(w.profiles.ATK) || 1;
-  const hitStat    = parseHit(w.profiles.HIT);
-  const effectiveHit = isInjuredOp(attacker) ? Math.min(hitStat + 1, 6) : hitStat;
-  const [normalDmg, critDmg] = parseDmgPair(w.profiles.DMG);
-  const saveStat   = target.save || 5;
-  const defCount   = target.def  || 3;
+  const attackProfile  = buildAttackProfile(p.weapon, attacker);
+  const defenseProfile = buildDefenseProfile(target);
 
-  const atkRolls = Array.from({ length: atkCount }, () => Math.ceil(Math.random() * 6));
-  let   defRolls = Array.from({ length: defCount }, () => Math.ceil(Math.random() * 6));
+  const atkRolls = Array.from({ length: attackProfile.atkDice },  () => Math.ceil(Math.random() * 6));
+  const defRolls = Array.from({ length: defenseProfile.defDice }, () => Math.ceil(Math.random() * 6));
 
-  if (p.useCover && defCount > 0) {
-    // Convert the lowest non-crit die to an auto normal save
-    let minIdx = -1;
-    for (let i = 0; i < defRolls.length; i++) {
-      if (defRolls[i] !== 6 && (minIdx < 0 || defRolls[i] < defRolls[minIdx])) minIdx = i;
-    }
-    if (minIdx >= 0) defRolls[minIdx] = 'auto';
-  }
-
-  const critHits    = atkRolls.filter(d => d === 6).length;
-  const normalHits  = atkRolls.filter(d => d !== 6 && d !== 1 && d >= effectiveHit).length;
-  const critSaves   = defRolls.filter(d => d === 6).length;
-  const normalSaves = defRolls.filter(d => d === 'auto' || (typeof d === 'number' && d !== 6 && d >= saveStat)).length;
-
-  let rC = critHits, rN = normalHits, rCS = critSaves, rNS = normalSaves;
-  const csForCrit = Math.min(rC, rCS); rC -= csForCrit; rCS -= csForCrit;
-  while (rC > 0 && rNS >= 2) { rC--; rNS -= 2; }
-  const csForNorm = Math.min(rN, rCS); rN -= csForNorm;
-  const nsForNorm = Math.min(rN, rNS); rN -= nsForNorm;
-
-  const totalDamage = rC * critDmg + rN * normalDmg;
+  const outcome = resolveShotOutcome(attackProfile, defenseProfile, atkRolls, defRolls, p.useCover);
 
   playBeamOnly(p, attacker, target);
 
+  // Same flattened field names as before the refactor — the resolution-bar
+  // rendering reads these directly and doesn't need to know profiles exist.
   await db.ref(`games-kt/${gameId}/pendingShot`).update({
-    phase: 'rolled', atkRolls, defRolls,
-    remainingCritHits: rC, remainingNormalHits: rN,
-    totalDamage, normalDmg, critDmg, effectiveHit,
+    phase: 'rolled', atkRolls, defRolls: outcome.defRolls,
+    remainingCritHits: outcome.remainingCritHits,
+    remainingNormalHits: outcome.remainingNormalHits,
+    totalDamage: outcome.totalDamage,
+    normalDmg: attackProfile.dmgNormal,
+    critDmg: attackProfile.dmgCrit,
+    effectiveHit: attackProfile.hit,
   });
 }
 
@@ -2944,66 +3053,22 @@ async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
   activation.apSpent      = true;
   activation.apRemaining -= 1;
 
-  const atkHitStat      = parseHit(atkWeapon.profiles.HIT);
-  const defHitStat      = defWeapon ? parseHit(defWeapon.profiles.HIT) : 4;
-  const effectiveAtkHit = isInjuredOp(attacker) ? Math.min(atkHitStat + 1, 6) : atkHitStat;
-  const effectiveDefHit = isInjuredOp(target)   ? Math.min(defHitStat + 1, 6) : defHitStat;
-  const [atkNDmg, atkCDmg] = parseDmgPair(atkWeapon.profiles.DMG);
-  const [defNDmg, defCDmg] = defWeapon ? parseDmgPair(defWeapon.profiles.DMG) : [0, 0];
+  // Both combatants "attack" in KT melee (no separate save roll) — one
+  // builder, two consumers, per the brief. No-weapon defender gets a
+  // zero-dice profile (matches the original defCount=0 fallback). The old
+  // inline code still applied the injured-op hit boost to the base-4 stat
+  // even with no weapon (isInjuredOp(target) never depended on defWeapon),
+  // so the fallback here must too — a bare `hit: 4` would silently regress
+  // an injured no-weapon defender's displayed hit stat from 5+ to 4+.
+  const atkProfile = buildAttackProfile(atkWeapon, attacker);
+  const defProfile = defWeapon
+    ? buildAttackProfile(defWeapon, target)
+    : { atkDice: 0, hit: isInjuredOp(target) ? Math.min(4 + 1, 6) : 4, critThreshold: 6, dmgNormal: 0, dmgCrit: 0 };
 
-  const atkCount = parseInt(atkWeapon.profiles.ATK) || 1;
-  const defCount = defWeapon ? (parseInt(defWeapon.profiles.ATK) || 1) : 0;
+  const atkRolls = Array.from({ length: atkProfile.atkDice }, () => Math.ceil(Math.random() * 6));
+  const defRolls = Array.from({ length: defProfile.atkDice }, () => Math.ceil(Math.random() * 6));
 
-  const atkRolls = Array.from({ length: atkCount }, () => Math.ceil(Math.random() * 6));
-  const defRolls = Array.from({ length: defCount }, () => Math.ceil(Math.random() * 6));
-
-  // Classify attacker dice
-  const atkAnnotated = atkRolls.map(d => {
-    if (d === 6)                            return 'crit';
-    if (d !== 1 && d >= effectiveAtkHit)   return 'hit';
-    return 'miss';
-  });
-
-  // Classify defender dice (before blocking)
-  const defRaw = defRolls.map(d => {
-    if (d === 6)                            return 'crit';
-    if (d !== 1 && d >= effectiveDefHit)   return 'hit';
-    return 'miss';
-  });
-
-  // Auto-resolve: attacker always strikes; defender blocks optimally then strikes with remainder
-  let rAtkCrits = atkAnnotated.filter(c => c === 'crit').length;
-  let rAtkHits  = atkAnnotated.filter(c => c === 'hit').length;
-  let rDefCrits = defRaw.filter(c => c === 'crit').length;
-  let rDefHits  = defRaw.filter(c => c === 'hit').length;
-
-  // Defender crits block attacker crits first, then normals
-  const dCritBlockC = Math.min(rDefCrits, rAtkCrits);
-  rDefCrits -= dCritBlockC; rAtkCrits -= dCritBlockC;
-  const dCritBlockH = Math.min(rDefCrits, rAtkHits);
-  rDefCrits -= dCritBlockH; rAtkHits -= dCritBlockH;
-  // Defender hits block attacker normals
-  const dHitBlockH = Math.min(rDefHits, rAtkHits);
-  rDefHits -= dHitBlockH; rAtkHits -= dHitBlockH;
-
-  // Remaining defender dice strike attacker
-  const defStrikeCrits = rDefCrits;
-  const defStrikeHits  = rDefHits;
-
-  const dmgToDefender = (atkAnnotated.filter(c=>c==='crit').length - dCritBlockC) * atkCDmg +
-                        (atkAnnotated.filter(c=>c==='hit').length  - dCritBlockH - dHitBlockH) * atkNDmg;
-  const dmgToAttacker = defStrikeCrits * defCDmg + defStrikeHits * defNDmg;
-
-  // Annotate defender dice for display
-  let defCritBlockLeft = dCritBlockC + dCritBlockH;
-  let defHitBlockLeft  = dHitBlockH;
-  const defAnnotated = defRaw.map(c => {
-    if (c === 'crit' && defCritBlockLeft > 0) { defCritBlockLeft--; return 'crit-block'; }
-    if (c === 'hit'  && defHitBlockLeft  > 0) { defHitBlockLeft--;  return 'hit-block'; }
-    if (c === 'crit') return 'crit-strike';
-    if (c === 'hit')  return 'hit-strike';
-    return 'miss';
-  });
+  const outcome = resolveFightOutcome(atkProfile, defProfile, atkRolls, defRolls);
 
   await db.ref(`games-kt/${gameId}/pendingFight`).set({
     attackerOpId: attacker.id,
@@ -3011,17 +3076,17 @@ async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
     attackerSlot: playerSlot,
     atkWeapon,
     defWeapon: defWeapon || null,
-    atkHitStat: effectiveAtkHit,
-    defHitStat: effectiveDefHit,
-    atkNDmg, atkCDmg,
-    defNDmg, defCDmg,
+    atkHitStat: atkProfile.hit,
+    defHitStat: defProfile.hit,
+    atkNDmg: atkProfile.dmgNormal, atkCDmg: atkProfile.dmgCrit,
+    defNDmg: defProfile.dmgNormal, defCDmg: defProfile.dmgCrit,
     phase: 'confirm',
     atkRolls,
     defRolls,
-    atkAnnotated,
-    defAnnotated,
-    dmgToDefender,
-    dmgToAttacker,
+    atkAnnotated: outcome.atkAnnotated,
+    defAnnotated: outcome.defAnnotated,
+    dmgToDefender: outcome.dmgToDefender,
+    dmgToAttacker: outcome.dmgToAttacker,
   });
 
   fightWeapon = null;
