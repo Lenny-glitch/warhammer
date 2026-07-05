@@ -57,3 +57,27 @@ So this brief is now two fixes, both required:
    resurrects the first symptom.
 Acceptance unchanged: Nox republishes, exports.json?shallow=true
 shows warhammer-40k, chosenLoadout + modelCount populated.
+
+## AMENDMENT 2 (2026-07-05) — republish result: new failure, one layer down
+Progress: path + button fixes CONFIRMED working — the write now
+targets exports/warhammer-40k/-OwoAQwxVjMCNbt3ZBaG (real ID).
+Firebase rejected the payload:
+  "invalid key (BS/WS) in ...units.0.weapons.0.profiles —
+   keys must not contain . # $ / [ ]"
+Flat-pool 40k weapon profiles are keyed by stat names, and BS/WS
+contains a slash. KT stats are clean; drafts don't carry weapons
+(denormalization happens at publish) — which is why only 40k
+publish hits it.
+
+Fix: sanitize profile keys at export time with a FIXED, documented
+mapping (e.g. BS/WS → bsws, plus a general pass replacing all
+Firebase-forbidden chars, since one bad key implies the scrape may
+hold others — sweep both factions' profile keys and report every
+key that needed mapping, don't just patch BS/WS). Display layers
+may restore pretty names; the export carries clean keys, and the
+mapping note goes in the DEVLOG because Part 3's sim will read
+these exact keys.
+Acceptance unchanged and now two-part: Nox republishes →
+exports.json shows warhammer-40k → the export node's
+chosenLoadout + modelCount + weapon profiles all populated with
+sanitized keys.
