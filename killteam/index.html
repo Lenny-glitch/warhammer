@@ -98,6 +98,23 @@
     }
     .roster-preview.ok  { color: var(--green); }
     .roster-preview.err { color: var(--red); }
+    .roster-picker {
+      max-height: 280px; overflow-y: auto; border: 1px solid var(--border);
+      border-radius: 5px; background: var(--surface);
+    }
+    .roster-pick-row {
+      padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
+    }
+    .roster-pick-row:last-child { border-bottom: none; }
+    .roster-pick-row:hover { background: var(--surface2); }
+    .roster-pick-row.selected { background: var(--green-dim); border-left: 3px solid var(--green); }
+    .roster-pick-main { display: flex; align-items: center; gap: 6px; }
+    .roster-pick-name { font-size: 13px; font-weight: 600; }
+    .roster-pick-badge {
+      font-size: 9px; letter-spacing: 0.5px; color: var(--gold);
+      border: 1px solid var(--gold); border-radius: 3px; padding: 1px 5px;
+    }
+    .roster-pick-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
     .link-row { display: flex; gap: 8px; margin-top: 0.5rem; }
     .link-input {
       flex: 1; background: var(--surface); border: 1px solid var(--border);
@@ -674,7 +691,6 @@ let expandedOps   = new Set(); // op IDs whose sidebar cards are expanded
 let splatData     = []; // { x, y, pathIdx, rotation, scale, color, bornAt } — permanent death stains
 let diceAnimState = null; // { atkRolls, defRolls, atkStopAt, defStopAt, t0, totalDur, displayAtk, displayDef, _timer }
 let diceReadoutExpanded = {}; // BON-2b: { shot: bool, fight: bool } — collapsed-by-default readout toggle (always expanded in ?dev=true)
-let rosterPreviewTimers = {};
 
 // ═══════════════════════════════════════════════════════════
 //  BOOTSTRAP
@@ -727,6 +743,20 @@ function parseStat(v) {
   return parseInt(String(v || '0').replace(/[^\d-]/g, '')) || 0;
 }
 
+// KT-RS: verified against the Legionary export — its `stats` object uses
+// Move/Save/Wounds (TitleCase) while Tau/Kommandos/Kasrkin use MOVE/SAVE/
+// WOUNDS (upper). APL/DF happen to match already. A plain `u.stats.WOUNDS`
+// lookup silently returns undefined -> parseStat -> 0 for this faction —
+// with no `|| fallback` on maxWounds specifically, that means every
+// Legionary operative was born with 0 max wounds (already-incapacitated).
+// Tries every casing seen in the wild so callers don't need to care.
+function statVal(stats, ...keys) {
+  for (const k of keys) {
+    if (stats && stats[k] !== undefined) return stats[k];
+  }
+  return undefined;
+}
+
 // ═══════════════════════════════════════════════════════════
 //  ROSTER EXPORT LOADING
 // ═══════════════════════════════════════════════════════════
@@ -762,11 +792,11 @@ function buildOperatives(exportData, playerSlot) {
       nameSeen[baseName] = (nameSeen[baseName] || 0) + 1;
       displayName = `${baseName} #${nameSeen[baseName]}`;
     }
-    const maxW    = parseStat(u.stats.WOUNDS);
-    const apl     = parseStat(u.stats.APL) || 2;
-    const move    = parseStat(u.stats.MOVE) || 6;
-    const def     = parseStat(u.stats.DF)   || 3;
-    const save    = parseStat(u.stats.SAVE) || 5;
+    const maxW    = parseStat(statVal(u.stats, 'WOUNDS', 'Wounds'));
+    const apl     = parseStat(statVal(u.stats, 'APL', 'Apl'))            || 2;
+    const move    = parseStat(statVal(u.stats, 'MOVE', 'Move'))          || 6;
+    const def     = parseStat(statVal(u.stats, 'DF', 'Df'))              || 3;
+    const save    = parseStat(statVal(u.stats, 'SAVE', 'Save'))          || 5;
 
     // Copy full weapon list onto instance so combat resolution has no async lookups.
     // chosenLoadout takes priority (selected weapons); fall back to full weapons array.
@@ -781,7 +811,13 @@ function buildOperatives(exportData, playerSlot) {
         ATK: w.profiles?.ATK || '0',
         HIT: w.profiles?.HIT || '4+',
         DMG: w.profiles?.DMG || '1/1',
-        RNG: w.profiles?.RNG || '',
+        // KT-RS: verified against gameData/kill-team/factions/legionary —
+        // that faction's parser output puts range on the weapon's own
+        // `rng` (lowercase), not nested in `profiles.RNG` like every other
+        // faction sampled (Tau, Kommandos, Kasrkin). Without this fallback
+        // every Legionary ranged weapon reads as 0 range and silently
+        // vanishes from getRangedWeapons() — no error, just no Shoot button.
+        RNG: w.profiles?.RNG || w.rng || '',
         WR:  w.profiles?.WR  || '',
       },
       // BON-2a: this was a whitelist copy predating bonuses/keywords
@@ -822,32 +858,6 @@ function buildOperatives(exportData, playerSlot) {
   return ops;
 }
 
-// Debounced roster ID preview (used in lobby form)
-function previewRoster(inputId, previewId, delay = 600) {
-  clearTimeout(rosterPreviewTimers[inputId]);
-  const el = document.getElementById(previewId);
-  if (!el) return;
-  el.className = 'roster-preview';
-  el.textContent = '…';
-  rosterPreviewTimers[inputId] = setTimeout(async () => {
-    const val = (document.getElementById(inputId)?.value || '').trim();
-    if (!val) { el.textContent = ''; return; }
-    try {
-      const data = await fetchRosterExport(val);
-      if (!data || !data.meta) {
-        el.className = 'roster-preview err';
-        el.textContent = 'Roster not found';
-        return;
-      }
-      const units  = Array.isArray(data.units) ? data.units : Object.values(data.units || {});
-      el.className = 'roster-preview ok';
-      el.textContent = `${data.meta.factionName} — ${units.length} operatives`;
-    } catch(e) {
-      el.className = 'roster-preview err';
-      el.textContent = 'Error fetching roster';
-    }
-  }, delay);
-}
 
 // ═══════════════════════════════════════════════════════════
 //  GAME CREATION / JOINING
@@ -1076,10 +1086,15 @@ function renderDevCol(colId, playerSlot) {
 //  LOBBY
 // ═══════════════════════════════════════════════════════════
 
+// KT-RS: roster selected in the current lobby screen (picker replaces the
+// old free-text Roster ID input). Reset every time the lobby re-renders.
+let lobbyRosterId = null;
+
 function renderLobby(mode) {
   showScreen('lobby');
   const el    = document.getElementById('screen-lobby');
   const isNew = mode === 'create';
+  lobbyRosterId = null;
 
   el.innerHTML = `
     <div class="lobby-wrap">
@@ -1092,10 +1107,10 @@ function renderLobby(mode) {
       </div>
 
       <div class="field-wrap">
-        <div class="field-label">Roster ID</div>
-        <input id="lobby-roster" class="text-input" type="text" placeholder="Firebase roster ID"
-          oninput="previewRoster('lobby-roster','lobby-preview')" />
-        <div id="lobby-preview" class="roster-preview"></div>
+        <div class="field-label">Roster</div>
+        <div id="lobby-roster-picker" class="roster-picker">
+          <div class="roster-pick-sub" style="padding:8px 12px;">Loading rosters…</div>
+        </div>
       </div>
 
       <div class="btn-row" style="margin-bottom:1.5rem;">
@@ -1108,26 +1123,86 @@ function renderLobby(mode) {
       ${isNew ? `
         <div class="info-box">
           After creating, share the link with your opponent.
-          They paste their own Roster ID to join.
+          They pick their own roster to join.
         </div>
       ` : `
         <div class="info-box">
-          Your opponent created this game. Enter your name and roster ID to join.
+          Your opponent created this game. Enter your name and pick your roster to join.
         </div>
       `}
     </div>
   `;
 
   document.getElementById('lobby-name')?.focus();
+  loadRosterPicker();
+}
+
+// exports/kill-team has no lightweight index (op count isn't in `meta` —
+// adding one there would be a roster/ change, out of KT-RS's scope), so
+// this fetches the whole tree once. Fine at today's scale (a handful of
+// rosters); revisit if that stops being true.
+async function fetchRosterList() {
+  const snap = await db.ref('exports/kill-team').once('value');
+  const data = snap.val() || {};
+  return Object.keys(data).map(key => {
+    const entry = data[key] || {};
+    const meta  = entry.meta || {};
+    const units = entry.units;
+    const opCount = Array.isArray(units) ? units.length : Object.keys(units || {}).length;
+    return {
+      // Firebase key, NOT meta.rosterId — at least one export in this tree
+      // (a stale duplicate, see DEVLOG) has no rosterId in its meta at all.
+      rosterId:    key,
+      name:        meta.name || '(untitled roster)',
+      factionName: meta.factionName || meta.factionId || 'Unknown faction',
+      opCount,
+      publishedAt: meta.publishedAt || 0,
+    };
+  }).sort((a, b) => b.publishedAt - a.publishedAt);
+}
+
+async function loadRosterPicker() {
+  const el = document.getElementById('lobby-roster-picker');
+  if (!el) return;
+  try {
+    const rosters = await fetchRosterList();
+    if (!document.getElementById('lobby-roster-picker')) return; // navigated away while loading
+    renderRosterPickerList(rosters);
+  } catch (e) {
+    if (el) el.innerHTML = `<div class="roster-preview err" style="padding:8px 12px;">Could not load rosters: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderRosterPickerList(rosters) {
+  const el = document.getElementById('lobby-roster-picker');
+  if (!el) return;
+  if (!rosters.length) {
+    el.innerHTML = '<div class="roster-preview err" style="padding:8px 12px;">No published rosters found.</div>';
+    return;
+  }
+  el.innerHTML = rosters.map(r => `
+    <div class="roster-pick-row" data-roster-id="${escHtml(r.rosterId)}" onclick="selectLobbyRoster('${escHtml(r.rosterId)}')">
+      <div class="roster-pick-main">
+        <span class="roster-pick-name">${escHtml(r.name)}</span>
+      </div>
+      <div class="roster-pick-sub">${escHtml(r.factionName)} · ${r.opCount} op${r.opCount === 1 ? '' : 's'}${r.publishedAt ? ' · ' + new Date(r.publishedAt).toLocaleDateString() : ''}</div>
+    </div>
+  `).join('');
+}
+
+function selectLobbyRoster(rosterId) {
+  lobbyRosterId = rosterId;
+  document.querySelectorAll('#lobby-roster-picker .roster-pick-row').forEach(row => {
+    row.classList.toggle('selected', row.dataset.rosterId === rosterId);
+  });
 }
 
 function handleLobbySubmit(mode) {
-  const name    = (document.getElementById('lobby-name')?.value || '').trim();
-  const rosterId = (document.getElementById('lobby-roster')?.value || '').trim();
-  if (!name)     { alert('Enter your name.'); return; }
-  if (!rosterId) { alert('Enter a Roster ID.'); return; }
-  if (mode === 'create') createGame(name, rosterId);
-  else                   joinGame(name, rosterId);
+  const name = (document.getElementById('lobby-name')?.value || '').trim();
+  if (!name)          { alert('Enter your name.'); return; }
+  if (!lobbyRosterId) { alert('Pick a roster.'); return; }
+  if (mode === 'create') createGame(name, lobbyRosterId);
+  else                   joinGame(name, lobbyRosterId);
 }
 
 // ═══════════════════════════════════════════════════════════

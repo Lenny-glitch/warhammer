@@ -1262,3 +1262,121 @@ see next commit in this repo's history.
 **Out of scope, unchanged:** flag enforcement, condition state
 persistence, active/CP bonuses, 40k, Firebase rules, pipeline changes,
 catch-up UI.
+
+## KT-RS — Roster Selection at Game Creation (2026-07-05)
+
+Implemented `KT_ROSTER_SELECT_BRIEF.md`. Was flagged there as the new
+critical path: real play (and BON-2b's own acceptance) was blocked on the
+two hardcoded dev rosters, whose `unitId`s predate the current pipeline
+(see BON-2b's flag 3 above).
+
+**Verify-first findings:**
+
+- `exports/kill-team` currently holds 5 entries: the two stale dev
+  rosters (2026-06-25), a Kommandos roster (also 2026-06-25), a byte-
+  identical **duplicate** of that Kommandos roster under the literal
+  Firebase key `"undefined"` (its `meta` has no `rosterId` field — almost
+  certainly `s.rosterId` was falsy at some past publish and stringified
+  into the ref path), and a fresh Legionaries roster Nox published today
+  for this brief. Handled generically: the picker always keys off the
+  Firebase key, never `meta.rosterId`, so the `"undefined"` entry just
+  renders as another (harmless, if confusing-looking) row instead of
+  crashing or needing a special case.
+- **The Legionary export uses a different weapon-range field than every
+  other faction sampled** (Tau, Kommandos, Kasrkin): `w.rng` at the
+  weapon's own top level instead of `w.profiles.RNG`. Without a fallback,
+  `buildOperatives` would read every Legionary ranged weapon as 0 range
+  and `getRangedWeapons()` would silently exclude all of them — no error,
+  just a permanently-disabled Shoot button. Fixed with a fallback read
+  (`w.profiles?.RNG || w.rng || ''`).
+- **The Legionary export's `stats` object is TitleCase** (`Move`, `Save`,
+  `Wounds`) where Tau/Kommandos/Kasrkin use upper (`MOVE`, `SAVE`,
+  `WOUNDS`) — `APL`/`DF` happen to already match across factions.
+  `buildOperatives` read `u.stats.WOUNDS` verbatim with **no fallback at
+  all** on that one field, so every Legionary operative was built with
+  `maxWounds: 0` — born already-incapacitated, invisible to targeting,
+  looked like nothing was wrong until you tried to activate one. This
+  wasn't in the brief (which only called out the RNG-shape risk) — found
+  by actually creating a game through the picker and checking the written
+  operatives, not by reading the export JSON in isolation. Fixed with a
+  small `statVal(stats, ...keys)` helper trying every casing seen so far,
+  used for WOUNDS/APL/MOVE/DF/SAVE. Deliberately did **not** add a
+  fallback *value* for missing WOUNDS (only additional key names) — a
+  genuinely absent max-wounds stat should surface as broken, not get
+  silently papered over with a made-up number.
+- Some Legionary weapons that DO carry real keyword bonuses have no
+  captured range at all under either field name (`Fireblast`, `Life
+  siphon` — psychic ranged attacks) — a data-completeness gap in the
+  parse, not a field-name mismatch, so no fallback can fix it client-side.
+  These two weapons can't be used to demo Shoot-with-bonuses until the
+  pipeline captures their range. Out of scope here (pipeline changes are
+  explicitly excluded).
+- Confirmed (again, with real data this time) something BON-2b's own
+  entry above already flagged: bonuses compiled from a melee weapon's
+  keyword text keep the CATALOG entry's own `trigger` field, which for
+  `rending`/`lethal-5` is hardcoded `onShoot` regardless of the weapon
+  carrying it. `Tainted chainsword`'s "Rending" and `Power weapon`'s
+  "Lethal 5+" can therefore never fire in Fight — `eligibleBonuses`
+  correctly rejects them (`bonus.trigger !== context.trigger`). This is a
+  compile-time keyword→bonus mapping gap (pipeline), not a killteam
+  engine bug; `Power fist`'s "Brutal" (trigger `onFight` in the catalog)
+  fires correctly and was used for the melee verification instead.
+
+**What shipped:**
+
+- Lobby's free-text "Roster ID" input replaced with a picker
+  (`fetchRosterList`/`renderRosterPickerList`/`selectLobbyRoster`):
+  fetches all of `exports/kill-team` (no lightweight index exists —
+  adding one is a roster/ change, out of scope — fine at today's scale of
+  a handful of rosters), shows name/faction/op-count/published-date,
+  newest first. `handleLobbySubmit` now reads the picker's selection
+  instead of an input value; unchanged from there down (`createGame`/
+  `joinGame` still just take a `rosterId` string). Deleted `previewRoster`/
+  `rosterPreviewTimers` — the debounced single-roster preview it replaces
+  is now redundant with the picker showing everything up front.
+- `buildOperatives`: `RNG` fallback to `w.rng`; `statVal()` helper +
+  multi-casing stat reads, both described above.
+- Dev rosters (brief point 5, "your call, state it"): **not** added as
+  separate labeled "Demo" entries. They already appear in the picker as
+  ordinary (if old) rows — duplicating them under a synthetic "Demo"
+  label would just show the same two rosters twice. `bootDev()` itself is
+  untouched; `?dev=true` still auto-boots the same two hardcoded IDs
+  exactly as before.
+
+**Verification (real browser, real roster, not synthetic-only this
+time):** picked the Legionaries roster through the actual lobby picker,
+created a real game, confirmed the 5 written operatives' names matched
+the export exactly (`Legionary Anointed`, `Aspiring Champion`, `Balefire
+Acolyte`, `Butcher #1/#2`) and — after the stats-casing fix — their
+wounds/move/save came out correct (14-15 wounds, not 0). Fast-forwarded
+the same real game to firefight via direct writes (terrain/deployment/
+initiative are unrelated, pre-existing phases) and drove combat in
+headless Chromium:
+
+- Fight, `Power fist` (real embedded `brutal` bonus, not hand-authored):
+  resolved correctly, `BRUTAL` badge + "Brutal: flags brutal" readout
+  line.
+- Fight, `Tainted chainsword` (real embedded `rending` bonus): resolved
+  with zero applied bonuses — correct, per the onFight/onShoot trigger
+  gap above, not a bug.
+- Shoot, `Bolt pistol` (real weapon, genuinely empty bonuses array):
+  resolved cleanly, no readout button rendered (nothing to show) —
+  correct.
+- Deleted the disposable test game afterward; nothing committed.
+
+**Done-when checklist:** new game created with the Legionary export from
+the picker, operatives match the published roster — met (only after the
+stats-casing fix, which the brief didn't anticipate). A shoot in that
+game shows weapon bonuses in the readout — **not fully met**: Legionary's
+only bonus-carrying ranged weapons have no captured range at all (see
+above), so no ranged+bonus demo is possible with this specific roster
+today; a melee bonus (`Power fist`/Brutal) demonstrates the same
+mechanism instead, and BON-2b's acceptance already stands independently
+on its own synthetic-fixture verification. Old existing games
+unaffected — met (nothing touched read/render paths for other games;
+both fixes are pure additions to field-name tolerance). DEVLOG — this
+entry. Commits — see next commit. Nox pushes (no git credentials in this
+sandbox).
+
+**Out of scope, unchanged:** 40k game app, roster app changes, new
+Firebase paths, lobby/matchmaking, pipeline changes.
