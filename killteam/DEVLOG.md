@@ -1132,3 +1132,133 @@ next commit in this repo's history.
 
 **CHECKPOINT:** per the brief, BON-2b does not start until Nox plays a
 build of this and confirms combat feels identical.
+
+**CHECKPOINT cleared (2026-07-05):** Nox confirmed 2a plays fine — BON-2b
+below implements `BON2_BRIEF_v3.md`'s second half.
+
+## BON-2b — bonus integration (2026-07-05)
+
+**Verify-first findings before writing any code** (checked against the live
+Firebase data, not the brief's assumptions about it):
+
+- Every entry in `gameData/kill-team/bonuses/` (29 entries) has the exact
+  same placeholder `description`: `"Flavor/reference text only. Engine
+  never reads this."` There is no real prose to read for the dice-readout
+  the brief asks for ("one plain-English line per applied bonus from
+  catalog descriptions"). `describeBonus()` generates the line from the
+  bonus's `name` + `effects` shape instead — e.g. `"Rending: +1 bonus crit
+  hit(s) (on a crit), -1 bonus normal hit(s) (on a crit)"`. Divergence from
+  the brief's literal wording, not from its intent.
+- No catalog effect sets `appliesTo: "target"` — not the Piercing entries,
+  not anything — even though `shared/bonus-resolver.js`'s own doc comment
+  names Piercing's `-1 defDice` as the canonical appliesTo:target example.
+  Routing is done by stat name instead (`defDice`/`save` are exclusive to
+  the defense side in Shoot, so it's unambiguous and needs no per-bonus
+  special-casing) — see `splitBonusesBySide()`.
+- Every catalog entry's `scope` object omits `filter`/`range` entirely
+  rather than setting `[]`/`null`. `eligibleBonuses`' range gate is `bonus.
+  scope.range !== null` — with range *undefined* that's true, and it fails
+  closed without `context.positions`. Fix: always pass positions for both
+  Shoot and Fight, even for non-aura weapon-keyword bonuses, or every
+  single bonus in the catalog gets silently dropped.
+- The two hardcoded dev rosters (`DEV_ROSTER_P1`/`P2`) were published
+  2026-06-25 — before BON-1's bonus catalog existed (2026-07-02) — so their
+  exported weapons carry no `bonuses` at all. Tried a republish script
+  mirroring roster's own publish transform; it found **zero** matches,
+  because these rosters' `unitId`s (`shasui-pathfinder-001`, etc.) predate
+  the current BSData-pipeline slugs (`shasui`, etc.) entirely — not a
+  simple staleness issue, a full roster rebuild through roster/'s own UI
+  would be needed. Out of scope here (brief says work in `killteam/`).
+  **Nox: the two dev rosters need rebuilding in roster/ before `?dev=true`
+  will show any weapon bonuses** — verification below used disposable
+  synthetic `games-kt/` fixtures instead (deleted after, never committed).
+
+**What shipped:**
+
+- `<script src="../shared/bonus-resolver.js">` added — plain relative path,
+  confirmed working from `file://` too (no bundler/module constraints, per
+  the brief's own caveat to check this first).
+- `games-kt/{gameId}/bonuses` snapshotted from `gameData/kill-team/bonuses/`
+  at creation, in both `createGame` and `bootDev` (not `joinGame` — same
+  game doc, no second snapshot). Read via `gameData.bonuses || {}`
+  everywhere else — absent on old games, inert, zero errors.
+- `getWeaponBonuses`/`splitBonusesBySide`/`buildBonusContext`/
+  `computeHalfRangeFact`/`applyRerolls`/`discardWorstDice`/`describeBonus`/
+  `dedupeAppliedBonuses` — new pure helpers (all next to `buildDefenseProfile`).
+- `rollShot`: two-pass resolve. Pass 1 (facts = `halfRange`\* if
+  applicable) builds the profile dice are rolled against and rerolled
+  against (`applyRerolls` — Balanced/Ceaseless/Relentless). Raw dice crit
+  count decides `critScored`/`noCritScored`; pass 2 re-resolves with that
+  fact added, which naturally sums unconditional + now-satisfied
+  conditional effects on the same stat in one `resolveStats` call — no
+  manual delta-diffing, no special-casing Rending vs Severe vs Punishing
+  vs Piercing Crits. `defDice` shrinking after the fact (Piercing Crits)
+  is realized as `discardWorstDice` on the already-rolled pool, since dice
+  can't retroactively un-roll.
+- `confirmFightTarget`: same two-pass shape, run independently per
+  combatant (`resolveMeleeSide`) since Fight has no separate defense
+  profile — both sides "attack." No appliesTo/cross-side routing for
+  melee (nothing in the catalog needs it — Rending/Severe/Punishing are
+  all `onShoot`-only, `brutal` is the only `onFight` entry and it's a flag).
+- `resolveShotOutcome`/`resolveFightOutcome`: fold in `retainNormal`/
+  `retainCrit` (Accurate, Punishing, Rending, Severe) as guaranteed extra
+  hits added to the dice-classified counts before the block/save
+  simulation. Zero when absent — reproduces 2a's output exactly for every
+  pre-BON-2b game.
+- Dice readout: badges for flags, badges for conditions (`stun` →
+  "STUNNED → target", no token state, display only), one line per applied
+  bonus. Always expanded in `?dev=true`; collapsed behind a "Show bonus
+  readout (N)" toggle otherwise (`renderBonusReadout`/`toggleDiceReadout`).
+- Fixed a bug 2a's own DEVLOG entry had flagged and deliberately deferred:
+  `renderDicePool`'s atk-side dice coloring was hardcoded to `d === 6` for
+  the CRIT bucket — cosmetic-only, but wrong the instant Lethal x+ went
+  live, which it just did. Now takes `critThreshold`. Def-side crit-SAVE
+  stays hardcoded 6 on purpose (unmodifiable, per `DEFENSE_CRIT_FACE`).
+- Determinism: all of the above only ever runs inside `rollShot` (Roll
+  Dice is attacker-only) and `confirmFightTarget` (only the dragging
+  player calls it) — same existing cross-client pattern as 2a, nothing new
+  needed. `halfRange`/`critScored`/`appliedBonuses`/`flags`/`conditions`
+  are written into the action record alongside the existing fields, human-
+  readable, for the observing client to just display.
+
+**Verification (real browser, not unit tests):** built disposable
+`games-kt/` fixtures via direct Firebase REST writes (rules are public
+read/write, no admin creds needed) and drove full Shoot/Fight sequences
+in headless Chromium (Playwright; had to work around a missing
+`libasound.so.2` in this sandbox by extracting it from the `.deb` locally
+— no root available). All fixtures deleted after, nothing committed.
+
+- Rail rifle (Lethal 5+, Piercing 1, Devastating 2) vs a defenseless
+  target: a natural 5 correctly colored CRIT, defense dice count dropped
+  3→2 *before* rolling (Piercing 1 is unconditional, baked into the
+  pre-roll profile), crit damage 4→6 (Devastating 2). Numbers hand-checked
+  against the written `pendingShot` record.
+- Rending Rifle (Rending only, ATK 6): rolled `[6,4,5,1,4,1]` vs `save 4`
+  defense `[3,1,1,5]` → 1 natural crit + 3 normals, Rending's paired
+  `retainCrit+1`/`retainNormal-1` converts one normal into a second crit
+  (2 crit/2 normal before saves) → 1 save cancels 1 normal →
+  `remainingCritHits:2, remainingNormalHits:1, totalDamage:11`. Hand-
+  verified: 2×4 + 1×3 = 11. ✓ This is the "conversion fires on the right
+  crit state" checkpoint.
+- Brutal Blade (melee, flag-only) vs an unarmed defender: resolved
+  cleanly through `resolveMeleeSide`/`resolveFightOutcome`
+  (`dmgToDefender: 11`, `dmgToAttacker: 0`), `BRUTAL` badge + "Brutal:
+  flags brutal" readout line rendered. This is the "one melee example"
+  checkpoint.
+- Old-game path: a game doc with no `bonuses` key at all and a weapon
+  with no `bonuses` field (pre-BON-2a export shape) resolved with zero
+  page errors and output identical to 2a's pre-bonus math (hand-verified:
+  `remainingCritHits:0, remainingNormalHits:2, totalDamage:6`). No
+  readout button rendered (nothing applied) — correct.
+
+**2b done-when checklist:** snapshot verified on a fresh game — met.
+Old game still plays — met. Lethal/Piercing weapon shows correct resolved
+numbers in dev readout — met (synthetic fixture; real dev rosters need
+rebuilding first, see above). Conversion fires on the right crit state —
+met (Rending). One melee example through the same path — met (Brutal).
+Verified-vs-assumed report — this entry. DEVLOG — this entry. Commits —
+see next commit in this repo's history.
+
+**Out of scope, unchanged:** flag enforcement, condition state
+persistence, active/CP bonuses, 40k, Firebase rules, pipeline changes,
+catch-up UI.

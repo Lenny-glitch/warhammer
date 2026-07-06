@@ -445,6 +445,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="firebase-config.js"></script>
+<!-- BON-2b: monorepo's single shared resolver, referenced directly (no vendored copy). -->
+<script src="../shared/bonus-resolver.js"></script>
 
 <script>
 'use strict';
@@ -671,6 +673,7 @@ let radialSlot    = null;  // playerSlot whose radial is currently showing
 let expandedOps   = new Set(); // op IDs whose sidebar cards are expanded
 let splatData     = []; // { x, y, pathIdx, rotation, scale, color, bornAt } — permanent death stains
 let diceAnimState = null; // { atkRolls, defRolls, atkStopAt, defStopAt, t0, totalDur, displayAtk, displayDef, _timer }
+let diceReadoutExpanded = {}; // BON-2b: { shot: bool, fight: bool } — collapsed-by-default readout toggle (always expanded in ?dev=true)
 let rosterPreviewTimers = {};
 
 // ═══════════════════════════════════════════════════════════
@@ -731,6 +734,14 @@ function parseStat(v) {
 async function fetchRosterExport(rosterId) {
   const snap = await db.ref(`exports/kill-team/${rosterId}`).once('value');
   return snap.val();
+}
+
+// BON-2b snapshot rule: read once at game creation, baked into the game doc
+// as games-kt/{gameId}/bonuses, never re-read after. A pipeline re-run must
+// not change the rules of a game already in progress.
+async function fetchBonusCatalog() {
+  const snap = await db.ref('gameData/kill-team/bonuses').once('value');
+  return snap.val() || {};
 }
 
 function buildOperatives(exportData, playerSlot) {
@@ -845,7 +856,10 @@ function previewRoster(inputId, previewId, delay = 600) {
 async function createGame(playerName, rosterId) {
   showScreen('loading');
   try {
-    const exportData = await fetchRosterExport(rosterId);
+    const [exportData, bonuses] = await Promise.all([
+      fetchRosterExport(rosterId),
+      fetchBonusCatalog(),
+    ]);
     if (!exportData?.meta) throw new Error('Roster not found. Check the roster ID.');
 
     const ops   = buildOperatives(exportData, 'player1');
@@ -855,6 +869,7 @@ async function createGame(playerName, rosterId) {
 
     await ref.set({
       meta:   { status: 'waiting', createdAt: Date.now() },
+      bonuses,
       players: {
         player1: {
           name:        playerName,
@@ -940,9 +955,10 @@ async function bootDev() {
   document.getElementById('dev-body-p1').innerHTML = '<div style="padding:1rem;color:var(--text-dim);font-size:12px;">Creating game…</div>';
   document.getElementById('dev-body-p2').innerHTML = '<div style="padding:1rem;color:var(--text-dim);font-size:12px;">Joining…</div>';
   try {
-    const [exp1, exp2] = await Promise.all([
+    const [exp1, exp2, bonuses] = await Promise.all([
       fetchRosterExport(DEV_ROSTER_P1),
       fetchRosterExport(DEV_ROSTER_P2),
+      fetchBonusCatalog(),
     ]);
     if (!exp1?.meta || !exp2?.meta) throw new Error('Dev rosters not found in Firebase.');
 
@@ -955,6 +971,7 @@ async function bootDev() {
 
     await ref.set({
       meta:   { status: 'terrain', createdAt: Date.now(), dev: true },
+      bonuses,
       players: {
         player1: { name: 'P1 Dev', faction: exp1.meta.factionId, factionName: exp1.meta.factionName, rosterId: DEV_ROSTER_P1, token: 'dev1' },
         player2: { name: 'P2 Dev', faction: exp2.meta.factionId, factionName: exp2.meta.factionName, rosterId: DEV_ROSTER_P2, token: 'dev2' },
@@ -2425,6 +2442,165 @@ function buildDefenseProfile(op) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════
+//  BON-2b — bonus resolution
+// ═══════════════════════════════════════════════════════════
+//
+// Verified-vs-assumed notes (checked against the live
+// gameData/kill-team/bonuses/ catalog and the resolver's own doc comments
+// before writing any of this — see DEVLOG for the full writeup):
+//
+// - Every catalog entry's `description` is the literal placeholder string
+//   "Flavor/reference text only. Engine never reads this." — there is no
+//   real prose to read for the dice-readout. describeBonus() below
+//   generates the plain-English line from the bonus's name + effects
+//   instead of from `description`.
+// - No catalog effect sets `appliesTo: "target"` (the resolver's own doc
+//   comment names Piercing's -1 defDice as the canonical appliesTo:target
+//   example, but the live data doesn't tag it that way — only the `stun`
+//   condition does). splitBonusesBySide() below routes mod effects by
+//   stat name instead (defDice/save are exclusive to the defense side in
+//   Shoot, so routing on the stat name is unambiguous and needs no
+//   per-bonus special-casing); condition/flag effects still use
+//   effect.appliesTo since they have no stat name to key off of.
+// - Every catalog entry's `scope` object omits `filter`/`range` entirely
+//   rather than setting them to `[]`/`null`. eligibleBonuses' range check
+//   is `bonus.scope.range !== null` — with range OMITTED (undefined) that
+//   condition is true, and it then fails closed if `context.positions` is
+//   missing. So positions must ALWAYS be passed (see buildBonusContext),
+//   even for plain weapon-keyword bonuses with no real range gate, or
+//   every single bonus is silently dropped as an out-of-range aura.
+
+function getWeaponBonuses(weapon, catalog) {
+  const raw = Array.isArray(weapon?.bonuses) ? weapon.bonuses : [];
+  // Weapon bonuses may already be full inline objects (gameData's per-unit
+  // weapons carry them that way) or plain id strings referencing the
+  // game-doc's snapshotted catalog — handle both without caring which.
+  return raw.map(b => (typeof b === 'string' ? catalog[b] : b)).filter(Boolean);
+}
+
+// defDice/save only ever exist on a defenseProfile (Shoot only — Fight has
+// no separate defense roll). Any mod effect targeting them belongs on the
+// OTHER side's resolveStats call; everything else stays with the actor.
+const DEFENSE_ONLY_STATS = new Set(['defDice', 'save']);
+
+// Splits a flat list of (already weapon-attached) bonuses into two bonus
+// lists — one to feed into the actor's own resolveStats call, one for the
+// target's — by cloning each bonus with its effects array filtered. A
+// single bonus with effects on both sides (none exist today) would appear,
+// correctly, in both output lists.
+function splitBonusesBySide(bonuses) {
+  const actorBonuses = [], targetBonuses = [];
+  for (const bonus of bonuses) {
+    const actorEffects = [], targetEffects = [];
+    for (const effect of bonus.effects || []) {
+      const isTargetSide = effect.type === 'mod'
+        ? DEFENSE_ONLY_STATS.has(effect.stat)
+        : effect.appliesTo === 'target';
+      (isTargetSide ? targetEffects : actorEffects).push(effect);
+    }
+    if (actorEffects.length)  actorBonuses.push({ ...bonus, effects: actorEffects });
+    if (targetEffects.length) targetBonuses.push({ ...bonus, effects: targetEffects });
+  }
+  return { actorBonuses, targetBonuses };
+}
+
+// halfRange fact: derived purely from shared game-doc state (both
+// combatants' board positions + the weapon's own range) — deterministic,
+// so both clients would compute the same value if they ever needed to;
+// no randomness involved, nothing to write into the action record for it.
+// null/0 range (unlimited) always resolves false per the brief.
+function computeHalfRangeFact(weapon, distance) {
+  const rng = parseRng(weapon?.profiles?.RNG);
+  if (!rng) return false;
+  return distance <= rng / 2;
+}
+
+function buildBonusContext(trigger, facts, actorPos, targetPos) {
+  // positions always supplied — see the scope.range landmine noted above.
+  return {
+    trigger, facts,
+    actor:  { keywords: [] },
+    target: { keywords: [] },
+    positions: { actor: actorPos, target: targetPos },
+  };
+}
+
+// Reroll failed attack dice per the resolved profile's rerollOne/rerollAll
+// (Balanced / Ceaseless / Relentless). "Failed" mirrors the classification
+// used everywhere else: a natural 1 always fails, otherwise fails if below
+// `hit`. rerollAll takes priority (Ceaseless/Relentless over Balanced);
+// each die gets at most one reroll — no chained re-rerolling.
+function applyRerolls(rolls, profile) {
+  const isMiss = d => d === 1 || d < profile.hit;
+  if (profile.rerollAll > 0) return rolls.map(d => isMiss(d) ? Math.ceil(Math.random() * 6) : d);
+  if (profile.rerollOne > 0) {
+    const idx = rolls.findIndex(isMiss);
+    if (idx >= 0) { const out = rolls.slice(); out[idx] = Math.ceil(Math.random() * 6); return out; }
+  }
+  return rolls;
+}
+
+// Discards the `count` lowest-value already-rolled dice. Used when a
+// post-roll conditional pass (Piercing Crits) lowers defDice after the
+// dice for the ORIGINAL (higher) defDice count are already rolled —
+// dice can't retroactively un-roll, so the effect is realized as the
+// defender's worst already-rolled dice being knocked out instead.
+function discardWorstDice(rolls, count) {
+  if (count <= 0) return rolls.slice();
+  const order = rolls.map((v, i) => i).sort((a, b) => rolls[a] - rolls[b]);
+  const drop = new Set(order.slice(0, count));
+  return rolls.filter((_, i) => !drop.has(i));
+}
+
+const STAT_LABELS = {
+  atkDice: 'attack dice', hit: 'hit threshold', critThreshold: 'crit threshold',
+  dmgNormal: 'normal damage', dmgCrit: 'crit damage', defDice: 'defence dice',
+  save: 'save threshold', retainNormal: 'bonus normal hit(s)', retainCrit: 'bonus crit hit(s)',
+  rerollOne: 'reroll worst die', rerollAll: 'reroll all failed dice',
+};
+const WHEN_LABELS = { critScored: 'on a crit', noCritScored: 'if no crit scored', halfRange: 'at half range' };
+
+// Generates the dice-readout's plain-English line for one applied bonus.
+// Reads bonus.name + effect shape, NOT bonus.description — see the
+// verified-vs-assumed note above for why (every description in the live
+// catalog is an identical placeholder string).
+function describeBonus(bonus) {
+  const parts = (bonus.effects || []).map(e => {
+    const whenTxt = e.when ? ` (${WHEN_LABELS[e.when] || e.when})` : '';
+    if (e.type === 'flag') return `flags ${e.flag}`;
+    if (e.type === 'condition') return `applies ${e.condition}${whenTxt}`;
+    if (e.type === 'mod') {
+      const label = STAT_LABELS[e.stat] || e.stat;
+      if (e.op === 'cap') return `cap ${label} at ${e.value}${whenTxt}`;
+      if (e.op === 'set') return `set ${label} to ${e.value}${whenTxt}`;
+      const sign = e.value >= 0 ? '+' : '';
+      return `${sign}${e.value} ${label}${whenTxt}`;
+    }
+    return '';
+  }).filter(Boolean);
+  return `${bonus.name}: ${parts.join(', ')}`;
+}
+
+// resolveStats' `applied` array has one entry per effect (a bonus with
+// multiple effects, or one that fired on both the pre- and post-roll pass,
+// appears more than once) — dedupe to one readout line per bonus id.
+// Looks bonus objects up in the ORIGINAL (unsplit) weapon-bonuses list so
+// describeBonus sees every effect, not just whichever side a given effect
+// was routed to.
+function dedupeAppliedBonuses(originalBonuses, appliedRecords) {
+  const byId = new Map(originalBonuses.map(b => [b.id, b]));
+  const seen = new Set();
+  const out = [];
+  for (const rec of appliedRecords) {
+    if (seen.has(rec.bonusId)) continue;
+    seen.add(rec.bonusId);
+    const bonus = byId.get(rec.bonusId);
+    if (bonus) out.push({ bonusId: bonus.id, name: bonus.name, text: describeBonus(bonus) });
+  }
+  return out;
+}
+
 // A natural 6 is an unmodifiable crit-save in KT — unlike attack crits
 // (Lethal x+ can lower attackProfile.critThreshold), no keyword touches
 // the defender's save-crit face. Not part of buildDefenseProfile's shape
@@ -2454,8 +2630,12 @@ function resolveShotOutcome(attackProfile, defenseProfile, atkRolls, defRolls, u
     if (minIdx >= 0) defRolls[minIdx] = 'auto';
   }
 
-  const critHits    = atkRolls.filter(d => d >= attackProfile.critThreshold).length;
-  const normalHits  = atkRolls.filter(d => d < attackProfile.critThreshold && d !== 1 && d >= attackProfile.hit).length;
+  // retainCrit/retainNormal (BON-2b): guaranteed extra hits granted outright
+  // by a bonus (Accurate, Punishing, Rending, Severe) — not tied to any
+  // die, so they're added on top of the dice-classified counts. Default 0
+  // when absent (no bonuses / pre-BON-2b games) — identical to 2a's output.
+  const critHits    = atkRolls.filter(d => d >= attackProfile.critThreshold).length + (attackProfile.retainCrit || 0);
+  const normalHits  = atkRolls.filter(d => d < attackProfile.critThreshold && d !== 1 && d >= attackProfile.hit).length + (attackProfile.retainNormal || 0);
   const critSaves   = defRolls.filter(d => d === DEFENSE_CRIT_FACE).length;
   const normalSaves = defRolls.filter(d => d === 'auto' || (typeof d === 'number' && d !== DEFENSE_CRIT_FACE && d >= defenseProfile.save)).length;
 
@@ -2484,10 +2664,16 @@ function resolveFightOutcome(atkProfile, defProfile, atkRolls, defRolls) {
   const atkAnnotated = atkRolls.map(d => classify(d, atkProfile));
   const defRaw        = defRolls.map(d => classify(d, defProfile));
 
-  let rAtkCrits = atkAnnotated.filter(c => c === 'crit').length;
-  let rAtkHits  = atkAnnotated.filter(c => c === 'hit').length;
-  let rDefCrits = defRaw.filter(c => c === 'crit').length;
-  let rDefHits  = defRaw.filter(c => c === 'hit').length;
+  // retainCrit/retainNormal (BON-2b): guaranteed extra hits from a bonus,
+  // not tied to a die — folded into the totals the blocking simulation and
+  // damage math both run against. Defaults to 0 (no bonuses) reproduces 2a
+  // exactly, since the totals then equal the dice-only counts below.
+  const totalAtkCrits = atkAnnotated.filter(c => c === 'crit').length + (atkProfile.retainCrit || 0);
+  const totalAtkHits  = atkAnnotated.filter(c => c === 'hit').length  + (atkProfile.retainNormal || 0);
+  const totalDefCrits = defRaw.filter(c => c === 'crit').length + (defProfile.retainCrit || 0);
+  const totalDefHits  = defRaw.filter(c => c === 'hit').length  + (defProfile.retainNormal || 0);
+
+  let rAtkCrits = totalAtkCrits, rAtkHits = totalAtkHits, rDefCrits = totalDefCrits, rDefHits = totalDefHits;
 
   const dCritBlockC = Math.min(rDefCrits, rAtkCrits);
   rDefCrits -= dCritBlockC; rAtkCrits -= dCritBlockC;
@@ -2499,8 +2685,8 @@ function resolveFightOutcome(atkProfile, defProfile, atkRolls, defRolls) {
   const defStrikeCrits = rDefCrits;
   const defStrikeHits  = rDefHits;
 
-  const dmgToDefender = (atkAnnotated.filter(c => c === 'crit').length - dCritBlockC) * atkProfile.dmgCrit +
-                        (atkAnnotated.filter(c => c === 'hit').length  - dCritBlockH - dHitBlockH) * atkProfile.dmgNormal;
+  const dmgToDefender = (totalAtkCrits - dCritBlockC) * atkProfile.dmgCrit +
+                        (totalAtkHits  - dCritBlockH - dHitBlockH) * atkProfile.dmgNormal;
   const dmgToAttacker = defStrikeCrits * defProfile.dmgCrit + defStrikeHits * defProfile.dmgNormal;
 
   let defCritBlockLeft = dCritBlockC + dCritBlockH;
@@ -2754,15 +2940,65 @@ async function rollShot(playerSlot) {
   const target   = (gameData.operatives || {})[p.targetOpId];
   if (!attacker || !target) return;
 
-  const attackProfile  = buildAttackProfile(p.weapon, attacker);
-  const defenseProfile = buildDefenseProfile(target);
+  const baseAttack  = buildAttackProfile(p.weapon, attacker);
+  const baseDefense = buildDefenseProfile(target);
 
-  const atkRolls = Array.from({ length: attackProfile.atkDice },  () => Math.ceil(Math.random() * 6));
-  const defRolls = Array.from({ length: defenseProfile.defDice }, () => Math.ceil(Math.random() * 6));
+  // BON-2b: this whole block only ever runs on the attacker's client (the
+  // Roll Dice button is attacker-only) — the defender's client just reads
+  // the fully-resolved fields written below and never recomputes anything,
+  // preserving the existing cross-client determinism pattern.
+  const catalog = gameData.bonuses || {};
+  const weaponBonuses = getWeaponBonuses(p.weapon, catalog);
+  const { actorBonuses, targetBonuses } = splitBonusesBySide(weaponBonuses);
+
+  const distance  = Math.hypot(attacker.x - target.x, attacker.y - target.y);
+  const halfRange = computeHalfRangeFact(p.weapon, distance);
+  const preFacts  = halfRange ? ['halfRange'] : [];
+  const actorPos  = { x: attacker.x, y: attacker.y };
+  const targetPos = { x: target.x,   y: target.y };
+
+  const preCtx     = buildBonusContext('onShoot', preFacts, actorPos, targetPos);
+  const actorElig0  = BonusResolver.eligibleBonuses(actorBonuses,  preCtx);
+  const targetElig0 = BonusResolver.eligibleBonuses(targetBonuses, preCtx);
+  const preAttack  = BonusResolver.resolveStats(baseAttack,  actorElig0,  preCtx).stats;
+  const preDefense = BonusResolver.resolveStats(baseDefense, targetElig0, preCtx).stats;
+
+  let atkRolls = Array.from({ length: preAttack.atkDice },  () => Math.ceil(Math.random() * 6));
+  atkRolls     = applyRerolls(atkRolls, preAttack);
+  const defRollsRaw = Array.from({ length: preDefense.defDice }, () => Math.ceil(Math.random() * 6));
+
+  // Post-roll conditional pass: now that the dice are down, resolve again
+  // with critScored/noCritScored in the fact list. A single resolveStats
+  // call naturally sums unconditional + now-satisfied conditional effects
+  // for the same stat (e.g. Piercing's flat -1 defDice and Piercing Crits'
+  // conditional -1 defDice both land on the same `defDice` add-bucket) —
+  // no manual per-bonus delta-diffing, no special-casing Rending/Severe/
+  // Punishing vs anything else.
+  const rawCritCount = atkRolls.filter(d => d >= preAttack.critThreshold).length;
+  const critScored   = (rawCritCount + (preAttack.retainCrit || 0)) > 0;
+  const condFacts    = preFacts.concat(critScored ? 'critScored' : 'noCritScored');
+  const condCtx      = buildBonusContext('onShoot', condFacts, actorPos, targetPos);
+
+  const actorElig1  = BonusResolver.eligibleBonuses(actorBonuses,  condCtx);
+  const targetElig1 = BonusResolver.eligibleBonuses(targetBonuses, condCtx);
+  const finalAttackR  = BonusResolver.resolveStats(baseAttack,  actorElig1,  condCtx);
+  const finalDefenseR = BonusResolver.resolveStats(baseDefense, targetElig1, condCtx);
+  const attackProfile  = finalAttackR.stats;
+  const defenseProfile = finalDefenseR.stats;
+
+  // defDice can only shrink after the fact by discarding already-rolled
+  // dice (see discardWorstDice) — the pool was rolled at preDefense's
+  // (possibly higher) count before critScored was known.
+  const dropCount = Math.max(0, preDefense.defDice - Math.max(0, defenseProfile.defDice));
+  const defRolls  = discardWorstDice(defRollsRaw, dropCount);
 
   const outcome = resolveShotOutcome(attackProfile, defenseProfile, atkRolls, defRolls, p.useCover);
 
   playBeamOnly(p, attacker, target);
+
+  const appliedBonuses = dedupeAppliedBonuses(weaponBonuses, finalAttackR.applied.concat(finalDefenseR.applied));
+  const flags      = Array.from(new Set([...finalAttackR.flags, ...finalDefenseR.flags]));
+  const conditions = finalAttackR.conditions.concat(finalDefenseR.conditions);
 
   // Same flattened field names as before the refactor — the resolution-bar
   // rendering reads these directly and doesn't need to know profiles exist.
@@ -2774,6 +3010,9 @@ async function rollShot(playerSlot) {
     normalDmg: attackProfile.dmgNormal,
     critDmg: attackProfile.dmgCrit,
     effectiveHit: attackProfile.hit,
+    critThreshold: attackProfile.critThreshold,
+    halfRange, critScored,
+    appliedBonuses, flags, conditions,
   });
 }
 
@@ -2796,14 +3035,61 @@ async function confirmShotDamage(playerSlot) {
   }
 }
 
+// ── BON-2b dice readout ───────────────────────────────────────
+// Display only — flags/conditions are badges, not enforcement (BON-3
+// territory). This IS the acceptance test the brief asks for: one plain-
+// English line per applied bonus. Always expanded in ?dev=true; collapsed
+// behind a toggle in normal play.
+
+function toggleDiceReadout(key) {
+  diceReadoutExpanded[key] = !diceReadoutExpanded[key];
+  reRenderPhaseBar();
+}
+
+function renderBonusReadout(pending, key) {
+  const applied    = pending.appliedBonuses || [];
+  const flags      = pending.flags || [];
+  const conditions = pending.conditions || [];
+  if (!applied.length && !flags.length && !conditions.length) return '';
+
+  const expanded = devMode || !!diceReadoutExpanded[key];
+  const count = applied.length + conditions.length;
+  const toggleBtn = devMode ? '' :
+    `<button class="btn" style="font-size:10px;padding:2px 8px;margin-top:4px;" onclick="toggleDiceReadout('${key}')">${expanded ? 'Hide' : 'Show'} bonus readout (${count})</button>`;
+
+  if (!expanded) return `<div>${toggleBtn}</div>`;
+
+  const badge = (txt, bg, border) =>
+    `<span style="display:inline-block;padding:2px 6px;margin:2px 4px 2px 0;border-radius:4px;background:${bg};border:1px solid ${border};font-size:10px;text-transform:uppercase;letter-spacing:.4px;">${escHtml(txt)}</span>`;
+  const badges = [
+    ...flags.map(f => badge(f, 'var(--surface2)', 'var(--border-hi)')),
+    ...conditions.map(c => badge(c.condition + (c.appliesTo === 'target' ? ' → target' : ''), 'var(--red-dim)', 'var(--red)')),
+  ].join('');
+
+  const lines = applied.map(a => `<div style="font-size:11px;color:var(--text-dim);">${escHtml(a.text)}</div>`).join('');
+
+  return `
+    <div style="margin-top:4px;padding:6px 8px;background:rgba(0,0,0,0.15);border-radius:4px;">
+      ${badges ? `<div style="margin-bottom:4px;">${badges}</div>` : ''}
+      ${lines}
+      ${toggleBtn}
+    </div>`;
+}
+
 // ── Shoot resolution render helpers ──────────────────────────
 
-function renderDicePool(rolls, isAtk, hitStat, saveStat) {
+function renderDicePool(rolls, isAtk, hitStat, saveStat, critThreshold) {
   if (!rolls || !rolls.length) return '<span style="font-size:11px;color:var(--text-dim);">—</span>';
+  // BON-2b: atk-side crit grouping now follows the resolved critThreshold
+  // (Lethal x+) instead of a hardcoded natural 6 — flagged in BON-2a's
+  // DEVLOG as a latent mis-coloring bug waiting for exactly this. The
+  // def-side crit-SAVE stays a hardcoded 6 deliberately: it's unmodifiable
+  // (see DEFENSE_CRIT_FACE), no keyword touches it.
+  const ct = critThreshold || 6;
   const g = { crit: [], hit: [], miss: [], critSave: [], normSave: [], auto: [], fail: [] };
   rolls.forEach(d => {
     if (isAtk) {
-      if (d === 6)                             g.crit.push(d);
+      if (d >= ct)                             g.crit.push(d);
       else if (d !== 1 && d >= hitStat)       g.hit.push(d);
       else                                     g.miss.push(d);
     } else {
@@ -2869,7 +3155,7 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
     diceHtml = `
       <div style="display:flex;flex-direction:column;gap:6px;width:100%;">
         <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;">Attack (${w.profiles?.ATK || '?'} dice, hit on ${hitStat}+${isInjuredOp(attOp) ? ' — Injured' : ''})</div>
-        <div class="dice-pool">${renderDicePool(displayAtk, true, hitStat, saveStat)}</div>
+        <div class="dice-pool">${renderDicePool(displayAtk, true, hitStat, saveStat, pending.critThreshold)}</div>
         <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;">Defence (${tgtOp?.def || 3} dice, save on ${saveStat}+${pending.useCover ? ' + cover' : ''})</div>
         <div class="dice-pool">${renderDicePool(displayDef, false, hitStat, saveStat)}</div>
       </div>`;
@@ -2883,6 +3169,7 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
       resultHtml += iAmAttacker
         ? `<button class="btn btn-primary" onclick="confirmShotDamage('${playerSlot}')">Apply ${pending.totalDamage} Damage to ${escHtml(tgtName)}</button>`
         : `<span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`;
+      resultHtml += renderBonusReadout(pending, 'shot');
     }
   }
 
@@ -3060,15 +3347,57 @@ async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
   // even with no weapon (isInjuredOp(target) never depended on defWeapon),
   // so the fallback here must too — a bare `hit: 4` would silently regress
   // an injured no-weapon defender's displayed hit stat from 5+ to 4+.
-  const atkProfile = buildAttackProfile(atkWeapon, attacker);
-  const defProfile = defWeapon
+  const baseAtk = buildAttackProfile(atkWeapon, attacker);
+  const baseDef = defWeapon
     ? buildAttackProfile(defWeapon, target)
     : { atkDice: 0, hit: isInjuredOp(target) ? Math.min(4 + 1, 6) : 4, critThreshold: 6, dmgNormal: 0, dmgCrit: 0 };
 
-  const atkRolls = Array.from({ length: atkProfile.atkDice }, () => Math.ceil(Math.random() * 6));
-  const defRolls = Array.from({ length: defProfile.atkDice }, () => Math.ceil(Math.random() * 6));
+  // BON-2b: fight is symmetric (both sides "attack"), so each combatant's
+  // own weapon bonuses resolve against their own profile only — no
+  // appliesTo/target-routing exists for melee in the live catalog (only
+  // Shoot's Piercing needs it, via defDice), so this stays a single
+  // per-side resolve rather than the shoot side's actor/target split.
+  // Only the attacker's client runs any of this (fight resolves in one
+  // shot, unlike shoot's separate roll step) — defender's client just
+  // reads the fully-resolved pendingFight fields.
+  const catalog    = gameData.bonuses || {};
+  const atkBonuses = getWeaponBonuses(atkWeapon, catalog);
+  const defBonuses = defWeapon ? getWeaponBonuses(defWeapon, catalog) : [];
+  const actorPos   = { x: attacker.x, y: attacker.y };
+  const targetPos  = { x: target.x,   y: target.y };
+
+  function resolveMeleeSide(baseProfile, bonuses) {
+    const preCtx  = buildBonusContext('onFight', [], actorPos, targetPos);
+    const preElig = BonusResolver.eligibleBonuses(bonuses, preCtx);
+    const pre     = BonusResolver.resolveStats(baseProfile, preElig, preCtx).stats;
+
+    let rolls = Array.from({ length: pre.atkDice }, () => Math.ceil(Math.random() * 6));
+    rolls     = applyRerolls(rolls, pre);
+
+    const rawCritCount = rolls.filter(d => d >= pre.critThreshold).length;
+    const critScored   = (rawCritCount + (pre.retainCrit || 0)) > 0;
+    const condCtx      = buildBonusContext('onFight', [critScored ? 'critScored' : 'noCritScored'], actorPos, targetPos);
+    const condElig     = BonusResolver.eligibleBonuses(bonuses, condCtx);
+    const finalR       = BonusResolver.resolveStats(baseProfile, condElig, condCtx);
+
+    return { profile: finalR.stats, rolls, applied: finalR.applied, flags: finalR.flags, conditions: finalR.conditions };
+  }
+
+  const atkSide = resolveMeleeSide(baseAtk, atkBonuses);
+  const defSide = defWeapon
+    ? resolveMeleeSide(baseDef, defBonuses)
+    : { profile: baseDef, rolls: [], applied: [], flags: [], conditions: [] };
+
+  const atkProfile = atkSide.profile;
+  const defProfile = defSide.profile;
+  const atkRolls   = atkSide.rolls;
+  const defRolls   = defSide.rolls;
 
   const outcome = resolveFightOutcome(atkProfile, defProfile, atkRolls, defRolls);
+
+  const appliedBonuses = dedupeAppliedBonuses(atkBonuses.concat(defBonuses), atkSide.applied.concat(defSide.applied));
+  const flags      = Array.from(new Set([...atkSide.flags, ...defSide.flags]));
+  const conditions = atkSide.conditions.concat(defSide.conditions);
 
   await db.ref(`games-kt/${gameId}/pendingFight`).set({
     attackerOpId: attacker.id,
@@ -3087,6 +3416,7 @@ async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
     defAnnotated: outcome.defAnnotated,
     dmgToDefender: outcome.dmgToDefender,
     dmgToAttacker: outcome.dmgToAttacker,
+    appliedBonuses, flags, conditions,
   });
 
   fightWeapon = null;
@@ -3164,11 +3494,12 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
     dmgAtk === 0 && dmgDef === 0 ? 'No damage dealt.' : null,
   ].filter(Boolean);
 
-  const confirmHtml = iAmAttacker
+  const confirmHtml = (iAmAttacker
     ? `<div class="shoot-result">${summaryParts.join(' &nbsp;|&nbsp; ')}</div>
        <button class="btn btn-primary" onclick="confirmFightDamage('${playerSlot}')">Apply Damage</button>`
     : `<div class="shoot-result">${summaryParts.join(' &nbsp;|&nbsp; ')}</div>
-       <span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`;
+       <span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`)
+    + renderBonusReadout(p, 'fight');
 
   const atkWpn = escHtml(p.atkWeapon?.name || '?');
   const defWpn = escHtml(p.defWeapon?.name || '?');
