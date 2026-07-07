@@ -796,3 +796,179 @@ Not claiming this closed on code-trace alone, same as before — needs
 Nox's republish to confirm `exports/warhammer-40k` carries the sanitized
 keys end to end.
 
+---
+
+## ROSTER-UX-1: unit browser sections, cosmetic batch, My Rosters (2026-07-06)
+
+Session picked this back up after an earlier interrupted attempt — the
+claim commit (`99f204f`) existed but no implementation had landed, so this
+is the actual first pass, not a continuation of partial code.
+
+### Section 1 — Unit browser sections: brief's assumption didn't hold, reported per verify-first
+
+Checked live Firebase before implementing, per standing rule. The brief's
+premise ("group by each unit's existing role field... Characters /
+Battleline / Infantry / Vehicles / Transports") doesn't match either
+dataset:
+
+- **40k flat pool has no `role` field at all.** It has `category` with
+  exactly three values — `character` / `infantry` / `vehicle` — no
+  battleline/transport distinction exists in the data. `_transformForRoster`
+  already maps `category` onto a synthetic `role` property (line ~4126,
+  pre-existing), so the field the brief describes only ever holds these
+  three lowercase strings for 40k.
+- **KT's real `role` field is not a category — it's a per-operative name.**
+  Pulled every KT faction's units and counted distinct role values: 493
+  units across all factions produce 445 distinct roles, and every single
+  faction checked (kasrkin, tau-pathfinders, ork-kommandos, void-dancer-troupe,
+  deathwatch, angels-of-death) has exactly as many distinct roles as it has
+  units — e.g. Kasrkin's 12 units have 12 different roles ("Combat Medic",
+  "Demo-Trooper", "Sergeant", ...). Grouping by this would produce ~1 unit
+  per section, not meaningful categories — KT operatives don't carry an
+  infantry/vehicle/transport distinction in this data model at all.
+
+Implemented sectioning generically anyway (`RosterBuilder._sectionedUnitsHTML`/
+`_sectionLabel`/`_unitRowHTML`, `roster/index.html`) since it's correct and
+harmless for both: 40k gets three clean sections (Characters / Infantry /
+Vehicles, in that fixed order, alphabetical within each — verified against
+live data: Astra Militarum 25/35/74, Craftworlds Eldar 32/34/31), KT gets
+one section per unit (verified, not broken, just not useful — matches the
+data). Missing/blank role always falls into "Other", sorted last, never
+hidden, per the brief's requirement. Removed the old per-row role caption
+(`rb-unit-role` div) since it's now redundant with the section header it
+sits under — the CSS class is now unused but left in place rather than
+deleted, not asked for here.
+
+One bug caught before it shipped: reused the class name `rb-section-label`
+for the new section headers, not noticing the codebase already uses that
+exact class for the "Operatives"/"Unit Browser" headers in the builder
+shell (`_shell()`, line ~2760/2764) with different CSS. Renamed the new one
+to `rb-role-section-label` to avoid the collision.
+
+### Section 2 — Cosmetic batch
+
+- **Trailing "+" on weapon names** (scrape artifact — "Triskele +",
+  "Mirrorswords +"): added `cleanWeaponName()` (top-level helper, same
+  tier as `toTitleCase`/`slugify`) and applied it at every read-only
+  weapon-name render site (unit card, roster builder loadout radios/table,
+  loadout-author overlay, roster view summary, unit search preview) — left
+  raw in the one place it's an editable text input (UnitForm's weapon-name
+  field), since that should show/save the true underlying data.
+- **Duplicate weapon names in summary lines**: found the real mechanism —
+  BSData stores a ranged and melee profile of the same physical weapon
+  (e.g. "Singing spear", thrown vs melee) as two separate weapon records
+  sharing one display name. Confirmed via live data: `farseer`'s two
+  "Singing spear" entries are `type: ranged` and `type: melee` respectively,
+  same pattern on `howling-banshees`' "Triskele +" and several other units
+  across both 40k factions. Fixed by de-duplicating the name list (order-
+  preserving `Set`) in `RosterBuilder._summaryText` and
+  `RosterView._resolveWeaponNames` only — the profile *table* still shows
+  both rows with their distinct ATK/HIT/DMG or RANGE/AP/D values, since
+  that's real rules content, not a display bug.
+- **"X ops" header is KT vocabulary**: `RosterBuilder._updateHeader`'s
+  counter and the builder shell's initial placeholder now read "units" for
+  `warhammer-40k`, "ops" for everything else (`_unitNoun()`). Scoped to
+  exactly the one counter the brief named — did *not* touch the
+  "Operatives" section title, the "No operatives added yet" empty state, or
+  RosterView's "12 operatives" line, which say the same KT-flavored word
+  for 40k rosters too. Leaving those alone was a scope call, not an
+  oversight — flagging here so it doesn't read as inconsistent.
+- **Model count not shown on publish/roster view**: turned out `modelCount`
+  wasn't persisted to the roster draft at all — `RosterBuilder._doSaveDraft`
+  only wrote `instanceId/unitId/unitName/role/points/countsAs/chosenLoadout/
+  notes`, and the edit-resume path (`RosterBuilder.render`'s roster-load
+  branch) didn't restore it either. It only ever existed transiently in
+  builder state and got freshly recomputed inside `_doPublish`'s export
+  rebuild. Added `modelCount` to both the save payload and the edit-resume
+  restore so it round-trips, then displayed it in `RosterView._buildPage`'s
+  operative row (next to role, only when non-null — i.e. only for
+  variable-squad-size 40k units; KT and fixed-size 40k units show nothing,
+  which is correct, not a gap).
+
+### Section 3 (Amendment 1) — My Rosters view
+
+New `#my-rosters` screen (`MyRosters` module), linked from the home
+screen's utility row next to "Clean Drafts". Two sections: **Drafts**
+(everything in `rosters/` with `meta.status !== 'published'`) and
+**Published** (every entry under `exports/kill-team/` and
+`exports/warhammer-40k/`, both systems, merged and sorted by
+`publishedAt`). Each row shows name, faction · system, unit/op count (same
+`_unitNoun` system-aware wording as the builder header) · points, and the
+relevant date. Actions: Drafts get "Open in builder" (→
+`#roster/edit/{id}`, the existing route) + Delete; Published get "View"
+(→ `#roster/{id}`) + Delete. Both deletes require a `confirm()` step.
+
+**Export-delete safety — verified against actual game-creation code, not
+assumed**, per the brief's explicit ask:
+- **KT**: `killteam/index.html`'s `createGame`/`joinGame` both call
+  `fetchRosterExport` exactly once and bake the result into
+  `games-kt/{gameId}/operatives` via `buildOperatives`. Nothing in the
+  game after that point re-reads `exports/kill-team/`. The brief's claim
+  holds for any game where both players have already joined.
+  **One real gap the claim glosses over**: a game sitting in `waiting`
+  status (creator joined, second player hasn't yet) still needs the second
+  player's export to exist at the moment *they* join — each player's own
+  roster is fetched independently (creator's at `createGame`, joiner's at
+  `joinGame`), not both at creation. Deleting an export in that narrow
+  window would break that join with "Roster not found." Not guarded
+  against in this UI (would need a cross-table scan of `games-kt` for
+  `players.*.rosterId` matches with `joined: false` before allowing the
+  delete) — flagged here rather than built, since it's a narrow window and
+  the brief only asked to verify-and-report, not to add guard machinery.
+- **40k: the claim doesn't even apply yet.** `warhammer40k/js/roster.js`'s
+  `fetchRoster`, called from `js/state.js`'s `createGame`/`joinGame`, reads
+  `rosters/{rosterId}` directly — the 40k game app has never been wired to
+  `exports/warhammer-40k/` at all (confirmed: zero references to `exports/`
+  anywhere in `warhammer40k/`). This matches PROJECT_STATE's queued Roster
+  3b Part 3 item ("40k sim reads chosenLoadout... blocked on roster Phase
+  3b Part 3"). Net effect: **deleting a 40k export today is currently
+  risk-free** (nothing reads it), but **deleting a 40k draft could break a
+  pending game** the same way a KT export delete could, since 40k games
+  snapshot off the live draft, not the export. The brief only asked for
+  export-delete verification and waived draft-delete review ("Deleting a
+  draft is just a draft delete") — implemented as asked, but the 40k
+  draft/game coupling is worth knowing about before that gets relied on.
+
+**No-auth caveat**, per the amendment: this lists every roster/export in
+the database. Noted in-UI (small text at the top of the screen) and here,
+not solved — matches the existing precedent for this exact caveat
+elsewhere in the app.
+
+**Incidental findings while testing against live data** (not caused by
+this session, not fixed, just surfaced by exercising the new view against
+real Firebase): three `rosters/` entries under `warhammer-40k` publishes
+have `meta: {status: 'published'}` with no other fields (no name/faction) —
+harmless for My Rosters since the Published section reads from `exports/`
+not `rosters/`, so these resolve fine via their export's own complete
+meta. The pre-existing `rosters/undefined` / `exports/kill-team/undefined`
+pair from `BUG_40K_PUBLISH_1` is also still present and renders correctly
+in the Published list (name "Kommandos Roster 1", 10 ops) — left alone, as
+decided when it was first found.
+
+### KT regression
+
+No headless browser available in this environment (same `libasound.so.2`
+gap noted in earlier sessions) — verified by code-tracing every changed
+function plus running the actual extracted logic (`_sectionedUnitsHTML`'s
+grouping/sort, `cleanWeaponName`, the summary de-dupe, `MyRosters.render`'s
+data-shape handling) in Node against live Firebase data pulled fresh for
+this session (kasrkin, tau-pathfinders, ork-kommandos, void-dancer-troupe,
+deathwatch, angels-of-death for the role-value survey; the full live
+`rosters`/`exports` trees for the My Rosters simulation). All KT-specific
+code paths (`_load`'s KT branch, `_checkMaxed`, `_resolveChosenWeapons`,
+publish) are untouched by this brief — the only shared function touched
+that KT also exercises is `_renderBrowser`/`_sectionedUnitsHTML`, verified
+above to render every KT unit (just one per section). **Not a substitute
+for an actual click-through** — flagging honestly, same as prior sessions
+in this log.
+
+### Known gaps / not done here
+- "Operatives" section title, empty-state text, and RosterView's operative
+  count line still say KT vocabulary for 40k rosters (see Section 2 note)
+  — scoped out, not missed.
+- KT export-delete race window (game in `waiting` status) — not guarded.
+- 40k draft-delete could break a pending game the same way; out of this
+  brief's asked scope (only export-delete safety was requested).
+- `rb-unit-role` CSS class is now dead (role moved to section headers) —
+  left in place, not cleaned up.
+

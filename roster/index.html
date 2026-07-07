@@ -253,6 +253,18 @@
       color: var(--text-dim);
     }
 
+    .myr-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.6rem 1rem;
+      flex-wrap: wrap;
+    }
+    .myr-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+    .myr-actions .btn { padding: 0.4rem 0.8rem; font-size: 0.75rem; }
+    .myr-section-gap { margin-top: 1.75rem; }
+
     /* ── BUTTONS ── */
     .btn {
       padding: 0.875rem 1rem;
@@ -1243,6 +1255,16 @@
     .rb-unit-role { font-size: 0.7rem; color: var(--text-dim); }
     .rb-unit-pts  { font-size: 0.72rem; color: var(--text-dim); flex-shrink: 0; }
 
+    .rb-role-section-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      padding: 0.7rem 0.75rem 0.3rem;
+    }
+    .rb-role-section-label:first-child { padding-top: 0.6rem; }
+
     .rb-add-btn {
       background: none;
       border: 1px solid var(--border);
@@ -1533,6 +1555,7 @@
       <button class="btn btn-secondary"  onclick="App.goToRoster()">Browse &amp; Build Roster</button>
     </div>
     <div class="home-util">
+      <a href="#my-rosters" class="util-link">My Rosters</a>
       <a href="#clean-drafts" class="util-link">Clean Drafts</a>
     </div>
   </div>
@@ -1559,6 +1582,9 @@
 
   <!-- SCREEN: ROSTER CLEANER -->
   <div id="screen-clean-drafts" class="screen"></div>
+
+  <!-- SCREEN: MY ROSTERS -->
+  <div id="screen-my-rosters" class="screen"></div>
 
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -1593,6 +1619,13 @@
       .replace(/[^a-z0-9\s]/g, '')
       .trim()
       .replace(/\s+/g, '-');
+  }
+
+  // Scrape artifact: some weapon names carry a trailing " +" (e.g.
+  // "Triskele +", "Mirrorswords +") from the source page markup. Display-time
+  // only — the underlying data keeps the raw scraped name untouched.
+  function cleanWeaponName(name) {
+    return (name || '').replace(/\s*\+\s*$/, '');
   }
 
   // ── APP ──────────────────────────────────────────────────────────────────────
@@ -1948,7 +1981,7 @@
                 <input type="checkbox" class="wcheck"
                        data-slot="${si}" data-wid="${w.id}"
                        ${slot.weaponIds.includes(w.id) ? 'checked' : ''}>
-                ${w.name || '(unnamed)'}
+                ${cleanWeaponName(w.name) || '(unnamed)'}
               </label>
             `).join('')
           : '<span class="wcheck-empty">Add weapons above first</span>';
@@ -2491,7 +2524,7 @@
         const star = w.isDefault ? `<span class="uc-default-star">★</span>` : '';
         return `
           <tr>
-            <td><div class="uc-weapon-name">${w.name || '—'}${typeBadge}${star}</div></td>
+            <td><div class="uc-weapon-name">${cleanWeaponName(w.name) || '—'}${typeBadge}${star}</div></td>
             ${cells}
           </tr>
         `;
@@ -2647,6 +2680,7 @@
             role:          u.role          || null,
             points:        u.points        ?? null,
             countsAs:      u.countsAs      || 1,
+            modelCount:    u.modelCount    ?? null,
             chosenLoadout: u.chosenLoadout || {},
             notes:         u.notes         || '',
             expanded:      false,
@@ -2735,7 +2769,7 @@
           <div class="rb-header">
             <div class="rb-header-top">
               <input class="uf-input rb-name-input" id="rb-name" type="text" placeholder="Roster name…">
-              <div class="rb-counter" id="rb-counter">0 / — ops</div>
+              <div class="rb-counter" id="rb-counter">0 / — ${RosterBuilder._unitNoun()}</div>
             </div>
             <div class="rb-meta" id="rb-faction">Loading…</div>
             <div class="rb-legality-banner" id="rb-legality"></div>
@@ -2931,7 +2965,7 @@
                    data-iid="${op.instanceId}" data-slot="${safeName}"
                    name="slot_${op.instanceId}_${slot.slot.replace(/\s+/g, '_')}"
                    value="${w.id}" ${chosen === w.id ? 'checked' : ''}>
-            ${w.name || '—'}
+            ${cleanWeaponName(w.name) || '—'}
           </label>
         `).join('');
         return `
@@ -2997,7 +3031,7 @@
               <label style="display:flex;align-items:center;gap:0.25rem;font-size:0.8rem;">
                 <input type="checkbox" ${slot.weaponIds.includes(w.id) ? 'checked' : ''}
                        onchange="RosterBuilder._toggleAuthorWeapon(${si}, '${w.id}', this.checked)">
-                ${w.name}
+                ${cleanWeaponName(w.name)}
               </label>
             `).join('')}
           </div>
@@ -3070,7 +3104,7 @@
       const rows = weapons.map(w => {
         const cells     = profiles.map(p => `<td>${w.profiles?.[p] || '—'}</td>`).join('');
         const typeBadge = hasType ? `<span class="uc-type-badge">${w.type === 'melee' ? 'M' : 'R'}</span>` : '';
-        return `<tr><td><span class="rb-wp-name">${w.name || '—'}</span>${typeBadge}</td>${cells}</tr>`;
+        return `<tr><td><span class="rb-wp-name">${cleanWeaponName(w.name) || '—'}</span>${typeBadge}</td>${cells}</tr>`;
       }).join('');
       return `
         <table class="rb-wp-table" data-iid="${iid}">
@@ -3095,7 +3129,11 @@
 
     _summaryText(unit, chosenLoadout) {
       const weapons = RosterBuilder._resolveChosenWeapons(unit, chosenLoadout);
-      const names   = weapons.map(w => w.name).filter(Boolean);
+      // Weapons with a ranged AND melee profile (e.g. "Singing spear" thrown
+      // vs melee) are two distinct weapon records sharing one display name —
+      // dedupe by name here so the summary line doesn't say the name twice.
+      // The full profile table below still shows both profile rows.
+      const names   = [...new Set(weapons.map(w => cleanWeaponName(w.name)).filter(Boolean))];
       return names.length ? `${unit.name} — ${names.join(' · ')}` : '';
     },
 
@@ -3109,7 +3147,7 @@
       tbody.innerHTML = weapons.map(w => {
         const cells     = profiles.map(p => `<td>${w.profiles?.[p] || '—'}</td>`).join('');
         const typeBadge = hasType ? `<span class="uc-type-badge">${w.type === 'melee' ? 'M' : 'R'}</span>` : '';
-        return `<tr><td><span class="rb-wp-name">${w.name || '—'}</span>${typeBadge}</td>${cells}</tr>`;
+        return `<tr><td><span class="rb-wp-name">${cleanWeaponName(w.name) || '—'}</span>${typeBadge}</td>${cells}</tr>`;
       }).join('');
     },
 
@@ -3164,20 +3202,64 @@
         return;
       }
 
-      browser.innerHTML = filterHTML + units.map(u => {
-        const chk = RosterBuilder._checkMaxed(u);
-        return `
-          <div class="rb-unit-row${chk.maxed ? ' maxed' : ''}">
-            <div class="rb-unit-info">
-              <div class="rb-unit-name">${u.name}</div>
-              ${u.role ? `<div class="rb-unit-role">${u.role}</div>` : ''}
-            </div>
-            ${u.points != null ? `<div class="rb-unit-pts">${u.points} pts</div>` : ''}
-            <button class="rb-add-btn" data-uid="${u.id}"
-                    ${chk.maxed ? `disabled title="${chk.reason}"` : ''}>+ Add</button>
-          </div>
-        `;
+      browser.innerHTML = filterHTML + RosterBuilder._sectionedUnitsHTML(units);
+    },
+
+    // 40k's flat pool has no `role` field — _transformForRoster maps its
+    // 3-value `category` (character/infantry/vehicle) onto `role` as a
+    // stand-in, so this map only ever sees those three lowercase strings.
+    // KT's real `role` field is per-operative naming (e.g. "Combat Medic"),
+    // not a shared category — verified against live data, every KT faction
+    // has as many distinct role values as it has units. Sectioning still
+    // applies to it per-brief, it just doesn't group anything.
+    _ROLE_DISPLAY: { character: 'Characters', infantry: 'Infantry', vehicle: 'Vehicles' },
+    _ROLE_SECTION_ORDER: ['Characters', 'Infantry', 'Vehicles'],
+
+    _sectionLabel(role) {
+      const trimmed = (role || '').trim();
+      if (!trimmed) return 'Other';
+      return RosterBuilder._ROLE_DISPLAY[trimmed.toLowerCase()] || trimmed;
+    },
+
+    _sectionedUnitsHTML(units) {
+      const sections = new Map();
+      units.forEach(u => {
+        const label = RosterBuilder._sectionLabel(u.role);
+        if (!sections.has(label)) sections.set(label, []);
+        sections.get(label).push(u);
+      });
+
+      const order = RosterBuilder._ROLE_SECTION_ORDER;
+      const labels = [...sections.keys()].sort((a, b) => {
+        if (a === 'Other') return 1;
+        if (b === 'Other') return -1;
+        const ia = order.indexOf(a), ib = order.indexOf(b);
+        if (ia !== -1 || ib !== -1) return (ia === -1 ? order.length : ia) - (ib === -1 ? order.length : ib);
+        return a.localeCompare(b);
+      });
+
+      return labels.map(label => {
+        const rows = sections.get(label)
+          .slice()
+          .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+          .map(u => RosterBuilder._unitRowHTML(u))
+          .join('');
+        return `<div class="rb-role-section-label">${label}</div>${rows}`;
       }).join('');
+    },
+
+    _unitRowHTML(u) {
+      const chk = RosterBuilder._checkMaxed(u);
+      return `
+        <div class="rb-unit-row${chk.maxed ? ' maxed' : ''}">
+          <div class="rb-unit-info">
+            <div class="rb-unit-name">${u.name}</div>
+          </div>
+          ${u.points != null ? `<div class="rb-unit-pts">${u.points} pts</div>` : ''}
+          <button class="rb-add-btn" data-uid="${u.id}"
+                  ${chk.maxed ? `disabled title="${chk.reason}"` : ''}>+ Add</button>
+        </div>
+      `;
     },
 
     // Filtering re-renders the whole browser innerHTML (same pattern as
@@ -3192,6 +3274,11 @@
       if (newEl) { newEl.focus(); if (pos != null) newEl.setSelectionRange(pos, pos); }
     },
 
+    // "ops" is Kill Team vocabulary (operatives) — 40k rosters count units.
+    _unitNoun() {
+      return RosterBuilder.state.system === 'warhammer-40k' ? 'units' : 'ops';
+    },
+
     _updateHeader() {
       const ops   = RosterBuilder.state.operatives;
       const rules = RosterBuilder.state.compositionRules;
@@ -3200,7 +3287,8 @@
       const pts   = ops.reduce((s, op) => s + (op.points || 0), 0);
       const el    = document.getElementById('rb-counter');
       if (!el) return;
-      const label = max != null ? `${total} / ${max} ops` : `${total} ops`;
+      const noun  = RosterBuilder._unitNoun();
+      const label = max != null ? `${total} / ${max} ${noun}` : `${total} ${noun}`;
       el.textContent = pts > 0 ? `${label} · ${pts} pts` : label;
       el.className   = 'rb-counter' +
         (max && total > max ? ' over' : max && total === max ? ' full' : '');
@@ -3356,6 +3444,7 @@
           role:          op.role,
           points:        op.points,
           countsAs:      op.countsAs,
+          modelCount:    op.modelCount ?? null,
           chosenLoadout: op.chosenLoadout,
           notes:         op.notes,
         }));
@@ -3674,14 +3763,18 @@
       const weapons    = RosterView._arr(unitTemplate.weapons);
       const slots      = RosterView._arr(unitTemplate.loadoutOptions);
       const loadout    = op.chosenLoadout || {};
-      if (!slots.length) return weapons.map(w => w.name).filter(Boolean);
+      // Same dedupe as RosterBuilder._summaryText: a ranged+melee profile
+      // pair sharing one display name (e.g. "Singing spear") is two weapon
+      // records, not two items — collapse to one mention in this summary.
+      if (!slots.length) return [...new Set(weapons.map(w => cleanWeaponName(w.name)).filter(Boolean))];
       const slottedIds = new Set(slots.flatMap(s => RosterView._arr(s.weaponIds)));
-      const fixed      = weapons.filter(w => !slottedIds.has(w.id)).map(w => w.name).filter(Boolean);
+      const fixed      = weapons.filter(w => !slottedIds.has(w.id)).map(w => cleanWeaponName(w.name)).filter(Boolean);
       const chosen     = slots.map(slot => {
         const wid = loadout[slot.slot] || RosterView._arr(slot.weaponIds)[0];
-        return weapons.find(w => w.id === wid)?.name || null;
+        const w   = weapons.find(w => w.id === wid);
+        return w ? cleanWeaponName(w.name) : null;
       }).filter(Boolean);
-      return [...fixed, ...chosen];
+      return [...new Set([...fixed, ...chosen])];
     },
 
     _buildPage(rosterId, meta, units, unitTemplates, isOwner) {
@@ -3715,6 +3808,7 @@
               <div>
                 <span class="rv-op-name">${op.unitName}</span>
                 ${op.role ? `<span class="rv-op-role"> · ${op.role}</span>` : ''}
+                ${op.modelCount != null ? `<span class="rv-op-role"> · ${op.modelCount} models</span>` : ''}
               </div>
               ${op.points != null ? `<div class="rv-op-pts">${op.points} pts</div>` : ''}
             </div>
@@ -4163,7 +4257,7 @@
       const weaponCards = unit.weapons.map((w, wi) => `
         <div class="us-weapon-card">
           <div class="us-weapon-head">
-            <span class="us-weapon-name">${w.name}</span>
+            <span class="us-weapon-name">${cleanWeaponName(w.name)}</span>
             <span class="uc-type-badge">${w.type === 'melee' ? 'M' : 'R'}</span>
             <label class="us-default-label">
               <input type="checkbox" ${w.isDefault ? 'checked' : ''}
@@ -4538,6 +4632,134 @@
     },
   };
 
+  // ── MY ROSTERS (ROSTER_UX_1 Amendment 1) ──────────────────────────────────────
+  // Lists every draft (rosters/, status !== 'published') and every published
+  // export (exports/{system}/, both systems) — no auth exists, so this is
+  // every roster in the database, which today means Nox's. Fine at current
+  // scale; revisit if a second real user ever shows up.
+  const MyRosters = {
+
+    _arr(v) { return !v ? [] : Array.isArray(v) ? v : Object.values(v); },
+
+    _unitNoun(system) { return system === 'warhammer-40k' ? 'units' : 'ops'; },
+
+    _fmtDate(ts) {
+      return ts ? new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+    },
+
+    async render() {
+      const el = document.getElementById('screen-my-rosters');
+      el.innerHTML = '<div class="cleaner-wrap"><div class="loading-text">Loading rosters…</div></div>';
+
+      let rostersVal, ktExportsVal, fortykExportsVal;
+      try {
+        [rostersVal, ktExportsVal, fortykExportsVal] = await Promise.all([
+          App.db.ref('rosters').once('value').then(s => s.val() || {}),
+          App.db.ref('exports/kill-team').once('value').then(s => s.val() || {}),
+          App.db.ref('exports/warhammer-40k').once('value').then(s => s.val() || {}),
+        ]);
+      } catch (e) {
+        el.innerHTML = `<div class="cleaner-wrap"><p class="tag-error">Failed to load rosters: ${e.message}</p></div>`;
+        return;
+      }
+
+      const drafts = Object.entries(rostersVal)
+        .filter(([, r]) => r && r.meta && r.meta.status !== 'published')
+        .map(([id, r]) => ({ id, ...r.meta, unitCount: MyRosters._arr(r.units).length }))
+        .sort((a, b) => (b.updated || 0) - (a.updated || 0));
+
+      const published = [];
+      [['kill-team', ktExportsVal], ['warhammer-40k', fortykExportsVal]].forEach(([system, byId]) => {
+        Object.entries(byId).forEach(([id, exp]) => {
+          published.push({
+            id, system,
+            ...(exp.meta || {}),
+            unitCount: MyRosters._arr(exp.units).length,
+          });
+        });
+      });
+      published.sort((a, b) => (b.publishedAt || 0) - (a.publishedAt || 0));
+
+      MyRosters._renderReport(el, drafts, published);
+    },
+
+    _rowHTML(r, kind) {
+      const systemName = App.schemas[r.gameSystem || r.system]?.name || r.gameSystem || r.system || '';
+      const metaLine    = [r.factionName || r.factionId, systemName].filter(Boolean).join(' · ');
+      const countParts  = [`${r.unitCount} ${MyRosters._unitNoun(r.gameSystem || r.system)}`];
+      if (r.pointsTotal) countParts.push(`${r.pointsTotal} pts`);
+      const dateLabel   = kind === 'draft'
+        ? `Updated ${MyRosters._fmtDate(r.updated)}`
+        : `Published ${MyRosters._fmtDate(r.publishedAt)}`;
+      const viewAction  = kind === 'draft'
+        ? `<button class="btn btn-secondary" onclick="location.hash='#roster/edit/${r.id}'">Open in builder</button>`
+        : `<button class="btn btn-secondary" onclick="location.hash='#roster/${r.id}'">View</button>`;
+      const deleteAction = kind === 'draft'
+        ? `onclick="MyRosters._deleteDraft('${r.id}')"`
+        : `onclick="MyRosters._deleteExport('${r.system}', '${r.id}')"`;
+
+      return `
+        <div class="cleaner-roster">
+          <div class="cleaner-roster-header">
+            ${r.name || 'Untitled Roster'}
+            <span class="cleaner-roster-meta">${metaLine}</span>
+          </div>
+          <div class="myr-row">
+            <span class="cleaner-roster-meta">${countParts.join(' · ')} · ${dateLabel}</span>
+            <div class="myr-actions">
+              ${viewAction}
+              <button class="btn btn-danger" ${deleteAction}>Delete</button>
+            </div>
+          </div>
+        </div>
+      `;
+    },
+
+    _renderReport(el, drafts, published) {
+      el.innerHTML = `
+        <div class="cleaner-wrap">
+          <div class="cleaner-summary">
+            No auth exists — this lists every roster in the database, which today means just yours.
+          </div>
+          <div class="rb-role-section-label">Drafts (${drafts.length})</div>
+          ${drafts.map(d => MyRosters._rowHTML(d, 'draft')).join('') || '<div class="loading-text">No draft rosters.</div>'}
+          <div class="rb-role-section-label myr-section-gap">Published (${published.length})</div>
+          ${published.map(p => MyRosters._rowHTML(p, 'published')).join('') || '<div class="loading-text">No published rosters.</div>'}
+        </div>
+      `;
+    },
+
+    async _deleteDraft(id) {
+      if (!confirm('Delete this draft roster? This cannot be undone.')) return;
+      try {
+        await App.db.ref(`rosters/${id}`).remove();
+        MyRosters.render();
+      } catch (e) {
+        alert(`Could not delete: ${e.message}`);
+      }
+    },
+
+    // Safe for any game that has already baked this roster in: both the KT
+    // and 40k game apps read the roster/export data ONCE at game creation
+    // (or at join, per-player) and copy it into their own game document —
+    // neither ever re-reads exports/ or rosters/ afterward (verified against
+    // killteam/index.html's createGame/joinGame and warhammer40k/js/state.js's
+    // createGame/joinGame). The one real gap: a KT game sitting in "waiting"
+    // status (player1 joined, player2 hasn't yet) still needs player2's
+    // export to exist at the moment they join — deleting it in that narrow
+    // window would break that join. Not guarded against here; flagged in
+    // the brief report instead of adding cross-table lookup machinery for it.
+    async _deleteExport(system, id) {
+      if (!confirm('Delete this published roster? The link will stop working. Games already created from it are unaffected — they snapshot roster data at creation and never re-read this.')) return;
+      try {
+        await App.db.ref(`exports/${system}/${id}`).remove();
+        MyRosters.render();
+      } catch (e) {
+        alert(`Could not delete: ${e.message}`);
+      }
+    },
+  };
+
   // ── ROUTER ───────────────────────────────────────────────────────────────────
 
   const Router = {
@@ -4617,6 +4839,14 @@
           title.textContent = 'Draft Cleaner';
           crumb.textContent = 'Maintenance';
           RosterCleaner.render();
+          break;
+
+        case 'my-rosters':
+          document.getElementById('screen-my-rosters').classList.add('active');
+          back.classList.add('visible');
+          title.textContent = 'My Rosters';
+          crumb.textContent = '';
+          MyRosters.render();
           break;
 
         default:
