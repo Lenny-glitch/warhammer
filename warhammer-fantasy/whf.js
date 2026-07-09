@@ -108,12 +108,7 @@ function wheelUnit(unit, pivotSide, angleDeltaDeg) {
   const pivot      = corners[pivotSide];
   const newFacing  = ((unit.facing + angleDeltaDeg) % 360 + 360) % 360;
 
-  const outerCorner = corners[pivotSide === 'left' ? 'right' : 'left'];
-  const dx = outerCorner.x - pivot.x;
-  const dy = outerCorner.y - pivot.y;
-  const radius    = Math.sqrt(dx * dx + dy * dy);
-  const arcPx     = Math.abs(angleDeltaDeg * Math.PI / 180) * radius;
-  const arcInches = arcPx / INCHES_TO_PX;
+  const arcInches = wheelArcInches(unit, angleDeltaDeg);
 
   if (unit.movementUsed + arcInches > parseFloat(unit.stats.M)) return null;
 
@@ -181,6 +176,157 @@ function violates1InchRule(movingUnit, allUnits) {
   return false;
 }
 
+// ── Charge geometry (WHF-3) ──────────────────────────────────────────────
+//
+// Pivot-arc / reach: "can this footprint, after pivoting, reach and align
+// toward a target within a distance budget?" Deliberately generic — takes a
+// footprint (position/facing/rankWidth/models, same shape WHF-1/2 already
+// use) and a target footprint, returns whether/how far. No WHF-only
+// assumptions beyond what modelPosition()/frontCorners() already encode.
+// Portable to 40k vehicle turning later: swap in a vehicle's own
+// front-corner footprint and this still answers the same question.
+//
+// Interface: chargeReach(charger, targetUnit, maxInches) -> {
+//   reachable, inchesNeeded, finalFacing, contactPoint
+// }
+
+function pxDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+// Degrees CW from north (matches unit.facing) of the ray fromPoint->toPoint.
+function angleToPoint(fromPoint, toPoint) {
+  const dx = toPoint.x - fromPoint.x;
+  const dy = toPoint.y - fromPoint.y;
+  return ((Math.atan2(dx, -dy) * 180 / Math.PI) % 360 + 360) % 360;
+}
+
+function shortestAngleDelta(fromDeg, toDeg) {
+  let d = (toDeg - fromDeg) % 360;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  return d;
+}
+
+// Arc length (inches) to wheel by angleDeltaDeg, pivoting on a front corner.
+// Same per-degree cost wheelUnit() already uses — factored out so charge
+// reach can budget it without duplicating the formula.
+function wheelArcInches(unit, angleDeltaDeg) {
+  const radius = (unit.rankWidth - 1) * SPACING; // front-corner to front-corner, px
+  const arcPx  = Math.abs(angleDeltaDeg * Math.PI / 180) * radius;
+  return arcPx / INCHES_TO_PX;
+}
+
+// Oriented-rectangle approximation of a unit's footprint, in world space.
+// halfW/halfD pad to model edges (+MODEL_R) — same slot-centre
+// simplification frontCorners() already accepts.
+function unitFootprint(unit) {
+  const numRanks = Math.ceil(unit.models.length / unit.rankWidth);
+  const halfW = (unit.rankWidth - 1) / 2 * SPACING + MODEL_R;
+  const halfD = (numRanks - 1)   / 2 * SPACING + MODEL_R;
+  const rad = unit.facing * Math.PI / 180;
+  const right    = { x: Math.cos(rad),  y: Math.sin(rad) };
+  const backward = { x: -Math.sin(rad), y: Math.cos(rad) };
+  const localCX = (unit.rankWidth - 1) / 2 * SPACING;
+  const localCY = (numRanks - 1)   / 2 * SPACING;
+  const centre = {
+    x: unit.position.x + localCX * right.x + localCY * backward.x,
+    y: unit.position.y + localCX * right.y + localCY * backward.y,
+  };
+  return { centre, halfW, halfD, right, backward };
+}
+
+// Nearest point on a unit's footprint boundary to an external point.
+function nearestFootprintPoint(unit, fromPoint) {
+  const fp = unitFootprint(unit);
+  const dx = fromPoint.x - fp.centre.x, dy = fromPoint.y - fp.centre.y;
+  const u  = dx * fp.right.x    + dy * fp.right.y;
+  const v  = dx * fp.backward.x + dy * fp.backward.y;
+  const uc = Math.max(-fp.halfW, Math.min(fp.halfW, u));
+  const vc = Math.max(-fp.halfD, Math.min(fp.halfD, v));
+  return {
+    x: fp.centre.x + uc * fp.right.x + vc * fp.backward.x,
+    y: fp.centre.y + uc * fp.right.y + vc * fp.backward.y,
+  };
+}
+
+function chargeReach(charger, targetUnit, maxInches) {
+  const contactPoint  = nearestFootprintPoint(targetUnit, charger.position);
+  const desiredFacing = angleToPoint(charger.position, contactPoint);
+  const angleDelta    = shortestAngleDelta(charger.facing, desiredFacing);
+  const wheelCost     = wheelArcInches(charger, angleDelta);
+  const straightCost  = pxDistance(charger.position, contactPoint) / INCHES_TO_PX;
+  const inchesNeeded  = wheelCost + straightCost;
+  return {
+    reachable: inchesNeeded <= maxInches,
+    inchesNeeded,
+    finalFacing: desiredFacing,
+    contactPoint,
+  };
+}
+
+// ── Dice ──────────────────────────────────────────────────────────────────
+function rollD6()  { return 1 + Math.floor(Math.random() * 6); }
+function roll2D6() { return rollD6() + rollD6(); }
+
+function testLeadership(ldValue) {
+  const roll = roll2D6();
+  const target = parseInt(ldValue, 10);
+  return { roll, target, passed: roll <= target };
+}
+
+// ── Charge helpers ────────────────────────────────────────────────────────
+function isUnitAlive(unit) { return unit.models.some(m => m.alive); }
+
+function killUnit(unit) {
+  return { ...unit, models: unit.models.map(m => ({ ...m, alive: false })) };
+}
+
+function enemiesOf(unit, allUnits) {
+  return allUnits.filter(u => u.factionId !== unit.factionId && isUnitAlive(u));
+}
+
+function friendliesOf(unit, allUnits) {
+  return allUnits.filter(
+    u => u.factionId === unit.factionId && u.instanceId !== unit.instanceId && isUnitAlive(u)
+  );
+}
+
+function pointToSegmentDistance(p, a, b) {
+  const abx = b.x - a.x, aby = b.y - a.y;
+  const lenSq = abx * abx + aby * aby;
+  let t = lenSq === 0 ? 0 : ((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * abx), p.y - (a.y + t * aby));
+}
+
+// Straight-line flee move directly away from awayFromPoint. Off-board =
+// destroyed (a fleeing unit that would leave the table is removed as a
+// casualty) — RAW recalled from training knowledge, not verified against
+// 8th.whfb.app; same caveat as the unverified character stats (see DEVLOG).
+function fleeMove(target, awayFromPoint) {
+  const fleeRoll   = roll2D6();
+  const fleeInches = fleeRoll;
+  const dirDeg     = angleToPoint(awayFromPoint, target.position);
+  const v          = facingVector({ facing: dirDeg });
+  const d          = inchesToPx(fleeInches);
+  const toPos      = { x: target.position.x + v.x * d, y: target.position.y + v.y * d };
+  const offBoard   = toPos.x < 0 || toPos.x > BOARD_W || toPos.y < 0 || toPos.y > BOARD_H;
+  return { fleeRoll, fleeInches, fromPos: { ...target.position }, toPos, facing: dirDeg, offBoard };
+}
+
+// Friendly units whose footprint the flee path (fromPos->toPos) passes near
+// enough to trigger a Panic test. Footprint-radius distance check, not a
+// precise segment/polygon intersection — consistent with the project's
+// existing geometric simplifications (see frontCorners()).
+function friendliesInFleePath(fleeingUnit, fromPos, toPos, allUnits) {
+  return friendliesOf(fleeingUnit, allUnits).filter(f => {
+    const fp = unitFootprint(f);
+    const threshold = Math.max(fp.halfW, fp.halfD) + inchesToPx(1);
+    return pointToSegmentDistance(fp.centre, fromPos, toPos) < threshold;
+  });
+}
+
 // ── Game state ─────────────────────────────────────────────────────────────
 const state = {
   units:                 [],
@@ -188,6 +334,7 @@ const state = {
   phase:                 'movement',
   activePlayer:          'player1',
   movementPhaseComplete: false,
+  chargeReactions:       {}, // targetInstanceId -> 'hold'|'standAndShoot'|'flee', cleared each movement phase
 };
 
 // ── Movement interaction state ─────────────────────────────────────────────
@@ -195,6 +342,12 @@ let moveGhost      = null; // { unit, type:"move"|"wheel"|"reform" }
 let moveMode       = null; // null|"move"|"wheel-pick"|"wheel"|"reform"
 let wheelPivotSide = null;
 let reformRankWidth = 0;
+
+// ── Charge interaction state (WHF-3) ────────────────────────────────────────
+// { chargerId, targetIds, stage, reactionQueue, fledTargetId, outcome, log }
+// stage: 'select-targets' -> 'awaiting-reaction' -> ['redirect-prompt' ->
+//        'redirect-pick'] -> 'ready-to-roll' -> 'resolved'
+let chargeFlow = null;
 
 // ── Faction palettes ───────────────────────────────────────────────────────
 const PALETTES = {
@@ -229,7 +382,10 @@ function buildModels(instanceId, count, rankWidth) {
 }
 
 function movementDefaults() {
-  return { movementUsed: 0, backwardInches: 0, hasReformed: false, hasMoved: false, phaseDone: false };
+  return {
+    movementUsed: 0, backwardInches: 0, hasReformed: false, hasMoved: false,
+    phaseDone: false, hasCharged: false, fleeing: false,
+  };
 }
 
 function initTestUnits() {
@@ -335,6 +491,29 @@ function renderBoard() {
     const sel = getSelectedUnit();
     if (sel) renderPivotDiamonds(overlayLayer, sel);
   }
+  if (chargeFlow && chargeFlow.stage === 'select-targets') {
+    renderChargeTargetHighlights(overlayLayer);
+  }
+}
+
+// Highlight rings on units the current charger can legally target. Filled
+// gold ring = picked; dashed ring = in reach but not yet picked.
+function renderChargeTargetHighlights(layer) {
+  const charger = state.units.find(u => u.instanceId === chargeFlow.chargerId);
+  if (!charger) return;
+  validChargeTargets(charger).forEach(t => {
+    const fp     = unitFootprint(t);
+    const picked = chargeFlow.targetIds.includes(t.instanceId);
+    layer.appendChild(svgEl('circle', {
+      cx: fp.centre.x.toFixed(2), cy: fp.centre.y.toFixed(2),
+      r:  Math.max(fp.halfW, fp.halfD) + 4,
+      fill: 'none',
+      stroke: picked ? 'var(--empire-gold)' : 'var(--selected-ring)',
+      'stroke-width': picked ? '3' : '2',
+      'stroke-dasharray': picked ? '' : '4 3',
+      'pointer-events': 'none',
+    }));
+  });
 }
 
 function renderUnit(layer, unit, isGhost) {
@@ -417,7 +596,16 @@ function renderUnit(layer, unit, isGhost) {
   }
 
   if (!isGhost) {
-    g.addEventListener('click', e => { e.stopPropagation(); selectUnit(unit.instanceId); });
+    g.addEventListener('click', e => {
+      e.stopPropagation();
+      if (chargeFlow) {
+        if (chargeFlow.stage === 'select-targets' && validTargetIdsForFlow().includes(unit.instanceId)) {
+          toggleChargeTarget(unit.instanceId);
+        }
+        return;
+      }
+      selectUnit(unit.instanceId);
+    });
   }
 
   layer.appendChild(g);
@@ -481,7 +669,7 @@ function getSelectedUnit() {
 }
 
 function selectUnit(instanceId) {
-  if (moveGhost || moveMode) return; // block switching units during active action
+  if (moveGhost || moveMode || chargeFlow) return; // block switching units during active action
   if (state.selected === instanceId) { deselectAll(); return; }
   state.selected = instanceId;
   renderBoard();
@@ -491,6 +679,7 @@ function selectUnit(instanceId) {
 
 function deselectAll() {
   if (moveGhost || moveMode) cancelGhost();
+  if (chargeFlow) cancelChargeFlow();
   state.selected = null;
   renderBoard();
   hidePanel();
@@ -510,7 +699,7 @@ function toggleModelDead(unitId, modelId) {
 // ── Movement actions ───────────────────────────────────────────────────────
 function enterMoveMode() {
   const unit = getSelectedUnit();
-  if (!unit || unit.hasReformed || unit.phaseDone) return;
+  if (!unit || unit.hasReformed || unit.phaseDone || chargeFlow) return;
   moveMode = 'move';
   showGhost({ ...unit }, 'move');
   showPanel(unit);
@@ -518,7 +707,7 @@ function enterMoveMode() {
 
 function enterWheelPickMode() {
   const unit = getSelectedUnit();
-  if (!unit || unit.hasReformed || unit.phaseDone) return;
+  if (!unit || unit.hasReformed || unit.phaseDone || chargeFlow) return;
   moveMode = 'wheel-pick';
   wheelPivotSide = null;
   renderBoard();
@@ -536,7 +725,7 @@ function pickWheelPivot(side) {
 
 function enterReformMode() {
   const unit = getSelectedUnit();
-  if (!unit || unit.hasMoved || unit.hasReformed || unit.phaseDone) return;
+  if (!unit || unit.hasMoved || unit.hasReformed || unit.phaseDone || chargeFlow) return;
   reformRankWidth = unit.rankWidth;
   moveMode = 'reform';
   showGhost(reformUnit(unit, reformRankWidth), 'reform');
@@ -586,7 +775,7 @@ function cancelGhost() {
 
 function doneUnit() {
   const unit = getSelectedUnit();
-  if (!unit) return;
+  if (!unit || chargeFlow) return;
   cancelGhost();
   const idx = state.units.findIndex(u => u.instanceId === state.selected);
   if (idx !== -1) state.units[idx] = { ...state.units[idx], phaseDone: true };
@@ -594,8 +783,257 @@ function doneUnit() {
   updateEndPhaseButton();
 }
 
+// ── Charge flow (WHF-3) ─────────────────────────────────────────────────────
+// Sequential declare -> react -> [redirect] -> roll cycle for one charging
+// unit at a time. Charges are NOT gated ahead of other units' remaining
+// moves this phase — WHF-2 built one flat "movement" phase, not RAW's four
+// Movement sub-phases (Start/Charge/Compulsory/Remaining), and building a
+// real sequencer is explicitly out of scope for this brief (WHF_PROJECT_PLAN
+// scopes it as its own later infra piece). Practical effect: nothing stops a
+// player from moving other units first and declaring a charge afterward,
+// which RAW wouldn't allow. That's the exact test case the future sequencer
+// needs to close — see DEVLOG.
+
+function maxChargeReach(unit) {
+  return parseFloat(unit.stats.M) + 12; // outer bound before the 2D6 roll happens
+}
+
+function validChargeTargets(charger) {
+  const budget = maxChargeReach(charger);
+  return enemiesOf(charger, state.units).filter(t => chargeReach(charger, t, budget).reachable);
+}
+
+// No terrain/line-of-sight model exists anywhere in the app yet, so charge
+// legality here is reach-only (no LoS raycast to skip against). Garrisoned
+// units aren't representable either (no buildings) — that RAW branch is
+// skipped entirely rather than stubbed.
+function enterChargeDeclare() {
+  const unit = getSelectedUnit();
+  if (!unit || unit.hasMoved || unit.hasReformed || unit.hasCharged || unit.phaseDone || unit.fleeing) return;
+  if (!validChargeTargets(unit).length) { flashHint('No enemy unit in charge reach'); return; }
+  chargeFlow = { chargerId: unit.instanceId, targetIds: [], stage: 'select-targets', log: [] };
+  renderBoard();
+  showPanel(unit);
+}
+
+function validTargetIdsForFlow() {
+  if (!chargeFlow) return [];
+  const charger = state.units.find(u => u.instanceId === chargeFlow.chargerId);
+  return validChargeTargets(charger).map(t => t.instanceId);
+}
+
+function toggleChargeTarget(targetId) {
+  if (!chargeFlow || chargeFlow.stage !== 'select-targets') return;
+  const i = chargeFlow.targetIds.indexOf(targetId);
+  if (i >= 0) chargeFlow.targetIds.splice(i, 1);
+  else if (chargeFlow.targetIds.length < 2) chargeFlow.targetIds.push(targetId);
+  renderBoard();
+  showPanel(getSelectedUnit());
+}
+
+function cancelChargeFlow() {
+  chargeFlow = null;
+  const unit = getSelectedUnit();
+  renderBoard();
+  if (unit) showPanel(unit);
+}
+
+// Targets that already have a locked-in reaction this phase ("Multiple
+// charges on one target" — that unit reacts once, its reaction applies to
+// all chargers) or that are already fleeing (handled as "charging a
+// fleeing enemy" at roll time instead) skip the reaction prompt.
+function confirmChargeTargets() {
+  if (!chargeFlow || !chargeFlow.targetIds.length) return;
+  const queue = chargeFlow.targetIds.filter(id => {
+    const t = state.units.find(u => u.instanceId === id);
+    return t && !t.fleeing && !(id in state.chargeReactions);
+  });
+  chargeFlow.reactionQueue = queue;
+  chargeFlow.stage = queue.length ? 'awaiting-reaction' : 'ready-to-roll';
+  state.selected = queue.length ? queue[0] : chargeFlow.chargerId;
+  renderBoard();
+  showPanel(getSelectedUnit());
+}
+
+function chooseReaction(targetId, reaction) {
+  if (!chargeFlow || chargeFlow.stage !== 'awaiting-reaction') return;
+  const target  = state.units.find(u => u.instanceId === targetId);
+  const charger = state.units.find(u => u.instanceId === chargeFlow.chargerId);
+  if (!target || !charger) return;
+
+  state.chargeReactions[targetId] = reaction;
+  chargeFlow.log.push(`${target.name}: ${reaction}`);
+
+  if (reaction === 'flee') {
+    const move = fleeMove(target, charger.position);
+    const passedThrough = friendliesInFleePath(target, move.fromPos, move.toPos, state.units);
+    let updated = {
+      ...target,
+      position:  move.offBoard ? move.fromPos : move.toPos,
+      facing:    move.facing,
+      fleeing:   true,
+      phaseDone: true, // no further actions this phase once fleeing
+    };
+    if (move.offBoard) updated = killUnit(updated);
+    state.units[state.units.findIndex(u => u.instanceId === targetId)] = updated;
+    chargeFlow.log.push(
+      `${target.name} flees ${move.fleeInches}" (roll ${move.fleeRoll})` +
+      (move.offBoard ? ' — off the table, destroyed' : '')
+    );
+
+    passedThrough.forEach(f => {
+      const ld = testLeadership(f.stats.Ld);
+      chargeFlow.log.push(
+        `Panic test, ${f.name}: rolled ${ld.roll} vs Ld ${ld.target} — ${ld.passed ? 'holds' : 'panics, also flees'}`
+      );
+      if (!ld.passed) {
+        const fMove = fleeMove(f, charger.position);
+        let fUpdated = {
+          ...f,
+          position:  fMove.offBoard ? fMove.fromPos : fMove.toPos,
+          facing:    fMove.facing,
+          fleeing:   true,
+          phaseDone: true,
+        };
+        if (fMove.offBoard) fUpdated = killUnit(fUpdated);
+        state.units[state.units.findIndex(u => u.instanceId === f.instanceId)] = fUpdated;
+      }
+    });
+
+    chargeFlow.fledTargetId = targetId;
+  } else if (reaction === 'standAndShoot') {
+    // Stubbed: no shooting math exists yet (WHF-4). See DEVLOG for the
+    // interface constraint this leaves for WHF-4 — the resolver it builds
+    // needs to be callable mid-charge, not just from its own phase.
+    chargeFlow.log.push(`${target.name} stands and shoots — no casualties resolved (WHF-4 hookup, see DEVLOG)`);
+  }
+
+  chargeFlow.reactionQueue = chargeFlow.reactionQueue.filter(id => id !== targetId);
+  if (chargeFlow.reactionQueue.length) {
+    state.selected = chargeFlow.reactionQueue[0];
+  } else if (chargeFlow.fledTargetId && chargeFlow.targetIds.length === 1) {
+    chargeFlow.stage = 'redirect-prompt';
+    state.selected = chargeFlow.chargerId;
+  } else {
+    chargeFlow.stage = 'ready-to-roll';
+    state.selected = chargeFlow.chargerId;
+  }
+  updateEndPhaseButton();
+  renderBoard();
+  showPanel(getSelectedUnit());
+}
+
+function declineRedirect() {
+  if (!chargeFlow || chargeFlow.stage !== 'redirect-prompt') return;
+  chargeFlow.stage = 'ready-to-roll';
+  showPanel(getSelectedUnit());
+}
+
+function attemptRedirect() {
+  if (!chargeFlow || chargeFlow.stage !== 'redirect-prompt') return;
+  const charger = state.units.find(u => u.instanceId === chargeFlow.chargerId);
+  const ld = testLeadership(charger.stats.Ld);
+  chargeFlow.log.push(`Redirect Ld test: rolled ${ld.roll} vs Ld ${ld.target} — ${ld.passed ? 'passed' : 'failed'}`);
+  if (!ld.passed) {
+    chargeFlow.stage = 'ready-to-roll';
+    showPanel(getSelectedUnit());
+    return;
+  }
+  const alternatives = validChargeTargets(charger).filter(t => t.instanceId !== chargeFlow.fledTargetId);
+  if (!alternatives.length) {
+    chargeFlow.log.push('No other legal target — charge continues against the fled unit');
+    chargeFlow.stage = 'ready-to-roll';
+    showPanel(getSelectedUnit());
+    return;
+  }
+  chargeFlow.stage = 'redirect-pick';
+  showPanel(getSelectedUnit());
+}
+
+function pickRedirectTarget(targetId) {
+  if (!chargeFlow || chargeFlow.stage !== 'redirect-pick') return;
+  chargeFlow.targetIds   = [targetId];
+  chargeFlow.fledTargetId = null;
+  chargeFlow.stage = 'ready-to-roll';
+  showPanel(getSelectedUnit());
+}
+
+// Multi-target ("There's Too Many of Them!") is approximated: the governing
+// target is whichever declared target needs the most reach, and satisfying
+// it is treated as satisfying all of them. Full simultaneous multi-body
+// contact geometry is out of scope here — see DEVLOG.
+function rollChargeMove() {
+  if (!chargeFlow || chargeFlow.stage !== 'ready-to-roll') return;
+  const idx     = state.units.findIndex(u => u.instanceId === chargeFlow.chargerId);
+  const charger = state.units[idx];
+  const M       = parseFloat(charger.stats.M);
+  const roll    = roll2D6();
+  const budget  = M + roll;
+
+  const targets = chargeFlow.targetIds
+    .map(id => state.units.find(u => u.instanceId === id))
+    .filter(Boolean);
+  const results = targets
+    .map(t => ({ t, reach: chargeReach(charger, t, budget) }))
+    .sort((a, b) => b.reach.inchesNeeded - a.reach.inchesNeeded);
+  const { t: primaryTarget, reach } = results[0];
+
+  chargeFlow.log.push(
+    `Charge roll: ${roll} (+ M ${M}" = ${budget}") vs ${reach.inchesNeeded.toFixed(1)}" needed`
+  );
+
+  let updated, outcome;
+  if (primaryTarget.fleeing) {
+    if (reach.reachable) {
+      outcome = 'caught';
+      state.units[state.units.findIndex(u => u.instanceId === primaryTarget.instanceId)] =
+        killUnit(state.units.find(u => u.instanceId === primaryTarget.instanceId));
+      updated = { ...charger, facing: reach.finalFacing, movementUsed: M, hasMoved: true, hasCharged: true };
+      chargeFlow.log.push(`${primaryTarget.name} caught and destroyed`);
+    } else {
+      outcome = 'not-caught';
+      const moved = moveUnitForward({ ...charger, facing: reach.finalFacing, movementUsed: 0 }, Math.min(roll, M));
+      updated = { ...moved, hasMoved: true, hasCharged: true };
+      chargeFlow.log.push(`${primaryTarget.name} outdistances the charge — not caught`);
+    }
+  } else if (reach.reachable) {
+    outcome = 'contact';
+    updated = {
+      ...charger,
+      facing:       reach.finalFacing,
+      position:     reach.contactPoint,
+      movementUsed: reach.inchesNeeded,
+      hasMoved:     true,
+      hasCharged:   true,
+    };
+  } else {
+    outcome = 'failed';
+    const moved = moveUnitForward({ ...charger, facing: reach.finalFacing, movementUsed: 0 }, roll);
+    updated = { ...moved, hasMoved: true, hasCharged: true };
+    chargeFlow.log.push('Failed charge — no combat, unit advances the rolled distance only');
+  }
+
+  state.units[idx] = updated;
+  chargeFlow.stage   = 'resolved';
+  chargeFlow.outcome = outcome;
+  state.selected = chargeFlow.chargerId;
+  renderBoard();
+  showPanel(getSelectedUnit());
+}
+
+function finishChargeFlow() {
+  if (!chargeFlow) return;
+  const idx = state.units.findIndex(u => u.instanceId === chargeFlow.chargerId);
+  if (idx !== -1) state.units[idx] = { ...state.units[idx], phaseDone: true };
+  chargeFlow = null;
+  deselectAll();
+  updateEndPhaseButton();
+}
+
 function endMovementPhase() {
   state.phase = 'magic';
+  chargeFlow = null;
+  state.chargeReactions = {};
   renderPhaseTracker();
   document.getElementById('end-phase-bar').classList.remove('visible');
   state.units.forEach(u => Object.assign(u, movementDefaults()));
@@ -651,6 +1089,7 @@ function handleWheelKey(angleDeltaDeg) {
 // ── Movement panel HTML ─────────────────────────────────────────────────────
 function buildMovementSection(unit) {
   if (state.phase !== 'movement') return '';
+  if (chargeFlow) return buildChargeSection(unit);
   const M    = parseFloat(unit.stats.M);
   const used = moveGhost ? moveGhost.unit.movementUsed : unit.movementUsed;
 
@@ -661,20 +1100,30 @@ function buildMovementSection(unit) {
     </div>`;
   }
 
+  if (unit.fleeing) {
+    return `<div class="panel-section">
+      <div class="panel-section-title">Movement</div>
+      <div class="panel-row panel-done">Fleeing — no further actions this phase</div>
+    </div>`;
+  }
+
   if (moveMode === null) {
-    const canMove   = !unit.hasReformed;
+    const canMove   = !unit.hasReformed && !unit.hasCharged;
     const canReform = !unit.hasMoved && !unit.hasReformed;
+    const canCharge = !unit.hasMoved && !unit.hasReformed && !unit.hasCharged;
     const remaining = (M - unit.movementUsed).toFixed(1);
     const movedNote   = unit.hasMoved   ? '<div class="panel-row dim">Moved this turn — reform unavailable</div>' : '';
     const reformedNote = unit.hasReformed ? '<div class="panel-row dim">Reformed — no remaining move</div>' : '';
+    const chargedNote = unit.hasCharged ? '<div class="panel-row dim">Charged this phase</div>' : '';
     return `<div class="panel-section">
       <div class="panel-section-title">Movement</div>
       <div class="panel-row">Allowance: ${M}" &nbsp;|&nbsp; Used: ${unit.movementUsed.toFixed(1)}" &nbsp;|&nbsp; Left: ${remaining}"</div>
-      ${movedNote}${reformedNote}
+      ${movedNote}${reformedNote}${chargedNote}
       <div class="move-btns">
         <button class="move-btn" id="btn-move" ${canMove ? '' : 'disabled'}>Move</button>
         <button class="move-btn" id="btn-wheel" ${canMove ? '' : 'disabled'}>Wheel</button>
         <button class="move-btn" id="btn-reform" ${canReform ? '' : 'disabled'}>Reform</button>
+        <button class="move-btn" id="btn-charge" ${canCharge ? '' : 'disabled'}>Charge</button>
       </div>
       <button class="move-btn done-btn" id="btn-done">Done — End unit move</button>
     </div>`;
@@ -739,16 +1188,132 @@ function buildMovementSection(unit) {
   return '';
 }
 
+// Panel content for the active charge flow. Which branch renders depends on
+// both chargeFlow.stage AND whether `unit` (the panel currently shown) is
+// the charger or the reacting/redirect-relevant unit — state.selected is
+// steered to the relevant unit at each stage transition so the right prompt
+// surfaces automatically in this single-panel, hotseat-local UI.
+function buildChargeSection(unit) {
+  const charger = state.units.find(u => u.instanceId === chargeFlow.chargerId);
+  const logHtml = chargeFlow.log.length
+    ? `<ul class="panel-list">${chargeFlow.log.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul>`
+    : '';
+
+  if (chargeFlow.stage === 'select-targets') {
+    if (unit.instanceId !== chargeFlow.chargerId) {
+      return `<div class="panel-section">
+        <div class="panel-row dim">Charge in progress — click a highlighted enemy unit on the board.</div>
+      </div>`;
+    }
+    const picked = chargeFlow.targetIds
+      .map(id => state.units.find(u => u.instanceId === id)?.name)
+      .filter(Boolean);
+    return `<div class="panel-section">
+      <div class="panel-section-title">Declare Charge</div>
+      <div class="panel-row">Click a highlighted enemy unit to target (up to 2 — "There's Too Many of Them!")</div>
+      <div class="panel-row">Targeted: ${picked.length ? escHtml(picked.join(', ')) : '(none yet)'}</div>
+      <div class="move-btns">
+        <button class="move-btn" id="btn-charge-confirm" ${chargeFlow.targetIds.length ? '' : 'disabled'}>Confirm targets</button>
+        <button class="move-btn" id="btn-charge-cancel">Cancel (Esc)</button>
+      </div>
+    </div>`;
+  }
+
+  if (chargeFlow.stage === 'awaiting-reaction') {
+    const reactingId = chargeFlow.reactionQueue[0];
+    if (unit.instanceId !== reactingId) {
+      const reactingName = state.units.find(u => u.instanceId === reactingId)?.name || 'target';
+      return `<div class="panel-section">
+        <div class="panel-row dim">Waiting on ${escHtml(reactingName)}'s charge reaction.</div>
+        ${logHtml}
+      </div>`;
+    }
+    return `<div class="panel-section">
+      <div class="panel-section-title">Charge Reaction — ${escHtml(charger.name)} charges ${escHtml(unit.name)}</div>
+      <div class="move-btns">
+        <button class="move-btn" id="btn-react-hold">Hold</button>
+        <button class="move-btn" id="btn-react-shoot">Stand and Shoot</button>
+        <button class="move-btn" id="btn-react-flee">Flee!</button>
+      </div>
+      ${logHtml}
+    </div>`;
+  }
+
+  if (chargeFlow.stage === 'redirect-prompt') {
+    if (unit.instanceId !== chargeFlow.chargerId) return '';
+    return `<div class="panel-section">
+      <div class="panel-section-title">Redirect?</div>
+      <div class="panel-row">Target fled. Test Leadership to redirect to another legal target?</div>
+      <div class="move-btns">
+        <button class="move-btn" id="btn-redirect-yes">Test to redirect</button>
+        <button class="move-btn" id="btn-redirect-no">Continue against fled target</button>
+      </div>
+      ${logHtml}
+    </div>`;
+  }
+
+  if (chargeFlow.stage === 'redirect-pick') {
+    if (unit.instanceId !== chargeFlow.chargerId) return '';
+    const alts = validChargeTargets(charger).filter(t => t.instanceId !== chargeFlow.fledTargetId);
+    const items = alts
+      .map(t => `<li><button class="move-btn redirect-pick-btn" data-target-id="${t.instanceId}">${escHtml(t.name)}</button></li>`)
+      .join('');
+    return `<div class="panel-section">
+      <div class="panel-section-title">Redirect — pick new target</div>
+      <ul class="panel-list">${items}</ul>
+      ${logHtml}
+    </div>`;
+  }
+
+  if (chargeFlow.stage === 'ready-to-roll') {
+    if (unit.instanceId !== chargeFlow.chargerId) return '';
+    return `<div class="panel-section">
+      <div class="panel-section-title">Roll Charge</div>
+      <div class="move-btns">
+        <button class="move-btn" id="btn-charge-roll">Roll 2D6 and move</button>
+      </div>
+      ${logHtml}
+    </div>`;
+  }
+
+  if (chargeFlow.stage === 'resolved') {
+    if (unit.instanceId !== chargeFlow.chargerId) return '';
+    return `<div class="panel-section">
+      <div class="panel-section-title">Charge Resolved — ${escHtml(chargeFlow.outcome)}</div>
+      ${logHtml}
+      <div class="move-btns">
+        <button class="move-btn" id="btn-charge-done">Continue</button>
+      </div>
+    </div>`;
+  }
+
+  return '';
+}
+
 function attachMovementListeners(unit) {
   const q = id => document.getElementById(id);
   q('btn-move')?.addEventListener('click', enterMoveMode);
   q('btn-wheel')?.addEventListener('click', enterWheelPickMode);
   q('btn-reform')?.addEventListener('click', enterReformMode);
+  q('btn-charge')?.addEventListener('click', enterChargeDeclare);
   q('btn-done')?.addEventListener('click', doneUnit);
   q('btn-commit')?.addEventListener('click', commitGhost);
   q('btn-cancel')?.addEventListener('click', cancelGhost);
   q('rw-minus')?.addEventListener('click', () => adjustReformWidth(unit, -1));
   q('rw-plus')?.addEventListener('click',  () => adjustReformWidth(unit,  1));
+
+  q('btn-charge-confirm')?.addEventListener('click', confirmChargeTargets);
+  q('btn-charge-cancel')?.addEventListener('click', cancelChargeFlow);
+  q('btn-react-hold')?.addEventListener('click',  () => chooseReaction(unit.instanceId, 'hold'));
+  q('btn-react-shoot')?.addEventListener('click', () => chooseReaction(unit.instanceId, 'standAndShoot'));
+  q('btn-react-flee')?.addEventListener('click',  () => chooseReaction(unit.instanceId, 'flee'));
+  q('btn-redirect-yes')?.addEventListener('click', attemptRedirect);
+  q('btn-redirect-no')?.addEventListener('click',  declineRedirect);
+  q('btn-charge-roll')?.addEventListener('click', rollChargeMove);
+  q('btn-charge-done')?.addEventListener('click', finishChargeFlow);
+  document.querySelectorAll('.redirect-pick-btn').forEach(btn => {
+    btn.addEventListener('click', () => pickRedirectTarget(btn.dataset.targetId));
+  });
 }
 
 // ── Stat panel ─────────────────────────────────────────────────────────────
@@ -842,6 +1407,7 @@ function init() {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       if (moveGhost || moveMode) { cancelGhost(); return; }
+      if (chargeFlow) { cancelChargeFlow(); return; }
       deselectAll();
       return;
     }

@@ -117,7 +117,7 @@ Full 8th edition Movement Phase. Ghost preview pattern (preview before commit), 
 |-------|--------|
 | WHF-1: Board & Regiment Engine | Complete |
 | WHF-2: Movement Phase | Complete |
-| WHF-3: Charge | Not started — brief not written |
+| WHF-3: Charge | Complete (see Phase 4) — Stand and Shoot stubbed pending WHF-4 |
 | WHF-4: Shooting | Not started |
 | WHF-5: Combat (Close Combat + Rank Collapse) | Not started |
 
@@ -129,6 +129,136 @@ Full 8th edition Movement Phase. Ghost preview pattern (preview before commit), 
 - **Shooting-after-reform restriction** is not enforced. Noted for WHF-4.
 - **Character stats (General of the Empire, Empire Captain)** are from training knowledge, not verified against 8th.whfb.app. Unblocks at WHF-5 before character combat is implemented.
 - **Firebase credentials** are in `firebase-config.js` (gitignored). Shape: same as `warhammer40k/firebase-config.js`.
+
+---
+
+### Phase 4 — WHF-3: Charge Sub-Phase (2026-07-09)
+
+**Brief:** `docs/memory/WHF3_CHARGE_BRIEF.md`. Plan context:
+`docs/memory/WHF_PROJECT_PLAN.md`.
+
+**Files:** `whf.js`, `whf.html` (topbar subtitle only).
+
+Full declare → react → [redirect] → roll cycle, sequential (one charging
+unit at a time, matching the app's existing one-unit-acts-at-a-time
+interaction model — nothing here is simultaneous multiplayer).
+
+**Pivot-arc / reach geometry (the piece this brief pioneers, per the
+project plan):** `chargeReach(charger, targetUnit, maxInches)` in `whf.js`.
+Interface: takes a footprint (`position`/`facing`/`rankWidth`/`models` —
+same shape WHF-1/2 already use) and a target footprint, returns
+`{ reachable, inchesNeeded, finalFacing, contactPoint }`. Built from three
+standalone pieces, all reusable independently:
+- `unitFootprint(unit)` — oriented-rectangle approximation, world space.
+- `nearestFootprintPoint(unit, fromPoint)` — nearest boundary point to an
+  external point.
+- `wheelArcInches(unit, angleDeltaDeg)` — per-degree wheel cost, factored
+  out of `wheelUnit()` (WHF-2) so both call sites share one formula instead
+  of duplicating it.
+
+No WHF-only assumptions beyond what `modelPosition()`/`frontCorners()`
+already encode (rank/file isn't baked into the math — `unitFootprint()`
+only needs `.position`/`.facing`/`.rankWidth`/`.models.length`). Portable
+to 40k vehicle turning later by swapping in a vehicle's own front-corner
+footprint, as the project plan calls for.
+
+**Known gap, written down on purpose — read this before building the
+turn/activation sequencer:** WHF-2 built one flat `movement` phase, not
+RAW's four Movement sub-phases (Start of Turn / **Charge** / Compulsory
+Moves / Remaining Moves). This brief explicitly forbade building a real
+sequencer, so Charge is just a 4th per-unit action button (Move / Wheel /
+Reform / **Charge**) with the same "once per unit per phase" gating as the
+others — nothing stops a player from moving other units first and
+declaring a charge afterward, which RAW wouldn't allow (charges must all
+be declared before any compulsory/remaining moves happen, so a defender
+can't reposition knowing whether it's been charged yet). This is
+unenforced by design here; the hint text nudges players to declare
+charges first, but nothing blocks the RAW-illegal order. **This is the
+exact test case the future turn/activation sequencer (WHF_PROJECT_PLAN.md
+§1) needs to close** — when that infra piece gets built, "declare charge
+after another unit's remaining move already happened" should be the
+regression test that proves it actually gates sub-phases, not just
+top-level phases.
+
+**Stand and Shoot is stubbed — read this before building WHF-4's shooting
+resolver:** no to-hit/to-wound/save math exists anywhere yet (that's
+WHF-4). Choosing "Stand and Shoot" as a charge reaction is a real,
+selectable choice — it locks in via `state.chargeReactions`, gets logged
+in the charge flow, and blocks re-prompting if a second unit charges the
+same target — but resolves zero casualties; the charge proceeds at the
+charger's full strength. **Interface constraint for WHF-4, not just "hook
+up later":** Stand and Shoot has to reduce the charging unit's models
+(remove casualties) *before* `chargeReach()`'s contact/failed-charge
+resolution runs and *before* WHF-5 counts ranks for combat res off the
+survivors — meaning whatever shooting resolver WHF-4 builds needs to be
+directly callable mid-charge-flow (from inside `chooseReaction()`'s
+`standAndShoot` branch), not just invocable from its own Shooting-phase
+UI. Build it as a function with a clean input/output contract from the
+start, not something wired only to WHF-4's own phase button.
+
+**Other scope decisions, made per the brief's "generic understandable
+over RAW-exact" priority, not silently:**
+- No line-of-sight check on charge declaration — no terrain/LoS model
+  exists anywhere in the app, so there's nothing to raycast against.
+  Charge legality is reach-only (`chargeReach(...).reachable` at the
+  `M+12"` outer bound). Garrisoned-unit rules are skipped entirely for
+  the same reason (no buildings exist).
+- "There's Too Many of Them!" (one charger, up to 2 targets) is
+  approximated: `rollChargeMove()` picks whichever declared target needs
+  the *most* reach and treats satisfying it as satisfying all of them.
+  Full simultaneous multi-body contact geometry (a single footprint
+  touching two separate enemy footprints at once) was out of scope here.
+- "Multiple chargers, one target" is honored via `state.chargeReactions`
+  caching (a target that already reacted this phase skips the prompt for
+  a second charger) — but because charges resolve sequentially rather
+  than simultaneously, if the cached reaction was Flee, the second
+  charger naturally falls into the "charging a fleeing enemy" auto-catch
+  branch instead of re-triggering a flee. That's the correct downstream
+  state to react to, not a bug — flagging it as a deliberate reading of
+  "reaction applies to all of them" under this app's sequential model.
+- "Charging a fleeing enemy" auto-catch: implemented — if
+  `chargeReach(...).reachable` against the fleeing unit's *current*
+  footprint at roll time, it's caught and destroyed; otherwise the
+  charger just fails to catch it (normal failed-charge move).
+- "Unlikely Flights" (boxed-in flee): not implemented as a distinct edge
+  case. What *is* implemented: a flee move that would leave the board is
+  destruction (RAW recalled from training knowledge, **not verified**
+  against 8th.whfb.app — same caveat as the still-unverified character
+  stats noted in Phase 1/WHF-1, unblocks whenever someone next checks the
+  source). No table-edge/friendly-unit blocking geometry beyond that.
+- Panic-on-flee-passthrough: implemented as a footprint-radius distance
+  check (segment-to-point, `pointToSegmentDistance`) against friendly
+  units' footprints, not precise polygon/segment intersection — same
+  class of simplification WHF-2 already accepted for `frontCorners()`.
+  One level only: a friendly that panics and also flees does not itself
+  trigger a second round of Panic tests on units in *its* path.
+- Redirect is only offered when exactly one target was declared and it
+  fled (multi-target charges skip redirect — RAW's redirect assumes a
+  single original target).
+
+**Verified before building:** re-read `whf.js` in full against WHF-2's
+DEVLOG claims. One thing worth re-flagging since it's adjacent: the
+phase tracker (`whf.html`) still only has 5 top-level phases and no
+sub-phase UI at all — confirmed via source, not assumed from the brief.
+
+**Testing:** no headless-browser check was possible in this sandbox
+(Playwright's Chromium needs `libasound.so.2`, not installed, and
+`apt-get`/`sudo` aren't available to this session — a real system
+limitation, not skipped). Instead, ran a jsdom-driven functional smoke
+test (real DOM: actual `document.createElementNS` SVG nodes, actual
+`addEventListener` wiring, actual CSS class toggling) exercising: declare
+→ Hold → roll → contact, declare → Flee → Panic-test-fires-when-in-path →
+redirect decline → roll, and multi-charger-one-target reaction caching.
+Also caught and fixed two real bugs this way before commit: (1) a charged
+unit could still re-enter Move/Wheel afterward (now gated off via
+`hasCharged`, since a charge consumes the unit's whole move), and (2) a
+fled unit never got marked `phaseDone`, which would have permanently
+blocked the "End Movement Phase" button from appearing whenever a charge
+caused a flee. The one-off test script was not committed.
+
+**Not done / explicitly out of scope per the brief:** shape/containment
+engine, scatter tool, aura system, turn/activation sequencer — all
+correctly belong to later work per `WHF_PROJECT_PLAN.md`.
 
 ---
 
