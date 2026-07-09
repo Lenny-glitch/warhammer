@@ -35,6 +35,17 @@ subproject's `DEVLOG.md` are meant to be everything a fresh session needs.
   reports back to Nox.
 - **Disk beats chat.** Briefs, amendments, and state live in this repo,
   not only in conversation history.
+- **Build native to the project you're working in.** Don't design a
+  general/shared version of something before it has one real, proven
+  implementation and a second concrete consumer that actually needs it.
+  This does not mean write throwaway code — keep interfaces uncoupled
+  from incidental project details wherever that costs little, so
+  promotion to `shared/` later is a relocation, not a rewrite (WHF-3's
+  `chargeReach` is the model). The trigger for promoting something to
+  `shared/` is a concrete second consumer with an actual need, not "this
+  seems generally useful." `bonus-resolver.js` is the precedent: built
+  for KT, proven live, promoted once WHF had a real need for its
+  condition machinery.
 
 ## Parallel sessions
 More than one session may be working here at once. Before starting work on
