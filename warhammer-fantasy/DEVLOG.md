@@ -262,6 +262,34 @@ correctly belong to later work per `WHF_PROJECT_PLAN.md`.
 
 ---
 
+### Phase 5 — Firebase config set up (2026-07-09)
+
+**Files:** `warhammer-fantasy/firebase-config.js` (gitignored, not committed),
+`warhammer-fantasy/firebase-config.example.js` (committed template, matches
+`killteam/`/`warhammer40k/`'s format — `var firebaseConfig = {...}`).
+
+Nox supplied the real config (project `warhammer-5f2f4`, same Firebase
+project as the 40k-side apps). Confirmed via `git check-ignore -v` that
+`warhammer-fantasy/.gitignore` already listed `firebase-config.js` (it
+did — that line predates this phase) before writing the real values, so
+nothing had to change gitignore-wise, just the file needed creating.
+
+This resolves the gap flagged in `docs/memory/WHF_STATUS_UPDATE.md` and
+`WHF_PROJECT_PLAN.md` §0 ("flagged, not corrected"). **Root `CLAUDE.md`**
+("Local setup" section) and **`PROJECT_STATE.md`** ("STANDING
+ASSUMPTIONS") both still say warhammer-fantasy has no live Firebase
+config — that's now stale. Both are Nox's planner-owned files (not
+edited here, per the Hades/Nyx domain split in root `CLAUDE.md`) —
+flagging for Nox to update on the next `PROJECT_STATE.md` regeneration.
+
+No code in `whf.js`/`whf.html` reads Firebase yet — the app is still
+fully local/hardcoded-test-unit (see WHF-1). This just makes the
+connection *possible* for whenever a brief actually wires it up (e.g.
+reading the Phase 1 unit templates live instead of the hardcoded
+`initTestUnits()` stand-ins).
+
+---
+
 ## BON-1 — Generic Bonus Engine landed in data-pipeline (2026-07-02)
 
 data-pipeline built the cross-system bonus/modifier schema referenced in
