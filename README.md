@@ -12,3 +12,4 @@ history. See `CLAUDE.md` for how a fresh session should orient itself.
 - `warhammer-fantasy/` — Warhammer Fantasy companion app
 - `age-of-sigmar/` — Age of Sigmar companion app
 - `shared/` — code shared across subprojects (currently just the bonus resolver)
+# ahhhhhhhhhh
