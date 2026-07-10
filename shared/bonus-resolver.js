@@ -19,13 +19,18 @@
 
 'use strict';
 
-const BONUS_RESOLVER_VERSION = '1.2.1';
+const BONUS_RESOLVER_VERSION = '1.3.0';
 
 // Stats where a LOWER number is better (roll-target stats: you're trying to
 // beat this number on a die). Every other stat in the abstract vocabulary is
 // "higher is better" (quantities). This distinction only affects the
 // direction-aware ops: improve and cap.
-const ROLL_TARGET_STATS = new Set(['hit', 'save', 'critThreshold']);
+//
+// v1.3.0 (WHF-4a): added 'wound' and 'wardSave' for WHF's shooting resolver.
+// 'hit' and 'save' are reused as-is for WHF's to-hit target and armour save
+// (same roll-target semantics as KT) — additive-only extension, no existing
+// stat repurposed.
+const ROLL_TARGET_STATS = new Set(['hit', 'save', 'critThreshold', 'wound', 'wardSave']);
 
 const ACTIVATIONS = new Set(['passive', 'active']);
 const COST_TYPES = new Set(['free', 'cp', 'ap']);

@@ -327,6 +327,127 @@ function friendliesInFleePath(fleeingUnit, fromPos, toPos, allUnits) {
   });
 }
 
+// ── Shooting resolver (WHF-4a) ───────────────────────────────────────────
+//
+// RAW verified against 8th.whfb.app before building (this brief's own text
+// had it wrong on two points — see DEVLOG): to-hit chart is `7 - BS`; S-vs-T
+// wound chart is `clamp(4 - (S - T), 2, 6)`; armour save modifier is -1 per
+// point of Strength from 4 upward; ward saves are never modified by
+// Strength; a natural 1 always fails to-hit/to-wound/save rolls; casualties
+// come off the REAR rank (not the rank closest to the firer, despite what
+// the brief said — RAW is explicit this is a gameplay-legibility rule, not
+// narrative-literal). "7+ to hit/wound/save" RAW is a chained reroll (roll a
+// 6, then reroll against a second threshold); simplified here to a flat
+// auto-fail — consistent with this project's "legible over rules-exact"
+// standing priority and the precedent WHF-3 already set for edge cases like
+// "There's Too Many of Them".
+
+function svToNumber(sv) {
+  if (!sv || sv === '-') return null;
+  return parseInt(sv, 10);
+}
+
+function toHitTarget(bs) { return 7 - bs; }
+function toWoundTarget(strength, toughness) {
+  return Math.max(2, Math.min(6, 4 - (strength - toughness)));
+}
+// -1 to a save's target number per point of Strength from 4 upward (RAW:
+// "An attack of Strength 4 inflicts a save modifier of -1, with the
+// modifier growing a point higher for each additional point of Strength").
+function armourPenetration(strength) { return strength >= 4 ? strength - 3 : 0; }
+
+// target > 6 is the RAW "7+" case, simplified to auto-fail (see header
+// note). A natural 1 always fails regardless of target number.
+function rollAgainstTarget(target) {
+  if (target > 6) return { roll: null, success: false, impossible: true };
+  const roll = rollD6();
+  return { roll, success: roll !== 1 && roll >= target, impossible: false };
+}
+
+// Casualties come off the rear rank (RAW, verified — see header note).
+// Within the rearmost rank still holding models, remove from the flanks
+// inward first (generalises RAW's "single-rank units lose models equally
+// from both ends" to the multi-rank case).
+function removeCasualties(unit, count) {
+  const centreCol = (unit.rankWidth - 1) / 2;
+  const candidates = unit.models
+    .filter(m => m.alive)
+    .sort((a, b) => (b.row - a.row) || (Math.abs(b.col - centreCol) - Math.abs(a.col - centreCol)));
+  const killIds = new Set(candidates.slice(0, count).map(m => m.modelId));
+  return { ...unit, models: unit.models.map(m => killIds.has(m.modelId) ? { ...m, alive: false } : m) };
+}
+
+// Clean input/output contract, callable from either the Shooting phase's own
+// UI or Charge's standAndShoot branch (WHF-3's interface requirement:
+// casualties must land before chargeReach's contact resolution runs, not
+// just be wired to a Shooting-phase button). No UI/dice-display coupling —
+// caller renders `log`.
+//
+// situational: { longRange, moved, standAndShoot } — booleans the CALLER
+// resolves from context (distance, movement-phase snapshot, reaction type),
+// since this function doesn't know which phase/flow invoked it.
+//
+// Resolver integration (KT BON-2 shape): builds attackProfile/defenseProfile
+// baseStats, runs them through BonusResolver.resolveStats, rolls against the
+// resolved numbers. WHF has no bonus catalog wired up yet (BON-1 reserved
+// the schema; nothing populated it — see DEVLOG "BON-1" section), so
+// activeBonuses here are locally-built situational modifiers rather than a
+// loaded catalog. Same effect shape either way — wiring in a real catalog
+// later is a data change, not a resolver-call-site change.
+function resolveShot(shooter, target, situational) {
+  const weapon = shooter.weapons.find(w => w.type === 'ranged');
+  if (!weapon) {
+    return { log: [`${shooter.name} has no ranged weapon — no shot fired`], updatedTarget: target, hits: 0, wounds: 0, unsaved: 0 };
+  }
+
+  const bs    = parseInt(shooter.stats.BS, 10);
+  const shots = shooter.models.filter(m => m.alive && m.row <= 1).length; // Fire in Two Ranks (RAW default in 8th)
+  const ctx   = { trigger: 'onShoot', round: 0 };
+
+  const hitMods = [];
+  if (situational.longRange)     hitMods.push({ id: 'long-range',       effects: [{ type: 'mod', stat: 'hit', op: 'add', value: 1 }] });
+  if (situational.moved)         hitMods.push({ id: 'moved-and-fired',  effects: [{ type: 'mod', stat: 'hit', op: 'add', value: 1 }] });
+  if (situational.standAndShoot) hitMods.push({ id: 'stand-and-shoot',  effects: [{ type: 'mod', stat: 'hit', op: 'add', value: 1 }] });
+
+  const attack = BonusResolver.resolveStats(
+    { hit: toHitTarget(bs), strength: weapon.strength, shots }, hitMods, ctx
+  ).stats;
+
+  const penetration = armourPenetration(attack.strength);
+  const baseSave     = svToNumber(target.stats.Sv);
+  const saveMods = penetration > 0
+    ? [{ id: 'strength-penetration', effects: [{ type: 'mod', stat: 'save', op: 'add', value: penetration }] }]
+    : [];
+  const defense = BonusResolver.resolveStats(
+    { save: baseSave === null ? 99 : baseSave, wardSave: svToNumber(target.stats.wardSave) ?? 99, toughness: parseInt(target.stats.T, 10) },
+    saveMods, ctx
+  ).stats;
+
+  const woundTarget = toWoundTarget(attack.strength, defense.toughness);
+
+  const log = [`${shooter.name} fires ${weapon.name} — ${shots} shot${shots === 1 ? '' : 's'} at ${target.name}`];
+  let hits = 0, wounds = 0, unsaved = 0;
+  for (let i = 0; i < shots; i++) {
+    if (!rollAgainstTarget(attack.hit).success) continue;
+    hits++;
+    if (!rollAgainstTarget(woundTarget).success) continue;
+    wounds++;
+    if (rollAgainstTarget(defense.save).success) continue;
+    if (rollAgainstTarget(defense.wardSave).success) continue;
+    unsaved++;
+  }
+
+  log.push(
+    `${hits}/${shots} hit, ${wounds}/${hits} wound, ${unsaved} unsaved ` +
+    `(to-hit ${attack.hit}+, to-wound ${woundTarget}+, save ${baseSave === null ? 'none' : defense.save + '+'})`
+  );
+
+  const updatedTarget = unsaved > 0 ? removeCasualties(target, unsaved) : target;
+  if (unsaved > 0) log.push(`${target.name} loses ${unsaved} model${unsaved === 1 ? '' : 's'} (rear rank)`);
+
+  return { log, updatedTarget, hits, wounds, unsaved };
+}
+
 // ── Game state ─────────────────────────────────────────────────────────────
 const state = {
   units:                 [],
@@ -348,6 +469,11 @@ let reformRankWidth = 0;
 // stage: 'select-targets' -> 'awaiting-reaction' -> ['redirect-prompt' ->
 //        'redirect-pick'] -> 'ready-to-roll' -> 'resolved'
 let chargeFlow = null;
+
+// ── Shooting interaction state (WHF-4a) ─────────────────────────────────────
+// { shooterId, targetId, stage, log }
+// stage: 'select-target' -> 'ready-to-roll' -> 'resolved'
+let shootFlow = null;
 
 // ── Faction palettes ───────────────────────────────────────────────────────
 const PALETTES = {
@@ -432,6 +558,58 @@ function initTestUnits() {
     models: buildModels('unit-002', 9, 3),
     ...movementDefaults(),
   });
+
+  // WHF-4a direct-fire test units. Stat lines are the standard Handgunner /
+  // Peasant Bowman troop profile (BS3 rank-and-file, matching the source
+  // pattern already verified for General/Captain in Phase 1). Weapon
+  // profiles (Handgun: R24" S4 Armour Piercing + Move or Fire; Bow: R24" S3,
+  // no special rules) are recalled from training knowledge, NOT
+  // source-quoted — 8th.whfb.app's weapon-profile subpages 404'd during
+  // WHF-4a's verify-first pass. Flagged the same way Phase 1 flagged
+  // General/Captain before those were later confirmed; unblock by checking
+  // the weapon page directly next time someone's on this brief.
+  state.units.push({
+    instanceId:   'unit-003',
+    unitId:       'handgunners',
+    factionId:    'the-empire',
+    name:         'Handgunners',
+    factionLabel: 'The Empire',
+    category:     'Core Infantry',
+    position:     { x: 460, y: 300 },
+    facing:       90,
+    rankWidth:    5,
+    palette:      'empire',
+    stats: { M: '4"', WS: '3', BS: '3', S: '3', T: '3', W: '1', I: '3', A: '1', Ld: '7', Sv: '-' },
+    weapons: [
+      { name: 'Handgun', type: 'ranged', desc: '24", S4, Armour Piercing, Move or Fire',
+        range: 24, strength: 4, rules: ['armourPiercing', 'moveOrFire'] },
+      { name: 'Hand weapon', type: 'melee', desc: '' },
+    ],
+    abilities: [],
+    models: buildModels('unit-003', 10, 5),
+    ...movementDefaults(),
+  });
+
+  state.units.push({
+    instanceId:   'unit-004',
+    unitId:       'peasant-bowmen',
+    factionId:    'bretonnia',
+    name:         'Peasant Bowmen',
+    factionLabel: 'Bretonnia',
+    category:     'Core Infantry',
+    position:     { x: 740, y: 520 },
+    facing:       270,
+    rankWidth:    5,
+    palette:      'bretonnia',
+    stats: { M: '4"', WS: '2', BS: '3', S: '3', T: '3', W: '1', I: '3', A: '1', Ld: '5', Sv: '-' },
+    weapons: [
+      { name: 'Bow', type: 'ranged', desc: '24", S3', range: 24, strength: 3, rules: [] },
+      { name: 'Hand weapon', type: 'melee', desc: '' },
+    ],
+    abilities: ["Peasant's Duty"],
+    models: buildModels('unit-004', 10, 5),
+    ...movementDefaults(),
+  });
 }
 
 // ── SVG helpers ────────────────────────────────────────────────────────────
@@ -452,6 +630,8 @@ function renderPhaseTracker() {
   document.querySelectorAll('.phase-tab').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.phase === state.phase);
   });
+  const btn = document.getElementById('btn-end-phase');
+  if (btn) btn.textContent = `End ${PHASE_LABELS[state.phase]} Phase →`;
 }
 
 // ── Grid ──────────────────────────────────────────────────────────────────
@@ -494,6 +674,29 @@ function renderBoard() {
   if (chargeFlow && chargeFlow.stage === 'select-targets') {
     renderChargeTargetHighlights(overlayLayer);
   }
+  if (shootFlow && shootFlow.stage === 'select-target') {
+    renderShootTargetHighlights(overlayLayer);
+  }
+}
+
+// Highlight rings on units the current shooter can legally target — same
+// visual pattern as renderChargeTargetHighlights.
+function renderShootTargetHighlights(layer) {
+  const shooter = state.units.find(u => u.instanceId === shootFlow.shooterId);
+  if (!shooter) return;
+  validShootTargets(shooter).forEach(t => {
+    const fp     = unitFootprint(t);
+    const picked = shootFlow.targetId === t.instanceId;
+    layer.appendChild(svgEl('circle', {
+      cx: fp.centre.x.toFixed(2), cy: fp.centre.y.toFixed(2),
+      r:  Math.max(fp.halfW, fp.halfD) + 4,
+      fill: 'none',
+      stroke: picked ? 'var(--empire-gold)' : 'var(--selected-ring)',
+      'stroke-width': picked ? '3' : '2',
+      'stroke-dasharray': picked ? '' : '4 3',
+      'pointer-events': 'none',
+    }));
+  });
 }
 
 // Highlight rings on units the current charger can legally target. Filled
@@ -604,6 +807,12 @@ function renderUnit(layer, unit, isGhost) {
         }
         return;
       }
+      if (shootFlow) {
+        if (shootFlow.stage === 'select-target' && validShootTargetIdsForFlow().includes(unit.instanceId)) {
+          pickShootTarget(unit.instanceId);
+        }
+        return;
+      }
       selectUnit(unit.instanceId);
     });
   }
@@ -669,7 +878,7 @@ function getSelectedUnit() {
 }
 
 function selectUnit(instanceId) {
-  if (moveGhost || moveMode || chargeFlow) return; // block switching units during active action
+  if (moveGhost || moveMode || chargeFlow || shootFlow) return; // block switching units during active action
   if (state.selected === instanceId) { deselectAll(); return; }
   state.selected = instanceId;
   renderBoard();
@@ -680,6 +889,7 @@ function selectUnit(instanceId) {
 function deselectAll() {
   if (moveGhost || moveMode) cancelGhost();
   if (chargeFlow) cancelChargeFlow();
+  if (shootFlow) cancelShootFlow();
   state.selected = null;
   renderBoard();
   hidePanel();
@@ -855,6 +1065,16 @@ function confirmChargeTargets() {
   showPanel(getSelectedUnit());
 }
 
+// RAW: "a Stand and Shoot reaction can only be declared if... the unit has
+// missile weapons... and the range to the enemy is greater than the
+// charging unit's Move characteristic."
+function canStandAndShoot(target, charger) {
+  const weapon = target.weapons.find(w => w.type === 'ranged');
+  if (!weapon) return false;
+  const distance = pxDistance(target.position, charger.position) / INCHES_TO_PX;
+  return distance > parseFloat(charger.stats.M);
+}
+
 function chooseReaction(targetId, reaction) {
   if (!chargeFlow || chargeFlow.stage !== 'awaiting-reaction') return;
   const target  = state.units.find(u => u.instanceId === targetId);
@@ -902,10 +1122,27 @@ function chooseReaction(targetId, reaction) {
 
     chargeFlow.fledTargetId = targetId;
   } else if (reaction === 'standAndShoot') {
-    // Stubbed: no shooting math exists yet (WHF-4). See DEVLOG for the
-    // interface constraint this leaves for WHF-4 — the resolver it builds
-    // needs to be callable mid-charge, not just from its own phase.
-    chargeFlow.log.push(`${target.name} stands and shoots — no casualties resolved (WHF-4 hookup, see DEVLOG)`);
+    // WHF-4a: resolveShot() is the same function the Shooting phase's own
+    // UI calls — closes the debt WHF-3 left open. Casualties land here,
+    // before rollChargeMove()'s contact/failed-charge resolution runs (it
+    // re-fetches the charger fresh from state.units, so the reduced model
+    // count is picked up automatically).
+    const weapon = target.weapons.find(w => w.type === 'ranged');
+    if (!weapon) {
+      chargeFlow.log.push(`${target.name} has no ranged weapon — Stand and Shoot fizzles`);
+    } else {
+      const distance = pxDistance(target.position, charger.position) / INCHES_TO_PX;
+      const result = resolveShot(target, charger, {
+        longRange: distance > weapon.range / 2,
+        moved: false,
+        standAndShoot: true,
+      });
+      result.log.forEach(l => chargeFlow.log.push(l));
+      state.units[state.units.findIndex(u => u.instanceId === charger.instanceId)] = result.updatedTarget;
+      if (!isUnitAlive(result.updatedTarget)) {
+        chargeFlow.log.push(`${charger.name} destroyed by Stand and Shoot before making contact!`);
+      }
+    }
   }
 
   chargeFlow.reactionQueue = chargeFlow.reactionQueue.filter(id => id !== targetId);
@@ -1030,20 +1267,138 @@ function finishChargeFlow() {
   updateEndPhaseButton();
 }
 
-function endMovementPhase() {
-  state.phase = 'magic';
-  chargeFlow = null;
-  state.chargeReactions = {};
-  renderPhaseTracker();
-  document.getElementById('end-phase-bar').classList.remove('visible');
-  state.units.forEach(u => Object.assign(u, movementDefaults()));
+// ── Shooting flow (WHF-4a) ──────────────────────────────────────────────────
+// Declare-target -> roll -> resolved, one shooting unit at a time — same
+// sequential single-panel pattern the Charge flow already established.
+
+function validShootTargets(shooter) {
+  const weapon = shooter.weapons.find(w => w.type === 'ranged');
+  if (!weapon) return [];
+  return enemiesOf(shooter, state.units)
+    .filter(t => pxDistance(shooter.position, t.position) / INCHES_TO_PX <= weapon.range);
+}
+
+function validShootTargetIdsForFlow() {
+  if (!shootFlow) return [];
+  const shooter = state.units.find(u => u.instanceId === shootFlow.shooterId);
+  return validShootTargets(shooter).map(t => t.instanceId);
+}
+
+function enterShootDeclare() {
+  const unit = getSelectedUnit();
+  if (!unit || unit.phaseDone || chargeFlow) return;
+  if (!validShootTargets(unit).length) { flashHint('No enemy unit in range'); return; }
+  shootFlow = { shooterId: unit.instanceId, targetId: null, stage: 'select-target', log: [] };
   renderBoard();
-  flashHint('Magic phase — not yet implemented');
+  showPanel(unit);
+}
+
+function pickShootTarget(targetId) {
+  if (!shootFlow || shootFlow.stage !== 'select-target') return;
+  shootFlow.targetId = targetId;
+  shootFlow.stage = 'ready-to-roll';
+  renderBoard();
+  showPanel(getSelectedUnit());
+}
+
+function rollShoot() {
+  if (!shootFlow || shootFlow.stage !== 'ready-to-roll') return;
+  const shooter  = state.units.find(u => u.instanceId === shootFlow.shooterId);
+  const target   = state.units.find(u => u.instanceId === shootFlow.targetId);
+  const weapon   = shooter.weapons.find(w => w.type === 'ranged');
+  const distance = pxDistance(shooter.position, target.position) / INCHES_TO_PX;
+
+  const result = resolveShot(shooter, target, {
+    longRange: distance > weapon.range / 2,
+    moved:     shooter.shootingPenalty > 0,
+    standAndShoot: false,
+  });
+
+  state.units[state.units.findIndex(u => u.instanceId === target.instanceId)] = result.updatedTarget;
+  shootFlow.log = result.log;
+  shootFlow.stage = 'resolved';
+  renderBoard();
+  showPanel(getSelectedUnit());
+}
+
+function finishShootFlow() {
+  if (!shootFlow) return;
+  const idx = state.units.findIndex(u => u.instanceId === shootFlow.shooterId);
+  if (idx !== -1) state.units[idx] = { ...state.units[idx], phaseDone: true };
+  shootFlow = null;
+  deselectAll();
+  updateEndPhaseButton();
+}
+
+function cancelShootFlow() {
+  shootFlow = null;
+  const unit = getSelectedUnit();
+  renderBoard();
+  if (unit) showPanel(unit);
+}
+
+function holdFire() {
+  const unit = getSelectedUnit();
+  if (!unit || unit.phaseDone) return;
+  const idx = state.units.findIndex(u => u.instanceId === unit.instanceId);
+  state.units[idx] = { ...state.units[idx], phaseDone: true };
+  deselectAll();
+  updateEndPhaseButton();
+}
+
+// ── Phase advance ────────────────────────────────────────────────────────
+const PHASE_ORDER  = ['movement', 'magic', 'shooting', 'combat', 'end'];
+const PHASE_LABELS = { movement: 'Movement', magic: 'Magic', shooting: 'Shooting', combat: 'Combat', end: 'Turn' };
+// Phases gated on every unit finishing its action before the bar shows;
+// magic/combat/end have no per-unit action implemented yet (WHF-5+), so
+// their bar is always available.
+const GATED_PHASES = new Set(['movement', 'shooting']);
+
+function endPhase() {
+  const leaving = state.phase;
+  const next    = PHASE_ORDER[(PHASE_ORDER.indexOf(leaving) + 1) % PHASE_ORDER.length];
+
+  if (leaving === 'movement') {
+    // Snapshot shooting eligibility BEFORE movementDefaults() wipes the
+    // per-phase flags it's derived from (hasReformed/hasCharged/hasMoved
+    // reset here, ready for next turn's movement phase).
+    state.units.forEach(u => {
+      u.shootingBlocked  = u.hasReformed || u.hasCharged || u.fleeing;
+      u.shootingPenalty  = u.hasMoved ? 1 : 0;
+    });
+    chargeFlow = null;
+    state.chargeReactions = {};
+    state.units.forEach(u => Object.assign(u, movementDefaults()));
+  }
+  if (leaving === 'shooting') shootFlow = null;
+
+  state.phase = next;
+
+  if (next === 'movement') {
+    state.units.forEach(u => { u.phaseDone = false; });
+  }
+  if (next === 'shooting') {
+    // Units with nothing to do this phase (no ranged weapon, blocked by
+    // their movement-phase action, or a Move-or-Fire weapon that moved)
+    // skip straight to done so the phase-complete bar isn't stuck waiting.
+    state.units.forEach(u => {
+      const weapon = u.weapons.find(w => w.type === 'ranged');
+      const moveOrFireBlocked = weapon && weapon.rules && weapon.rules.includes('moveOrFire') && u.shootingPenalty > 0;
+      if (u.shootingBlocked || !weapon || moveOrFireBlocked) u.phaseDone = true;
+    });
+  }
+
+  renderPhaseTracker();
+  updateEndPhaseButton();
+  renderBoard();
+  if (next === 'magic')  flashHint('Magic phase — not yet implemented, skip ahead');
+  if (next === 'combat') flashHint('Combat phase — not yet implemented (WHF-5)');
 }
 
 function updateEndPhaseButton() {
   const bar = document.getElementById('end-phase-bar');
-  if (state.units.every(u => u.phaseDone)) bar.classList.add('visible');
+  const visible = !GATED_PHASES.has(state.phase) || state.units.every(u => u.phaseDone);
+  bar.classList.toggle('visible', visible);
 }
 
 // ── Arrow-key handlers ─────────────────────────────────────────────────────
@@ -1228,11 +1583,12 @@ function buildChargeSection(unit) {
         ${logHtml}
       </div>`;
     }
+    const canShoot = canStandAndShoot(unit, charger);
     return `<div class="panel-section">
       <div class="panel-section-title">Charge Reaction — ${escHtml(charger.name)} charges ${escHtml(unit.name)}</div>
       <div class="move-btns">
         <button class="move-btn" id="btn-react-hold">Hold</button>
-        <button class="move-btn" id="btn-react-shoot">Stand and Shoot</button>
+        <button class="move-btn" id="btn-react-shoot" ${canShoot ? '' : 'disabled'}>Stand and Shoot</button>
         <button class="move-btn" id="btn-react-flee">Flee!</button>
       </div>
       ${logHtml}
@@ -1267,6 +1623,15 @@ function buildChargeSection(unit) {
 
   if (chargeFlow.stage === 'ready-to-roll') {
     if (unit.instanceId !== chargeFlow.chargerId) return '';
+    if (!isUnitAlive(charger)) {
+      return `<div class="panel-section">
+        <div class="panel-section-title">Charge Cancelled — ${escHtml(charger.name)} destroyed</div>
+        ${logHtml}
+        <div class="move-btns">
+          <button class="move-btn" id="btn-charge-done">Continue</button>
+        </div>
+      </div>`;
+    }
     return `<div class="panel-section">
       <div class="panel-section-title">Roll Charge</div>
       <div class="move-btns">
@@ -1288,6 +1653,84 @@ function buildChargeSection(unit) {
   }
 
   return '';
+}
+
+// ── Shooting panel HTML (WHF-4a) ────────────────────────────────────────────
+function buildShootingSection(unit) {
+  if (state.phase !== 'shooting') return '';
+  if (shootFlow) return buildShootFlowSection(unit);
+
+  const weapon = unit.weapons.find(w => w.type === 'ranged');
+  const moveOrFireBlocked = weapon && weapon.rules && weapon.rules.includes('moveOrFire') && unit.shootingPenalty > 0;
+
+  if (unit.phaseDone) {
+    const reason = unit.shootingBlocked ? 'blocked — charged, reformed, or fled this turn'
+      : !weapon             ? 'no ranged weapon'
+      : moveOrFireBlocked   ? 'Move or Fire — moved this turn, cannot shoot'
+      : 'complete';
+    return `<div class="panel-section">
+      <div class="panel-section-title">Shooting</div>
+      <div class="panel-row panel-done">${escHtml(reason)}</div>
+    </div>`;
+  }
+
+  const penaltyNote = unit.shootingPenalty > 0
+    ? '<div class="panel-row dim">Moved this turn — -1 to hit</div>' : '';
+  return `<div class="panel-section">
+    <div class="panel-section-title">Shooting</div>
+    <div class="panel-row">${escHtml(weapon.name)} — range ${weapon.range}", S${weapon.strength}</div>
+    ${penaltyNote}
+    <div class="move-btns">
+      <button class="move-btn" id="btn-shoot-declare">Choose Target</button>
+      <button class="move-btn" id="btn-shoot-hold">Hold Fire</button>
+    </div>
+  </div>`;
+}
+
+function buildShootFlowSection(unit) {
+  const shooter = state.units.find(u => u.instanceId === shootFlow.shooterId);
+  if (!shooter || unit.instanceId !== shooter.instanceId) {
+    return `<div class="panel-section">
+      <div class="panel-row dim">Shooting in progress — click a highlighted enemy unit on the board.</div>
+    </div>`;
+  }
+  const logHtml = shootFlow.log.length
+    ? `<ul class="panel-list">${shootFlow.log.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul>` : '';
+
+  if (shootFlow.stage === 'select-target') {
+    return `<div class="panel-section">
+      <div class="panel-section-title">Choose Target</div>
+      <div class="panel-row">Click a highlighted enemy unit in range</div>
+      <div class="move-btns"><button class="move-btn" id="btn-shoot-cancel">Cancel (Esc)</button></div>
+    </div>`;
+  }
+  if (shootFlow.stage === 'ready-to-roll') {
+    const target = state.units.find(u => u.instanceId === shootFlow.targetId);
+    return `<div class="panel-section">
+      <div class="panel-section-title">Fire at ${escHtml(target.name)}</div>
+      <div class="move-btns">
+        <button class="move-btn" id="btn-shoot-roll">Roll shots</button>
+        <button class="move-btn" id="btn-shoot-cancel">Cancel (Esc)</button>
+      </div>
+    </div>`;
+  }
+  if (shootFlow.stage === 'resolved') {
+    return `<div class="panel-section">
+      <div class="panel-section-title">Shot Resolved</div>
+      ${logHtml}
+      <div class="move-btns"><button class="move-btn" id="btn-shoot-done">Continue</button></div>
+    </div>`;
+  }
+  return '';
+}
+
+function attachShootingListeners(unit) {
+  const q = id => document.getElementById(id);
+  q('btn-shoot-declare')?.addEventListener('click', enterShootDeclare);
+  q('btn-shoot-hold')?.addEventListener('click', holdFire);
+  q('btn-shoot-cancel')?.addEventListener('click', cancelShootFlow);
+  q('btn-shoot-roll')?.addEventListener('click', rollShoot);
+  q('btn-shoot-done')?.addEventListener('click', finishShootFlow);
 }
 
 function attachMovementListeners(unit) {
@@ -1372,11 +1815,13 @@ function showPanel(unit) {
       <ul class="panel-list">${abilityItems}</ul>
     </div>
     ${buildMovementSection(unit)}
+    ${buildShootingSection(unit)}
   `;
 
   panel.classList.add('panel-open');
 
   if (state.phase === 'movement') attachMovementListeners(unit);
+  if (state.phase === 'shooting') attachShootingListeners(unit);
 }
 
 function hidePanel() {
@@ -1390,7 +1835,7 @@ function init() {
   renderBoard();
   renderPhaseTracker();
 
-  document.getElementById('btn-end-phase').addEventListener('click', endMovementPhase);
+  document.getElementById('btn-end-phase').addEventListener('click', endPhase);
 
   document.getElementById('board').addEventListener('contextmenu', e => {
     e.preventDefault();
@@ -1408,6 +1853,7 @@ function init() {
     if (e.key === 'Escape') {
       if (moveGhost || moveMode) { cancelGhost(); return; }
       if (chargeFlow) { cancelChargeFlow(); return; }
+      if (shootFlow) { cancelShootFlow(); return; }
       deselectAll();
       return;
     }

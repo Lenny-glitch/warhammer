@@ -117,8 +117,9 @@ Full 8th edition Movement Phase. Ghost preview pattern (preview before commit), 
 |-------|--------|
 | WHF-1: Board & Regiment Engine | Complete |
 | WHF-2: Movement Phase | Complete |
-| WHF-3: Charge | Complete (see Phase 4) — Stand and Shoot stubbed pending WHF-4 |
-| WHF-4: Shooting | Not started |
+| WHF-3: Charge | Complete (see Phase 4) — Stand and Shoot now resolves real casualties (Phase 6) |
+| WHF-4a: Shooting (basic, direct-fire) | Complete (see Phase 6) — templates/blast/scatter/aura carry to 4b |
+| WHF-4b: Shooting (templates, blast, scatter) | Not started |
 | WHF-5: Combat (Close Combat + Rank Collapse) | Not started |
 
 ## Things The Next AI Should Know
@@ -287,6 +288,149 @@ fully local/hardcoded-test-unit (see WHF-1). This just makes the
 connection *possible* for whenever a brief actually wires it up (e.g.
 reading the Phase 1 unit templates live instead of the hardcoded
 `initTestUnits()` stand-ins).
+
+---
+
+### Phase 6 — WHF-4a: Shooting, Basic Direct-Fire (2026-07-10)
+
+**Brief:** `docs/memory/WHF4A_SHOOTING_BRIEF.md`. **Files:** `whf.js`,
+`whf.html` (resolver `<script>` tag, topbar subtitle), `shared/bonus-resolver.js`
+(v1.2.1 → v1.3.0, additive).
+
+Declare → Roll to Hit → Roll to Wound → Saves/Remove Casualties for
+direct-fire units, plus the resolver-shape integration this brief's own
+title promised, plus closing WHF-3's Stand and Shoot debt.
+
+**Verify-first caught the brief itself getting three things wrong** — checked
+against 8th.whfb.app before building rather than trusting the brief's text
+(per the standing rule; disk beats chat, but disk still needs checking
+against source):
+1. **Casualty removal direction.** Brief said "closest to the firer." RAW
+   (`/shooting/remove-casualties-shooting`) says the opposite, explicitly:
+   "Although casualties would normally fall amongst the front rank, for the
+   purposes of game play we remove models from the rear rank of the unit."
+   Single-rank units lose models from both ends evenly. Implemented per RAW,
+   not the brief — `removeCasualties()` sorts by row descending (rear
+   first), then by distance from centre column (flanks first within a rank,
+   generalising the "both ends" rule to multi-column rear ranks).
+2. **Rank-firing rule.** Brief said "front rank only unless Volley Fire."
+   8th edition's actual default is **Fire in Two Ranks**
+   (`/shooting/fire-in-two-ranks`) — not a special rule, the standard rule.
+   Both ranks fire by default; implemented as `models.filter(alive && row<=1)`.
+3. **Movement-and-shooting restriction.** Brief said "moved more than half M
+   ⇒ can't shoot." Not a rule anywhere in 8th. Actual: **marching** (not
+   partial movement) fully blocks shooting; any movement short of marching
+   gives -1 to hit but the unit can still fire (`/shooting/moving-and-shooting`,
+   `/movement/marching`). `/shooting/who-can-shoot` also named reformed,
+   rallied, charged, fleeing, and in-combat as additional full blocks the
+   brief didn't mention.
+
+None of these are marching/rallying/close-combat cases — **that restriction
+list is only partly reachable in this codebase.** Marching isn't
+implemented as a movement action at all (WHF-2 only built single-speed
+move/wheel/reform), rallying doesn't exist (no fled-unit recovery flow),
+and close combat doesn't exist (WHF-5). Implemented what's reachable:
+`shootingBlocked = hasReformed || hasCharged || fleeing` (all three ARE
+real state), `shootingPenalty = hasMoved ? 1 : 0` for the -1. Marching/
+rallying/in-combat restrictions are correctly-unenforceable carryovers, same
+treatment WHF-3 gave LoS/garrisons — noted, not stubbed.
+
+**RAW confirmed correct** (no brief changes needed): to-hit chart
+(`7 - BS`), S-vs-T wound chart (`clamp(4 - (S-T), 2, 6)`), armour save
+modified -1 per point of Strength from 4 up
+(`/shooting/armour-save-modifiers`), ward saves never modified by Strength
+and best-of-multiple not stacking (`/shooting/ward-saves`), natural 1 always
+fails to-hit/to-wound/save. General of the Empire and Empire Captain stat
+lines (flagged unverified since Phase 1) are now source-confirmed exactly
+matching what was already live: M4 WS5 BS5 S4 T4 W3 I5 A3 Ld9 / ...W2...Ld8.
+**Could not diff against live Firebase** — no local `firebase-config.js`
+exists in this sandbox despite Phase 5 saying Nox supplied one; flagging as
+blocked, not skipped, for whoever's next on a session with the real config.
+
+**Deliberate simplification, not a miss:** RAW's "7+ to hit/wound/save" is a
+chained reroll (roll a 6, then reroll against a second threshold —
+`/shooting/7-to-hit`). Implemented as a flat auto-fail past 6 instead
+(`rollAgainstTarget()`). Consistent with this project's "legible over
+rules-exact" standing priority and the precedent WHF-3 set for edge cases
+like "There's Too Many of Them" — noted here rather than silently applied.
+
+**Resolver integration (KT BON-2 shape, per the brief's actual ask):**
+`resolveShot()` builds `attackProfile`/`defenseProfile` baseStats objects
+and runs them through `BonusResolver.resolveStats()` before rolling, same
+call shape as KT's `rollShot`. WHF has no bonus catalog wired up yet (BON-1
+reserved the schema; nothing populated it — see the BON-1 section below), so
+the `activeBonuses` passed in are locally-built situational modifiers
+(long range, moved-and-fired, standing-and-shooting — each a `+1 add` on the
+`hit` stat) rather than a loaded Firebase catalog. Same effect shape either
+way — wiring in a real catalog later is a data change at the call site, not
+a resolver-call-site change. Extended `shared/bonus-resolver.js`'s
+`ROLL_TARGET_STATS` additively: added `'wound'` and `'wardSave'`; reused the
+existing `'hit'` and `'save'` stats as-is for WHF's to-hit target and
+armour save (same roll-target semantics KT already uses them for — not a
+repurpose). Bumped `BONUS_RESOLVER_VERSION` to 1.3.0. KT's own 24/24 test
+suite still passes unchanged (`node shared/bonus-resolver.test.js`) — purely
+additive, only other current consumer is `killteam/index.html`.
+
+**Closing the Stand and Shoot debt (WHF-3's interface requirement):**
+`chooseReaction()`'s `standAndShoot` branch now calls `resolveShot()`
+directly — casualties land on the charging unit and are written back into
+`state.units` before `rollChargeMove()` runs (which re-fetches the charger
+fresh from `state.units`, so the reduced model count is picked up
+automatically, no extra plumbing needed). Added the RAW gate the brief
+didn't mention: Stand and Shoot is only legal if the reacting unit has a
+ranged weapon AND the charge distance exceeds the charger's M
+(`/movement/stand-and-shoot`) — the button is disabled otherwise. If the
+reaction reduces the charger to zero models, the charge flow now shows a
+"Charge Cancelled — destroyed" state instead of proceeding to the roll.
+
+**Test-only units added** (none of the existing four had a ranged weapon —
+WHF-3's Halberdiers/Knights of the Realm are both melee-only): Empire
+Handgunners (Handgun: 24", S4, Armour Piercing, Move or Fire) and
+Bretonnia Peasant Bowmen (Bow: 24", S3). **Weapon profiles are recalled
+from training knowledge, not source-quoted** — 8th.whfb.app's weapon-profile
+subpages 404'd during this brief's verify-first pass (tried
+`/rules/weapons/handgun` and `/rules/weapons/bow`, both 404). Same flag
+Phase 1 put on General/Captain before those were later confirmed correct —
+unblock by finding the real weapon-page URLs next time someone's here.
+Troop stat lines and points costs are otherwise unverified for these two
+(only General/Captain were checked this pass). Sv set to `-` (no armour
+save) for both, an assumption not a confirmed value.
+
+**Phase-advance infrastructure, built out of necessity:** `endMovementPhase()`
+was a dead end — it set `phase = 'magic'` and displayed "not yet
+implemented" with no way to progress further (the end-phase button was
+permanently bound to that one function). Generalized into `endPhase()`
+cycling `PHASE_ORDER = [movement, magic, shooting, combat, end]`. Magic and
+Combat stay stubbed pass-throughs (flash a hint, advance immediately) — WHF-5
+owns Combat. Shooting phase auto-marks `phaseDone` for units with nothing to
+do (no ranged weapon, `shootingBlocked`, or Move-or-Fire-blocked) so the
+phase-complete bar isn't stuck waiting on units that structurally can't act.
+`updateEndPhaseButton()` is now phase-aware (`GATED_PHASES = {movement,
+shooting}`) rather than one-directional (previously only ever added the
+`visible` class, never removed it — harmless before since nothing needed to
+re-hide it, but would have broken silently under the new multi-phase cycle).
+
+**Not done / explicitly 4b (per brief scope):** template/blast weapons
+(stone throwers already in Empire faction data from Phase 1 — noted as a 4b
+carryover, not built smaller here), shape/containment engine, scatter tool,
+aura system.
+
+**Testing:** same jsdom-driven functional smoke test pattern WHF-3 used
+(Playwright's Chromium still needs `libasound.so.2`, still unavailable, still
+a real sandbox limitation not a skip). One wrinkle worth recording for
+whoever writes the next one of these: `whf.js` is `'use strict'`, and
+top-level `const state` / `let chargeFlow` / `let shootFlow` do NOT attach to
+`window` even when the script runs as a real injected `<script>` element
+(only top-level `function` declarations do) — reach them via
+`window.eval('state')` etc., which shares the same script-lexical scope.
+Exercised: full declare→hit→wound→save→casualty cycle (Handgunners vs
+Knights of the Realm, 10 shots fired confirming Fire in Two Ranks, 1 rear-
+rank casualty confirmed by row index), auto-skip for melee-only units, and
+Stand and Shoot reducing a charger from 20 to 18 models before the charge-roll
+stage — the exact debt this brief exists to close. 18/18 checks passed. Test
+script was not committed (one-off, same as WHF-3's).
+
+**Commits:** (cite hash after commit below.)
 
 ---
 
