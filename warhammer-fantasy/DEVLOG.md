@@ -430,7 +430,7 @@ Stand and Shoot reducing a charger from 20 to 18 models before the charge-roll
 stage — the exact debt this brief exists to close. 18/18 checks passed. Test
 script was not committed (one-off, same as WHF-3's).
 
-**Commits:** (cite hash after commit below.)
+**Commits:** `0b483f4`
 
 ---
 
