@@ -9,3 +9,5 @@ warhammershit
 warhammershit.pub
 warhammerstuff
 warhammerstuff.pub
+node_modules/
+.playwright-libs/
