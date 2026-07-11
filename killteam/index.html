@@ -1343,9 +1343,12 @@ function renderOpExpanded(op) {
     const atk = w.profiles?.ATK || '?';
     const hit = w.profiles?.HIT || '?';
     const dmg = w.profiles?.DMG || '?';
-    // Range from RNG field or extracted from WR
-    const rngNum = parseInt(w.profiles?.RNG) || ((/Range\s+(\d+)/i.exec(w.profiles?.WR || '') || [])[1] | 0);
-    const rngStr = rngNum ? `${rngNum}"` : (w.type === 'melee' ? 'Melee' : '—');
+    // BUG_KT_UNLIMITED_RANGE: was its own ad hoc RNG/WR-fallback parse
+    // (now consolidated into weaponRange()), and null (genuinely
+    // unlimited) fell through to "—" indistinguishably from "unparsed" —
+    // shown as its own explicit "∞" instead.
+    const rngNum = weaponRange(w);
+    const rngStr = w.type === 'melee' ? 'Melee' : (rngNum === null ? '∞' : `${rngNum}"`);
     // Strip "Range X"," from WR for keywords-only display
     const kws = (w.profiles?.WR || '').replace(/Range\s+\d+[""]\s*,?\s*/i, '').trim().replace(/^,\s*/, '');
     return `
@@ -1631,7 +1634,7 @@ function renderActivationBar(playerSlot, turn) {
             ${ranged.map((w, i) => `
               <button class="action-btn" onclick="pickWeaponForShoot('${playerSlot}',${i})" style="display:flex;flex-direction:column;align-items:flex-start;padding:6px 10px;">
                 <span>${escHtml(w.name)}</span>
-                <span style="font-size:10px;color:var(--text-dim);">ATK ${w.profiles.ATK} / ${w.profiles.HIT} / RNG ${w.profiles.RNG} / DMG ${w.profiles.DMG}</span>
+                <span style="font-size:10px;color:var(--text-dim);">ATK ${w.profiles.ATK} / ${w.profiles.HIT} / RNG ${weaponRange(w) === null ? '∞' : w.profiles.RNG} / DMG ${w.profiles.DMG}</span>
               </button>`).join('')}
           </div>
           <button class="btn" onclick="cancelShoot()">Cancel</button>
@@ -2292,16 +2295,22 @@ function updateDragOverlay(tx, ty) {
   // Firing arc — weapon range projected from drag destination
   if (dragState.maxSightRange > 0) {
     const { arcRgb, maxSightRange } = dragState;
-    overlay.appendChild(svgEl('circle', {
-      cx: tx, cy: ty, r: maxSightRange,
-      fill: `rgba(${arcRgb},0.10)`,
-      stroke: `rgba(${arcRgb},0.30)`,
-      'stroke-width': 0.12, 'stroke-dasharray': '0.4 0.25',
-    }));
+    // BUG_KT_UNLIMITED_RANGE: Infinity (an unlimited-range weapon) has no
+    // meaningful circle to draw — skip the radius ring, but every enemy
+    // still counts as "in range" below.
+    const unlimited = !Number.isFinite(maxSightRange);
+    if (!unlimited) {
+      overlay.appendChild(svgEl('circle', {
+        cx: tx, cy: ty, r: maxSightRange,
+        fill: `rgba(${arcRgb},0.10)`,
+        stroke: `rgba(${arcRgb},0.30)`,
+        'stroke-width': 0.12, 'stroke-dasharray': '0.4 0.25',
+      }));
+    }
     const myPlayer = (gameData.operatives[dragState.opId] || {}).player;
     for (const enemy of Object.values(gameData.operatives || {})) {
       if (enemy.player === myPlayer || enemy.wounds <= 0 || enemy.x < 0) continue;
-      if (Math.hypot(enemy.x - tx, enemy.y - ty) <= maxSightRange) {
+      if (unlimited || Math.hypot(enemy.x - tx, enemy.y - ty) <= maxSightRange) {
         overlay.appendChild(svgEl('circle', {
           cx: enemy.x, cy: enemy.y, r: TOKEN_R + 0.12,
           fill: 'none', stroke: 'rgba(255,220,50,0.60)', 'stroke-width': 0.14,
@@ -2478,7 +2487,32 @@ function refreshRadialIfActive() {
 //  SHOOT ACTION — KT-2 Part 2
 // ═══════════════════════════════════════════════════════════
 
-function parseRng(s)  { return parseInt(s  || '0') || 0; }
+// BUG_KT_UNLIMITED_RANGE (2026-07-11): absent RNG means unlimited range,
+// not zero — pipeline convention confirmed in PIPE-H1 (Firebase drops null
+// keys, so an absent field IS the null; true for every PSYCHIC weapon in
+// every faction, e.g. Legionary's Fireblast/Life siphon). Returns null for
+// unlimited so callers can't accidentally treat it as a real numeric range
+// via truthy/falsy collapse the way the old `|| 0` fallback did — every
+// consumer below is written to check `=== null` explicitly, not `!range`
+// (which null and 0 would both satisfy, silently reintroducing this bug).
+function parseRng(s) {
+  if (s === undefined || s === null || s === '') return null;
+  const n = parseInt(s);
+  return Number.isFinite(n) ? n : null;
+}
+// Range from the RNG field, falling back to a WR-text "Range N"" match —
+// consolidates two previously-duplicated inline versions of this fallback
+// (getMaxSightRange, the unit-card weapon row). Needed for older/
+// snapshotted games whose export predates the pipeline capturing RNG
+// directly (snapshot rule: those games must keep working as before, not
+// just newly-uploaded ones). Returns null when genuinely unlimited (no
+// RNG, no "Range N" in WR either).
+function weaponRange(w) {
+  const r = parseRng(w.profiles?.RNG);
+  if (r !== null) return r;
+  const m = /Range\s+(\d+)/i.exec(w.profiles?.WR || '');
+  return m ? (parseInt(m[1]) || null) : null;
+}
 function parseHit(s)  { return parseInt(s  || '4') || 4; }
 function parseDmgPair(s) {
   const p = String(s || '1/1').split('/').map(v => parseInt(v) || 1);
@@ -2584,10 +2618,13 @@ function splitBonusesBySide(bonuses) {
 // combatants' board positions + the weapon's own range) — deterministic,
 // so both clients would compute the same value if they ever needed to;
 // no randomness involved, nothing to write into the action record for it.
-// null/0 range (unlimited) always resolves false per the brief.
+// Unlimited range (null) always resolves false per the brief — already
+// correct before BUG_KT_UNLIMITED_RANGE (parseRng's old 0-fallback was
+// falsy too), kept explicit now that null is the real sentinel rather
+// than relying on 0 and null happening to both be falsy.
 function computeHalfRangeFact(weapon, distance) {
   const rng = parseRng(weapon?.profiles?.RNG);
-  if (!rng) return false;
+  if (rng === null) return false;
   return distance <= rng / 2;
 }
 
@@ -2777,7 +2814,13 @@ function resolveFightOutcome(atkProfile, defProfile, atkRolls, defRolls) {
   return { atkAnnotated, defAnnotated, dmgToDefender, dmgToAttacker };
 }
 function getRangedWeapons(op) {
-  return (op.weapons || []).filter(w => parseRng(w.profiles?.RNG) > 0);
+  // BUG_KT_UNLIMITED_RANGE: was `parseRng(...) > 0`, using range as a
+  // proxy for "is this a ranged weapon" — an unlimited-range weapon
+  // (parseRng null) silently vanished from this list, no error, just no
+  // Shoot button. The weapon's own type field is the actual discriminator
+  // (same pattern getMeleeWeapons already uses); range has nothing to do
+  // with whether a weapon IS ranged, only how far it reaches.
+  return (op.weapons || []).filter(w => w.type === 'ranged');
 }
 function getMeleeWeapons(op) {
   return (op.weapons || []).filter(w => w.type === 'melee');
@@ -2786,15 +2829,15 @@ function getDefaultMeleeWeapon(op) {
   const melee = getMeleeWeapons(op);
   return melee.find(w => w.isDefault) || melee[0] || null;
 }
+// Returns Infinity if any ranged weapon has unlimited range — callers
+// (movement-drag firing-arc overlay) must handle that explicitly, since
+// drawing an SVG circle with r=Infinity isn't meaningful.
 function getMaxSightRange(op) {
   let max = 0;
   for (const w of (op.weapons || [])) {
     if (w.type !== 'ranged') continue;
-    let r = parseRng(w.profiles?.RNG);
-    if (!r) {
-      const m = /Range\s+(\d+)/i.exec(w.profiles?.WR || '');
-      if (m) r = parseInt(m[1]) || 0;
-    }
+    const r = weaponRange(w);
+    if (r === null) return Infinity;
     if (r > max) max = r;
   }
   return max;
@@ -2809,12 +2852,16 @@ function hasFightTarget(op) {
 // Returns { valid, reason, inCover }
 function getShootValidity(attacker, target, weapon) {
   const terrain = gameData.terrain || {};
-  const range   = parseRng(weapon.profiles.RNG);
+  const range   = weaponRange(weapon);
   const dist    = Math.hypot(target.x - attacker.x, target.y - attacker.y);
 
-  if (target.wounds <= 0)         return { valid: false, reason: 'Incapacitated', inCover: false };
-  if (target.order === 'conceal') return { valid: false, reason: 'CONCEALED',     inCover: false };
-  if (dist > range)               return { valid: false, reason: 'Out of range',  inCover: false };
+  if (target.wounds <= 0)                    return { valid: false, reason: 'Incapacitated', inCover: false };
+  if (target.order === 'conceal')            return { valid: false, reason: 'CONCEALED',     inCover: false };
+  // BUG_KT_UNLIMITED_RANGE: range === null means unlimited — any target
+  // in LOS is in range, per the brief. Previously `range` fell back to 0
+  // for an absent RNG, so `dist > range` was true for any positive
+  // distance and every unlimited-range shot read as "Out of range".
+  if (range !== null && dist > range)        return { valid: false, reason: 'Out of range',  inCover: false };
 
   const los = rayResult(attacker.x, attacker.y, target.x, target.y, terrain);
   if (los === 'blocked')          return { valid: false, reason: 'LOS blocked',   inCover: false };
@@ -2929,15 +2976,20 @@ function updateShootOverlay(p) {
   if (!attacker) return;
 
   clearEl(overlay);
-  const range = parseRng(weapon.profiles.RNG);
+  const range = weaponRange(weapon);
   const mx = p.x, my = p.y;
 
-  // Weapon range circle
-  overlay.appendChild(svgEl('circle', {
-    cx: attacker.x, cy: attacker.y, r: range,
-    fill: 'rgba(200,80,50,0.04)', stroke: 'rgba(200,80,50,0.25)',
-    'stroke-width': 0.1, 'stroke-dasharray': '0.5 0.3',
-  }));
+  // Weapon range circle — BUG_KT_UNLIMITED_RANGE: null (unlimited) has no
+  // meaningful radius to draw; getShootValidity() below already treats
+  // every target as in-range regardless, so skipping the ring is the only
+  // change needed here.
+  if (range !== null) {
+    overlay.appendChild(svgEl('circle', {
+      cx: attacker.x, cy: attacker.y, r: range,
+      fill: 'rgba(200,80,50,0.04)', stroke: 'rgba(200,80,50,0.25)',
+      'stroke-width': 0.1, 'stroke-dasharray': '0.5 0.3',
+    }));
+  }
 
   // Nearest hovered enemy
   const hoverTarget = Object.values(gameData.operatives || {}).find(o =>

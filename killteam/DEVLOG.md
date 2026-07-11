@@ -1380,3 +1380,91 @@ sandbox).
 
 **Out of scope, unchanged:** 40k game app, roster app changes, new
 Firebase paths, lobby/matchmaking, pipeline changes.
+
+## 2026-07-11 — BUG_KT_UNLIMITED_RANGE: absent rng treated as unshootable
+
+Brief: `briefs/BUG_KT_UNLIMITED_RANGE.md`. Nox hit this in a real live
+Legionary game right after PIPE-H1 shipped: Balefire Acolyte's Fireblast
+and Life siphon showed range "—" and were never offered in the Shoot
+flow — confirmed against data during PIPE-H1 that this is correct,
+intentional data (no `rng` key = unlimited range, true for every PSYCHIC
+weapon in every faction; Firebase drops null keys so absent *is* the
+null). The engine, not the data, had the bug.
+
+**Root cause:** `parseRng(s) { return parseInt(s || '0') || 0; }` —
+collapsed "absent" and "0" into the same value, and several call sites
+used that as a truthy/`>0` eligibility gate rather than an actual range
+number:
+
+- `getRangedWeapons()`: `filter(w => parseRng(w.profiles?.RNG) > 0)` —
+  used range as a *proxy* for "is this weapon ranged at all," so an
+  unlimited-range weapon silently failed the gate and vanished from the
+  Shoot weapon picker. Fixed to filter on `w.type === 'ranged'` directly
+  — the actual discriminator field, matching how `getMeleeWeapons()`
+  already worked. This was the exact reported symptom.
+- `getShootValidity()`: `if (dist > range)` with `range` defaulting to 0
+  meant an unlimited-range weapon read as "Out of range" against literally
+  any target at any positive distance. Even if the weapon-picker bug
+  above were the only fix, targeting would still have failed here.
+- `getMaxSightRange()` (movement-drag firing-arc overlay, a UX aid, not
+  gate logic — found while auditing every `parseRng` call site, not named
+  in the brief): an unlimited weapon contributed 0 to an operative's max
+  sight radius instead of dominating it, so the "what will I threaten
+  after this move" overlay silently disappeared for an operative whose
+  only ranged weapon has unlimited range.
+
+**Fix:** `parseRng()` now returns `null` for absent/empty/unparseable
+input instead of `0` — an explicit, non-numeric sentinel that can't
+silently satisfy a `>0` or arithmetic check the way `0` could. Every
+consumer was audited and updated to check `=== null` explicitly (not
+`!range`, which would re-collapse `null` and `0` back together and
+reintroduce the same class of bug): `getRangedWeapons` (now type-based,
+doesn't touch range at all), `getShootValidity` (skips the out-of-range
+check on `null`), `getMaxSightRange` (returns `Infinity` — dominates any
+finite weapon), `computeHalfRangeFact` (was already correct by the old
+`0`/`null` both being falsy; made the `=== null` check explicit rather
+than relying on that coincidence going forward).
+
+Added `weaponRange(w)`: consolidates two previously-duplicated inline
+"RNG field, falling back to a WR-text 'Range N\"' match" implementations
+(the unit-card weapon row, `getMaxSightRange`'s old inline version) into
+one function. The WR-text fallback matters for older/snapshotted games
+whose export predates PIPE-H1's pipeline fix — snapshot rule means those
+must keep working exactly as before, not just newly-uploaded rosters.
+
+**Rendering:** two places drew an SVG circle at the weapon's range radius
+(the movement-drag firing-arc overlay, the shoot-aim-drag range ring) —
+both now skip drawing that circle when range is `null`/`Infinity` (not
+meaningful to render) while still treating every target as in-range
+underneath. **Display:** unit-card weapon row and the Shoot weapon-picker
+button both now show `∞` for unlimited range instead of `—` (brief's
+call, taken: "clearer" per the brief's own suggestion) — melee weapons
+still show `Melee`, unaffected, using the type field not range presence.
+
+**Testing:** Playwright's Chromium confirmed still blocked in this sandbox
+(`libasound.so.2` missing, no apt-get/sudo — same limitation as the
+warhammer-fantasy sessions' DEVLOGs, checked fresh rather than assumed).
+killteam's own established precedent (real disposable Firebase game,
+headless Chromium) wasn't available here; fell back to the same
+jsdom-driven pattern WHF used — loaded `index.html` as a real injected
+`<script>` element (not `eval`, so top-level `function` declarations
+attach to `window` and `let`/`const` like `gameData` are reachable via
+`window.eval`, same as the warhammer-fantasy sessions) and called the
+actual pure functions directly against synthetic weapon/operative data
+matching Balefire Acolyte's real shape. 19/19 checks: `parseRng`/`weaponRange`
+null-vs-numeric handling, Fireblast correctly appearing in
+`getRangedWeapons()` (the reported symptom, directly reproduced and
+fixed), a melee weapon with no RNG correctly NOT leaking into the ranged
+list, `getMaxSightRange` returning `Infinity` for an unlimited weapon and
+the correct finite max otherwise, `getShootValidity` correctly NOT
+returning "Out of range" for a very distant target with Fireblast while
+a control case (Bolt pistol, same distance) correctly still does, and
+`computeHalfRangeFact` staying `false` for unlimited range at any
+distance including 0. Test script not committed (one-off). **Not
+verified here, by design:** Nox's own live-game acceptance test (fire
+Fireblast via `?dev=true`, confirm the shot resolves and the dev readout
+lists its bonuses) is the brief's actual "Done when" and simultaneously
+closes the BON-2b/KT-RS shoot acceptance — that's the real end-to-end
+check this jsdom pass can't substitute for.
+
+**Commits:** (cite hash after commit below.)
