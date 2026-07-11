@@ -1530,6 +1530,10 @@
     }
     .rb-search-pool-btn { width: auto; padding: 0.35rem 0.75rem; font-size: 0.78rem; }
     .rb-search-hint { font-size: 0.72rem; color: var(--text-dim); }
+
+    /* ROSTER_UX_2: FactionPicker's build-roster button — reuses .btn
+       .btn-primary but inline within a faction row, not full-width. */
+    .fp-build-btn { width: auto; padding: 0.5rem 1.1rem; font-size: 0.8rem; }
   </style>
 </head>
 <body>
@@ -1550,13 +1554,15 @@
       <div class="loading-text">Loading…</div>
     </div>
 
+    <!-- ROSTER_UX_2: single prominent action, no maintenance affordance
+         on the player-facing landing. "Add Unit to Library" moved behind
+         the Maintenance gate (below). -->
     <div class="action-row" id="action-row">
-      <button class="btn btn-primary"    onclick="App.goToUnitCreator()">Add Unit to Library</button>
-      <button class="btn btn-secondary"  onclick="App.goToRoster()">Browse &amp; Build Roster</button>
+      <button class="btn btn-primary" onclick="App.goToFactionPick()">Build Roster</button>
     </div>
     <div class="home-util">
       <a href="#my-rosters" class="util-link">My Rosters</a>
-      <a href="#clean-drafts" class="util-link">Clean Drafts</a>
+      <a href="#maintenance" class="util-link">Maintenance</a>
     </div>
   </div>
 
@@ -1571,8 +1577,11 @@
     </div>
   </div>
 
-  <!-- SCREEN: LIBRARY -->
+  <!-- SCREEN: LIBRARY (maintenance) -->
   <div id="screen-library" class="screen"></div>
+
+  <!-- SCREEN: FACTION PICKER (ROSTER_UX_2 — player-facing, replaces Library as the build-roster landing) -->
+  <div id="screen-faction-pick" class="screen"></div>
 
   <!-- SCREEN: ROSTER BUILDER -->
   <div id="screen-roster" class="screen"></div>
@@ -1580,11 +1589,14 @@
   <!-- SCREEN: UNIT SEARCH (40k lazy migration) -->
   <div id="screen-unit-search" class="screen"></div>
 
-  <!-- SCREEN: ROSTER CLEANER -->
+  <!-- SCREEN: ROSTER CLEANER (maintenance) -->
   <div id="screen-clean-drafts" class="screen"></div>
 
   <!-- SCREEN: MY ROSTERS -->
   <div id="screen-my-rosters" class="screen"></div>
+
+  <!-- SCREEN: MAINTENANCE HUB (ROSTER_UX_2) -->
+  <div id="screen-maintenance" class="screen"></div>
 
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -1628,6 +1640,41 @@
     return (name || '').replace(/\s*\+\s*$/, '');
   }
 
+  // ── MAINTENANCE GATE (ROSTER_UX_2) ──────────────────────────────────────────
+  //
+  // NOT SECURITY. This app has no auth by design (see the "no auth exists"
+  // banner in My Rosters) — now that it's publicly hosted via Firebase
+  // Hosting against the one shared database, this passphrase exists purely
+  // as a misclick barrier so a non-technical second player following a
+  // shared link doesn't stumble into editing/deleting the canonical unit
+  // library. Checked client-side against a hardcoded constant, visible to
+  // anyone who views source. Do not treat this as protecting gameData from
+  // a hostile actor — it protects a trusted-link audience from themselves.
+  const MAINTENANCE_PASSPHRASE = 'ordo-maintenance';
+
+  const Maintenance = {
+    KEY: 'roster_maintenance_unlocked',
+
+    isUnlocked() {
+      return sessionStorage.getItem(Maintenance.KEY) === 'true';
+    },
+
+    // Prompts for the passphrase if not already unlocked this session.
+    // Returns true if the caller may proceed, false if the user cancelled
+    // or entered the wrong passphrase (an alert explains which).
+    gate(actionLabel) {
+      if (Maintenance.isUnlocked()) return true;
+      const attempt = prompt(`Maintenance passphrase required — ${actionLabel}`);
+      if (attempt === null) return false;
+      if (attempt !== MAINTENANCE_PASSPHRASE) {
+        alert('Incorrect passphrase.');
+        return false;
+      }
+      sessionStorage.setItem(Maintenance.KEY, 'true');
+      return true;
+    },
+  };
+
   // ── APP ──────────────────────────────────────────────────────────────────────
 
   const App = {
@@ -1668,12 +1715,12 @@
       document.getElementById('action-row').classList.add('visible');
     },
 
-    goToUnitCreator() {
-      if (App.selectedSystem) location.hash = `#unit/new/${App.selectedSystem}`;
-    },
-
-    goToRoster() {
-      if (App.selectedSystem) location.hash = `#library/${App.selectedSystem}`;
+    // ROSTER_UX_2: replaces goToUnitCreator/goToRoster (both deleted, no
+    // longer called from anywhere — Add Unit moved to Maintenance, which
+    // builds its own hash directly; Browse&Build's old Library landing is
+    // now FactionPicker).
+    goToFactionPick() {
+      if (App.selectedSystem) location.hash = `#faction-pick/${App.selectedSystem}`;
     }
   };
 
@@ -2423,7 +2470,11 @@
     _open(system, factionId, unitId)   { location.hash = `#unit-view/${system}/${factionId}/${unitId}`; },
     _edit(system, factionId, unitId)   { location.hash = `#unit/edit/${system}/${factionId}/${unitId}`; },
     async _delete(system, factionId, unitId, name) {
-      if (!confirm(`Delete "${name}"?\n\nThis cannot be undone.`)) return;
+      // ROSTER_UX_2 item 3: name the actual blast radius — this is
+      // canonical gameData, not a personal draft. The router already
+      // gated getting to this screen at all; this confirm is the last
+      // line before an irreversible shared-library write.
+      if (!confirm(`Delete "${name}"?\n\nThis removes it from the shared unit library for ALL rosters and future games — not just yours. This cannot be undone.`)) return;
       try {
         await App.db.ref(`gameData/${system}/factions/${factionId}/units/${unitId}`).remove();
         const faction = Library.state.factions.find(f => f.id === factionId);
@@ -2434,6 +2485,56 @@
         alert(`Delete failed: ${err.message}`);
       }
     }
+  };
+
+  // ── FACTION PICKER (ROSTER_UX_2) ────────────────────────────────────────────
+  // Player-facing "pick a faction to build with" step. Deliberately minimal —
+  // no search, no +Add Unit, no per-unit Edit/Delete. Unit browsing for
+  // roster-building itself happens inside RosterBuilder (it already has its
+  // own browser — see RosterBuilder._renderBrowser); this screen's only job
+  // is getting from "I picked a system" to "I'm in the builder for my
+  // faction" in one uncluttered step.
+
+  const FactionPicker = {
+    async render(system) {
+      const el = document.getElementById('screen-faction-pick');
+      el.innerHTML = '<div class="lib-wrap"><div class="loading-text">Loading factions…</div></div>';
+      try {
+        const snap = await App.db.ref(`gameData/${system}/factions`).once('value');
+        const val  = snap.val() || {};
+        const factions = Object.entries(val)
+          .map(([fid, faction]) => ({
+            id:    fid,
+            name:  faction.info?.name || fid,
+            count: Object.keys(faction.units || {}).length,
+          }))
+          .filter(f => f.count > 0)
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        if (!factions.length) {
+          el.innerHTML = '<div class="lib-wrap"><div class="lib-empty">No factions available yet for this system.</div></div>';
+          return;
+        }
+
+        el.innerHTML = `
+          <div class="lib-wrap">
+            <p class="lead">Pick a faction to build a roster with:</p>
+            <div class="lib-list">
+              ${factions.map(f => `
+                <div class="lib-faction-group">
+                  <div class="lib-faction-header">
+                    <span>${f.name} <span class="lib-unit-meta" style="font-weight:400;">(${f.count} units)</span></span>
+                    <button class="btn btn-primary fp-build-btn" onclick="location.hash='#roster/new/${system}/${f.id}'">Build Roster</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } catch (err) {
+        el.innerHTML = `<div class="lib-wrap"><div class="lib-empty">Error loading factions: ${err.message}</div></div>`;
+      }
+    },
   };
 
   // ── UNIT CARD ────────────────────────────────────────────────────────────────
@@ -4750,7 +4851,13 @@
     // window would break that join. Not guarded against here; flagged in
     // the brief report instead of adding cross-table lookup machinery for it.
     async _deleteExport(system, id) {
-      if (!confirm('Delete this published roster? The link will stop working. Games already created from it are unaffected — they snapshot roster data at creation and never re-read this.')) return;
+      // ROSTER_UX_2 item 2/3: export deletion is the one My Rosters action
+      // that's gated (draft deletion stays ungated — it's the user's own
+      // work product, per the brief). Item 3 also adds the known-gap
+      // warning line logged above: a game still waiting on player 2 needs
+      // this export to exist at join time.
+      if (!Maintenance.gate('Delete published roster')) return;
+      if (!confirm('Delete this published roster? The link will stop working. Games already created from it are unaffected — they snapshot roster data at creation and never re-read this. EXCEPT: if a game made from this roster is still waiting for a second player to join, deleting it now will break that join.')) return;
       try {
         await App.db.ref(`exports/${system}/${id}`).remove();
         MyRosters.render();
@@ -4781,12 +4888,23 @@
 
       crumb.textContent = '';
 
+      // ROSTER_UX_2: Unit Creator (+ Add Unit, edit, delete), Library
+      // browsing/editing, and Clean Drafts are all maintenance surfaces —
+      // gated here at the router so direct hash navigation can't bypass it
+      // (not just the buttons that link here). Failing the gate bounces
+      // to home rather than rendering the screen half-authorized.
+      const MAINTENANCE_SCREENS = new Set(['unit', 'library', 'clean-drafts']);
+      if (MAINTENANCE_SCREENS.has(screen) && !Maintenance.gate('this is a Maintenance-only screen')) {
+        location.hash = '#home';
+        return;
+      }
+
       switch (screen) {
         case 'unit':
           document.getElementById('screen-unit-form').classList.add('active');
           back.classList.add('visible');
           title.textContent = sub === 'new' ? 'Add Unit' : 'Edit Unit';
-          if (param && App.schemas[param]) crumb.textContent = App.schemas[param].name;
+          crumb.textContent = 'Maintenance' + (param && App.schemas[param] ? ` · ${App.schemas[param].name}` : '');
           // #unit/new/{system}                  → param=system, sub='new'
           // #unit/edit/{system}/{factionId}/{id} → param=system, parts[3]=factionId, parts[4]=unitId
           UnitForm.render(param, sub, parts[3], parts[4]);
@@ -4804,8 +4922,33 @@
           document.getElementById('screen-library').classList.add('active');
           back.classList.add('visible');
           title.textContent = 'Library';
-          if (sub && App.schemas[sub]) crumb.textContent = App.schemas[sub].name;
+          crumb.textContent = 'Maintenance' + (sub && App.schemas[sub] ? ` · ${App.schemas[sub].name}` : '');
           Library.render(sub);
+          break;
+
+        case 'faction-pick':
+          // ROSTER_UX_2 item 1: the new player-facing "pick a faction to
+          // build with" step — replaces Library as the default landing for
+          // roster-building. Ungated on purpose (this is the main path).
+          document.getElementById('screen-faction-pick').classList.add('active');
+          back.classList.add('visible');
+          title.textContent = 'Choose Faction';
+          if (sub && App.schemas[sub]) crumb.textContent = App.schemas[sub].name;
+          FactionPicker.render(sub);
+          break;
+
+        case 'maintenance':
+          // Hub for the gated screens above — system picker into Library,
+          // plus Clean Drafts. Gated the same way (MAINTENANCE_SCREENS
+          // doesn't include 'maintenance' itself since this IS the entry
+          // point being gated; the router-level check would be redundant
+          // with the one below, so it's inline here instead).
+          if (!Maintenance.gate('Maintenance tools')) { location.hash = '#home'; return; }
+          document.getElementById('screen-maintenance').classList.add('active');
+          back.classList.add('visible');
+          title.textContent = 'Maintenance';
+          crumb.textContent = '';
+          Screens.maintenance.render();
           break;
 
         case 'roster':
@@ -4879,6 +5022,32 @@
         `).join('');
 
         if (App.selectedSystem) App.selectSystem(App.selectedSystem);
+      }
+    },
+
+    // ROSTER_UX_2: single hub for the gated maintenance surfaces. Reached
+    // only via #maintenance, which already gated entry (see Router) — this
+    // just needs to render, not gate again.
+    maintenance: {
+      render() {
+        const el = document.getElementById('screen-maintenance');
+        const entries = Object.entries(App.schemas);
+        el.innerHTML = `
+          <div class="lib-wrap">
+            <p class="lead">Maintenance tools — edits the shared unit library directly.</p>
+            <div class="section-label">Unit Library (add / edit / delete)</div>
+            <div class="system-grid">
+              ${entries.map(([id, s]) => `
+                <div class="system-card" onclick="location.hash='#library/${id}'">
+                  <div class="card-name">${s.name || id}</div>
+                  <div class="card-stats">${(s.statBlock || []).join(' · ')}</div>
+                </div>
+              `).join('')}
+            </div>
+            <div class="section-label" style="margin-top:1.5rem;">Draft Cleanup</div>
+            <button class="btn btn-secondary" onclick="location.hash='#clean-drafts'">Clean Drafts</button>
+          </div>
+        `;
       }
     }
   };
