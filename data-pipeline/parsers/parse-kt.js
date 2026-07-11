@@ -130,9 +130,15 @@ function buildSharedMaps(catalogue) {
 
 // ── Weapon rule parser ─────────────────────────────────────────────────────────
 
+// PIPE-H1 item 1: one real upstream data typo found in a full 48-faction
+// sweep — Wyrmblade's "Master-crafted autopistol" prints "Rang 8"" (missing
+// the 'e') instead of "Range 8"". Everything else that came up in the sweep
+// as range-shaped text ("Torrent 1\"", "Blast 2\"", "1\" Devastating 1")
+// is a genuinely different rule with its own inch value, not a range
+// miss — confirmed by checking each pattern name-by-name, not assumed.
 function extractRange(wrString) {
   if (!wrString) return null;
-  const m = wrString.match(/\bRange (\d+)"/);
+  const m = wrString.match(/\bRange (\d+)"/) || wrString.match(/\bRang (\d+)"/);
   return m ? m[1] + '"' : null;
 }
 
@@ -291,10 +297,27 @@ function buildWeapon(profile, glossary, crossGlossary) {
 function collectWeapons(modelEntry, sharedById, glossary, crossGlossary) {
   const weapons = [];
 
+  // PIPE-H1 item 1: self-recursive. A weapon-upgrade selectionEntry can
+  // nest its OWN selectionEntryGroups one level deeper (e.g. Wyrmblade's
+  // "Pistol and Melee Weapon" -> group "Pistol" -> "Bolt pistol"/
+  // "Master-crafted autopistol") — a flat one-level walk never reaches
+  // that branch, so those weapons were entirely invisible (not just
+  // missing rng — this was found while chasing the rng gap, but it's a
+  // strictly bigger miss: the weapon object never existed at all).
+  // Recursive so any further nesting is handled too, not just this one
+  // observed depth.
   function extractFromEntry(entry) {
     for (const p of weaponProfilesFromEntry(entry)) {
       const w = buildWeapon(p, glossary, crossGlossary);
       if (w) weapons.push(w);
+    }
+    for (const grp of asArray(entry.selectionEntryGroups?.selectionEntryGroup)) {
+      for (const e of asArray(grp.selectionEntries?.selectionEntry)) {
+        extractFromEntry(e);
+      }
+    }
+    for (const e of asArray(entry.selectionEntries?.selectionEntry)) {
+      extractFromEntry(e);
     }
   }
 

@@ -35,13 +35,13 @@ const KEYWORD_KT_MAP = {
   'lethal-xplus': raw => ({
     idSuffix: `lethal${slugParam(raw)}`, name: raw,
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [{ type: 'mod', stat: 'critThreshold', op: 'cap', value: parseParam(raw) }],
   }),
   'accurate-x': raw => ({
     idSuffix: `accurate${slugParam(raw)}`, name: raw,
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [{ type: 'mod', stat: 'retainNormal', op: 'add', value: parseParam(raw) }],
   }),
   // Lossy approximation: the real rule bypasses defence dice entirely and
@@ -51,18 +51,22 @@ const KEYWORD_KT_MAP = {
   'devastating-x': raw => ({
     idSuffix: `devastating${slugParam(raw)}`, name: raw,
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'enemy', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'enemy', range: null, filter: [] },
     effects: [{ type: 'mod', stat: 'dmgCrit', op: 'add', value: parseParam(raw) }],
     approximate: true,
   }),
+  // PIPE-H1 item 5: appliesTo:"target" per BON-1c's own spec — this effect
+  // reduces the DEFENDER's dice, not the attacker's. The engine currently
+  // routes by stat name alone (defDice is unambiguous — deliberate, kept),
+  // but the data should match its own schema doc regardless.
   'piercing-x': raw => {
     const isCrits = /crits/i.test(raw);
     return {
       idSuffix: `piercing${slugParam(raw)}${isCrits ? '-crits' : ''}`, name: raw,
       activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-      trigger: 'onShoot', duration: 'instant', scope: { target: 'enemy', range: null, filter: [] },
+      trigger: 'onAttack', duration: 'instant', scope: { target: 'enemy', range: null, filter: [] },
       effects: [{
-        type: 'mod', stat: 'defDice', op: 'add', value: -parseParam(raw),
+        type: 'mod', stat: 'defDice', op: 'add', value: -parseParam(raw), appliesTo: 'target',
         ...(isCrits ? { when: 'critScored' } : {}),
       }],
     };
@@ -70,19 +74,19 @@ const KEYWORD_KT_MAP = {
   'blast-x': raw => ({
     idSuffix: 'blast', name: 'Blast',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'enemy', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'enemy', range: null, filter: [] },
     effects: [{ type: 'flag', flag: 'blast' }],
   }),
   'torrent-x': raw => ({
     idSuffix: 'torrent', name: 'Torrent',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'enemy', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'enemy', range: null, filter: [] },
     effects: [{ type: 'flag', flag: 'torrent' }],
   }),
   balanced: raw => ({
     idSuffix: 'balanced', name: 'Balanced',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [{ type: 'mod', stat: 'rerollOne', op: 'add', value: 1 }],
   }),
   // Approximation: reroll-all-of-one-result collapses to the same
@@ -91,20 +95,20 @@ const KEYWORD_KT_MAP = {
   ceaseless: raw => ({
     idSuffix: 'ceaseless', name: 'Ceaseless',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [{ type: 'mod', stat: 'rerollAll', op: 'add', value: 1 }],
     approximate: true,
   }),
   relentless: raw => ({
     idSuffix: 'relentless', name: 'Relentless',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [{ type: 'mod', stat: 'rerollAll', op: 'add', value: 1 }],
   }),
   saturate: raw => ({
     idSuffix: 'saturate', name: 'Saturate',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'enemy', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'enemy', range: null, filter: [] },
     effects: [{ type: 'flag', flag: 'ignoreCover' }],
   }),
   heavy: raw => ({
@@ -116,7 +120,7 @@ const KEYWORD_KT_MAP = {
   silent: raw => ({
     idSuffix: 'silent', name: 'Silent',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [{ type: 'flag', flag: 'silent' }],
   }),
   // Seek ignores terrain for visibility/targeting but NOT the cover save —
@@ -124,14 +128,14 @@ const KEYWORD_KT_MAP = {
   seek: raw => ({
     idSuffix: 'seek', name: raw,
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [{ type: 'flag', flag: 'ignoreObscured' }],
     approximate: /light/i.test(raw), // "Seek Light" only affects Light terrain; nuance lost
   }),
   punishing: raw => ({
     idSuffix: 'punishing', name: 'Punishing',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [{ type: 'mod', stat: 'retainNormal', op: 'add', value: 1, when: 'critScored' }],
   }),
   // BON-1c Fix 2: true convert — gain a crit AND lose a normal, same `when`.
@@ -140,7 +144,7 @@ const KEYWORD_KT_MAP = {
   rending: raw => ({
     idSuffix: 'rending', name: 'Rending',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [
       { type: 'mod', stat: 'retainCrit', op: 'add', value: 1, when: 'critScored' },
       { type: 'mod', stat: 'retainNormal', op: 'add', value: -1, when: 'critScored' },
@@ -155,7 +159,7 @@ const KEYWORD_KT_MAP = {
   stun: raw => ({
     idSuffix: 'stun', name: 'Stun',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'untilEndOfActivation', scope: { target: 'enemy', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'untilEndOfActivation', scope: { target: 'enemy', range: null, filter: [] },
     effects: [{
       type: 'condition', condition: 'stunned', stacks: 1, max: 1,
       when: 'critScored', appliesTo: 'target',
@@ -166,7 +170,7 @@ const KEYWORD_KT_MAP = {
   severe: raw => ({
     idSuffix: 'severe', name: 'Severe',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [
       { type: 'mod', stat: 'retainCrit', op: 'add', value: 1, when: 'noCritScored' },
       { type: 'mod', stat: 'retainNormal', op: 'add', value: -1, when: 'noCritScored' },
@@ -178,19 +182,19 @@ const KEYWORD_KT_MAP = {
   brutal: raw => ({
     idSuffix: 'brutal', name: 'Brutal',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onFight', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [{ type: 'flag', flag: 'brutal' }],
   }),
   shock: raw => ({
     idSuffix: 'shock', name: 'Shock',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [{ type: 'flag', flag: 'shock' }],
   }),
   hot: raw => ({
     idSuffix: 'hot', name: 'Hot',
     activation: 'passive', cost: FREE_PASSIVE, usage: 'unlimited',
-    trigger: 'onShoot', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
+    trigger: 'onAttack', duration: 'instant', scope: { target: 'self', range: null, filter: [] },
     effects: [{ type: 'flag', flag: 'hot' }],
   }),
   // Cross-glossary borrow (BON-1b item 3): KT weapons carry PSYCHIC in the
@@ -386,7 +390,14 @@ function compileWeaponBonuses(weapon, system, map) {
     bonuses.push({
       id: `${built.idSuffix}`,
       name: built.name,
-      description: 'Flavor/reference text only. Engine never reads this.',
+      // PIPE-H1 item 4: template-generated from the same describeEffect/
+      // describeBonusEffects machinery mapping-review.txt already uses —
+      // can't drift from the actual compiled effects because it's derived
+      // from them, not hand-written. The KT readout still generates its
+      // own text from name+effects for display (kept, canonical there);
+      // this just stops the catalog field itself from lying to any other
+      // consumer.
+      description: describeBonusEffects(built).map(row => row.text).join(' '),
       system,
       faction: null,
       source: 'keyword',
