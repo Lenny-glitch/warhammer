@@ -1468,3 +1468,112 @@ closes the BON-2b/KT-RS shoot acceptance — that's the real end-to-end
 check this jsdom pass can't substitute for.
 
 **Commits:** `83ad935`
+
+## 2026-07-11 — KT-2 Part 2: drag-to-shoot polish + combat feel
+
+Brief: `briefs/KT2_PART2_BRIEF.md`. Read the last three DEVLOG entries
+first as instructed (BON-2b, KT-RS, BUG_KT_UNLIMITED_RANGE) before
+touching the shoot flow.
+
+**Real browser testing unlocked this session** — worth recording since it
+changes what's possible for future sessions here. Playwright's Chromium
+has been blocked on missing `libasound.so.2` since WHF-3 (no apt-get/sudo
+in this sandbox). `apt-get download libasound2t64` works without root
+(fetches the `.deb`, doesn't install it) — `dpkg -x` extracts
+`libasound.so.2` from it into a local directory, and
+`LD_LIBRARY_PATH=<that dir>` at Chromium launch is enough to satisfy the
+dynamic linker. Saved to `killteam/.playwright-libs/` (gitignored). This
+made real disposable-Firebase-game + headless-Chromium testing possible
+again, matching this project's own established precedent (BON-2b) instead
+of falling back to jsdom.
+
+**Item 1 — drag-to-shoot.** `setupDragToShoot`: press-and-drag on the
+active operative's own token (8px screen threshold, so a plain click
+still falls through to the existing activate/deselect handler unchanged)
+hands off to the exact same `beginShootDrag`/`updateShootOverlay`/
+`getShootValidity`/`confirmShootTarget` pipeline the Shoot-button path
+already uses. Live validity feedback during the drag and everything
+downstream (crit coloring, bonus resolution) come for free from that
+reuse — not re-implemented.
+
+**Real-browser testing caught a bug static review missed entirely:** the
+first implementation listened on the SVG only, walking up from
+`e.target`. It worked in isolation but never armed in the actual app —
+the moment an operative activates, `showRadialMenu()` draws a 44px "End"
+button as a plain HTML `<div>` positioned exactly on top of the token's
+screen coordinates. A mousedown starting there never reaches the SVG at
+all. Rewritten as a single document-level listener, registered once
+(idempotent via flag, same pattern as the existing Escape-key binding),
+checking proximity to the active operative's own screen position
+(computed fresh via its board's SVG CTM) instead of asking which DOM
+element got hit — works regardless of what's on top. This is exactly the
+class of bug the `/verify` skill and this project's "drive it, don't just
+read it" testing culture exist to catch; static code review alone would
+not have found it.
+
+**Item 2 — damage visibility.** `spawnDamageFloater()`: "-N" text rises
+and fades at the point of damage (SMIL animate + timeout cleanup, same
+lifecycle as the existing burst/clash effects), wired into both
+`playBurstAndFlash` (Shoot) and `playFightEffects` (Fight, both sides).
+Health arc's lost segments were `rgba(255,255,255,0.08)` — read as
+background, not "wound taken here" — now red-tinted
+(`rgba(192,57,43,0.22)`), louder but still clearly dimmer than a filled
+segment.
+
+**Item 3 — injured state.** The only prior signal was the arc's
+filled-segment color switching red — thin 0.09-wide strokes, easy to miss
+at a glance. Added a slowly-pulsing red ring around the whole token (own
+radius, distinct from both the health arc and the active-activation glow)
+via a new CSS animation. Sidebar INJURED chip unchanged.
+
+**Item 4 — dice-roll moment.** Fight's `confirmFightTarget()` computes and
+writes the fully-resolved `pendingFight` in one shot (no
+`coverChoice`→`rolled` phase split like Shoot has), so results always
+landed instantly. Added `startFightDiceAnimation()`, mirroring Shoot's
+`startDiceAnimation()` exactly (same tier/timing table), triggered off
+"`pendingFight` just appeared" in `detectAndPlayEffects` rather than a
+phase transition — there isn't one to key off, and the reveal doesn't
+need cross-client sync since both clients already have the same real roll
+values the moment Firebase delivers `pendingFight`. `renderFightResolutionBar`
+hides annotations/damage/confirm-button while animating. Click-to-skip
+added for both Fight's new tumble and Shoot's existing one (neither had
+it before).
+
+**Item 5 — crit coloring under drag-initiated shots.** Verified, not just
+assumed: because item 1 routes through the identical `rollShot`/
+`renderDicePool` code path as the button flow, this held by construction.
+Confirmed directly in the real-browser test below with a hand-crafted
+Lethal 5+ weapon — forced every die to a natural 5 and checked the DOM
+grouped them under CRIT, not HIT.
+
+**Testing (real browser, not jsdom):** built a disposable `games-kt/`
+fixture via direct Firebase REST (public rules, no admin creds needed —
+same technique BON-2b used), with hand-crafted operatives (a Lethal 5+
+rifle, controlled wound values) so every item could be tested
+deterministically rather than relying on the two bonus-less dev rosters.
+Drove it in real headless Chromium via the `.playwright-libs` workaround
+above. Fixture deleted after (`finally` block), nothing committed.
+
+12/12 checks: drag-to-shoot creates a correctly-targeted `pendingShot`;
+forced all-5s rolls under Lethal 5+ render as CRIT (0 miscategorized as
+HIT); a damage floater appears after Apply Damage; the injured ring
+renders once wounds cross the half threshold; Fight's tumble resolves,
+shows the skip hint, and reveals results on click; the old button-only
+Shoot flow still creates a `pendingShot` (regression check). Also
+confirmed `?dev=true` still boots cleanly (0 console/page errors) —
+brief's explicit "readout unaffected" requirement.
+
+One test-authoring note worth keeping for next time: clicking a
+phase-bar button (e.g. "Fight") auto-scrolls the page to bring it into
+view (Playwright's own click-actionability behavior), which can leave a
+previously-measured element's bounding box stale/off-screen —
+`locator.scrollIntoViewIfNeeded()` before re-measuring fixed it. Not an
+app bug, a test-sequencing one.
+
+**Not done — explicitly out of scope per the brief:** blast/torrent flag
+enforcement, conditions (BON-3), catch-up banner (KT-7), any 40k work,
+roster changes.
+
+**Commits:** `b5452c3` (item 1), `258c85b` (item 4), `9a534da` (items
+2+3), `1a79a7b` (item 1 fix — the radial-menu overlay bug real-browser
+testing caught).
