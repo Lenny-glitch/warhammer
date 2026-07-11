@@ -365,3 +365,96 @@ a record, not a deploy source: no Firebase CLI/admin credentials exist on
 this machine (see earlier entry), so there's no automated push/pull
 between this file and the live console rules — if the console rules
 change again, this file needs a manual re-copy to stay accurate.
+
+## 2026-07-10 — PIPE-H1: pipeline hygiene pass, shipped
+
+Brief: `briefs/PIPE_HYGIENE_1_BRIEF.md`. Commits `912b8b3` (claim),
+`b7c2e11` (resolver v1.4.0), `e892274` (extractor + catalog fixes).
+
+**Item 1 (rng extraction gap):** swept all 47 KT factions distinguishing
+genuine "no range = unlimited" (368 of 652 ranged weapons post-fix) from
+actual extractor misses. Two real bugs found and fixed in `parse-kt.js`:
+a source typo (Wyrmblade's "Rang 8"", missing the 'e' — `extractRange()`
+now tolerates it), and a bigger structural gap — `collectWeapons()` only
+walked one level of `selectionEntry`/`selectionEntryGroup` nesting, so a
+weapon-upgrade entry with its own nested sub-choice (e.g. Wyrmblade's
+"Pistol and Melee Weapon" → group "Pistol" → "Bolt pistol"/"Master-crafted
+autopistol") was entirely invisible, not just missing rng. Made
+`extractFromEntry` self-recursive. Ranged weapon count went 590 → 652.
+
+Fireblast/Life siphon (the brief's named live-play test cases) were
+**not** extractor misses — verified against raw XML, no "Range N"" text
+exists anywhere for them, and that holds for every PSYCHIC-keyword weapon
+in every faction that has one. Per Nox: this is correct, not a gap — KT
+2024's actual default is unlimited range, "Range X" is the printed
+exception, which is exactly why this pipeline's own convention already is
+`rng: null` = unlimited. If the live-play symptom persists after this
+upload, the bug is on the `killteam/` engine side (treating absent `rng`
+as unshootable instead of unlimited) — not a data-pipeline problem, and
+explicitly not something to chase with a `patches.json` guess at a
+rulebook number.
+
+**Item 2 (stat-key casing):** swept Operative (Move/Save/Wounds/APL) and
+Weapons (ATK/HIT/DMG/WR) characteristic casing across all 48 source
+files. Uniform TitleCase everywhere, Legionaries included — no fix
+applied. Per Nox: the brief was wrong, not the sweep; the UPPERCASE data
+the original "0-wounds bug" was diagnosed against was almost certainly
+pre-pipeline scraper-era data (predates BSData), not this pipeline's
+current output. `killteam/`'s case-tolerant `statVal()` defense stays as
+permanent armor regardless. Closed, no action.
+
+**Item 3 (onAttack trigger):** `shared/bonus-resolver.js` v1.3.0 → v1.4.0
+(1.3.0 landed first via WHF-4a, wound/wardSave stats — this collided with
+the brief's stated version number, bumped past it instead). A bonus
+tagged `trigger:"onAttack"` now matches `context.trigger` of either
+`onShoot` or `onFight`. 4 new tests (28/28 total). `compile-keywords.js`'s
+`KEYWORD_KT_MAP`: 16 `onShoot`/`onFight` entries → `onAttack` (18 of 20
+total, `heavy`/`psychic` correctly stay `always`). Closes the exact bug
+named in the brief — Legionaries' Tainted chainsword carries Rending,
+previously tagged `onShoot`-only, could never fire it in melee.
+
+`KEYWORD_W40K_MAP` deliberately **not** touched — Melta/Rapid Fire/
+Precision/etc. are genuinely shooting-only in real 40k rules, Fights
+First/Extra Attacks genuinely melee-only. Blanket-converting per the
+brief's literal "ALL weapon-keyword bonuses" would have silently traded
+one wrong trigger assignment for another. Nothing reads 40k bonuses yet
+(BON-4, future) so this cost nothing to defer — flagged for whoever picks
+that up, not resolved here.
+
+**Item 4 (catalog descriptions):** `compileWeaponBonuses()` now generates
+`description` from the existing `describeBonusEffects()` machinery
+(already used for `mapping-review.txt`) instead of the literal
+"Flavor/reference text only" placeholder. Can't drift from the compiled
+effects since it's derived from them. `killteam/`'s own generated-readout
+text (name+effects) is unaffected — this only changes what the catalog
+field itself says, for any other consumer.
+
+**Item 5 (appliesTo on Piercing):** `appliesTo:"target"` added to
+Piercing/Piercing Crits' `defDice` effect, per BON-1c's own spec. Engine
+still routes by stat name (unambiguous, unchanged) — data now matches its
+own schema doc.
+
+**Ship:** dry-run reviewed and approved by Nox before the real write.
+Real upload run with `--force` (needed specifically to get the bonus
+catalog past its exists-check — a plain re-upload would have silently
+skipped it, delivering nothing from items 3–5). Side effect worth
+recording: `--force` is a global flag, so it also re-wrote the KT and 40k
+*rules glossaries* (22 and 33 entries) even though neither was touched
+this pass — `extract-glossary.js` wasn't modified and reads independent
+source files, so this should be content-identical, but it was an
+unintended-scope write, not a deliberate one. No 40k *faction/unit* data
+was touched (the deprecated BSData 40k subtree stays untouched per
+CLAUDE.md's data canon) — simply because `parse-40k.js` was never run
+this session, so no 40k faction output existed to upload.
+
+**Verified live in Firebase post-upload:** `gameData/kill-team/bonuses/
+rending` carries `trigger:"onAttack"` and a generated description;
+Wyrmblade's Master-crafted autopistol now exists at all and carries
+`rng:"8\""`; Legionaries' Fireblast correctly has no `rng` key (Firebase
+drops nulls — "absent" *is* "unlimited" here, confirming Nox's reading).
+
+**Not done — queued for Nox:** the actual acceptance test from the
+brief's "Done when" — fresh KT game from the Legionary export via
+`?dev=true`, shoot with Fireblast, confirm the bonus lines read correctly
+and (per Nox) that unlimited range doesn't block the shot. If it does,
+the fix is in `killteam/`'s range-check, not here.
