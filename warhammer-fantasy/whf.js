@@ -1067,12 +1067,16 @@ function confirmChargeTargets() {
 
 // RAW: "a Stand and Shoot reaction can only be declared if... the unit has
 // missile weapons... and the range to the enemy is greater than the
-// charging unit's Move characteristic."
-function canStandAndShoot(target, charger) {
+// charging unit's Move characteristic." Returns a reason string when
+// disallowed (WHF-4a.1: surfaced in the UI — a greyed button with no
+// explanation reads as broken, not as RAW working correctly) or null when
+// the reaction is legal.
+function standAndShootBlockReason(target, charger) {
   const weapon = target.weapons.find(w => w.type === 'ranged');
-  if (!weapon) return false;
+  if (!weapon) return 'no ranged weapon';
   const distance = pxDistance(target.position, charger.position) / INCHES_TO_PX;
-  return distance > parseFloat(charger.stats.M);
+  if (distance <= parseFloat(charger.stats.M)) return 'too close to react';
+  return null;
 }
 
 function chooseReaction(targetId, reaction) {
@@ -1583,14 +1587,17 @@ function buildChargeSection(unit) {
         ${logHtml}
       </div>`;
     }
-    const canShoot = canStandAndShoot(unit, charger);
+    const blockReason = standAndShootBlockReason(unit, charger);
+    const shootNote = blockReason
+      ? `<div class="panel-row dim">Stand and Shoot unavailable — ${escHtml(blockReason)}</div>` : '';
     return `<div class="panel-section">
       <div class="panel-section-title">Charge Reaction — ${escHtml(charger.name)} charges ${escHtml(unit.name)}</div>
       <div class="move-btns">
         <button class="move-btn" id="btn-react-hold">Hold</button>
-        <button class="move-btn" id="btn-react-shoot" ${canShoot ? '' : 'disabled'}>Stand and Shoot</button>
+        <button class="move-btn" id="btn-react-shoot" ${blockReason ? 'disabled' : ''} title="${blockReason ? escHtml(blockReason) : ''}">Stand and Shoot</button>
         <button class="move-btn" id="btn-react-flee">Flee!</button>
       </div>
+      ${shootNote}
       ${logHtml}
     </div>`;
   }
