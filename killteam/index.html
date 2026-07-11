@@ -1746,6 +1746,7 @@ function buildBoardSVG(wrap, playerSlot, status, phase) {
     setupDeployClick(svg, playerSlot);
   } else if (status === 'active' && phase === 'firefight') {
     setupDragMove(svg, playerSlot, unitG, overlay);
+    setupDragToShoot(svg, playerSlot); // KT-2 Part 2
   }
 }
 
@@ -2365,6 +2366,70 @@ function setupDragMove(svg, playerSlot, unitG, overlay) {
       cancelActivation();
     }
   });
+}
+
+// KT-2 Part 2: drag directly from the active operative's own token onto a
+// target to start Shoot in one motion — an addition alongside the
+// existing Shoot-button -> aim-drag -> release flow, not a replacement.
+// Once armed (mouse moved past THRESHOLD), this hands off to the exact
+// same beginShootDrag()/updateShootOverlay()/getShootValidity()/
+// confirmShootTarget() pipeline the button path already uses — same code,
+// so live validity feedback during the drag (LOS/engaged/concealed
+// reasons) and everything downstream (crit coloring, bonus resolution)
+// come for free, not re-implemented.
+//
+// Below-threshold mousedown+mouseup (a plain click, no real drag) never
+// calls preventDefault/stopPropagation, so the native `click` event still
+// reaches setupDragMove's listener afterward — existing activate/deselect
+// behavior on the active operative's own token is untouched.
+function setupDragToShoot(svg, playerSlot) {
+  const THRESHOLD = 8; // px, screen space
+  let candidate = null;
+
+  svg.addEventListener('mousedown', e => {
+    if (dragState || shootState || fightState) return;
+    if (!activation || gameData.pendingShot || gameData.pendingFight) return;
+
+    let node = e.target;
+    while (node && node !== svg) {
+      if (node.classList?.contains('op-token')) break;
+      node = node.parentElement;
+    }
+    const opId = node?.classList?.contains('op-token') ? node.getAttribute('data-op-id') : null;
+    if (!opId || opId !== activation.opId) return;
+
+    const op = (gameData.operatives || {})[opId];
+    if (!op || op.player !== playerSlot) return;
+    // Same gate as the Shoot button's shootDisabled (minus the drag/
+    // pending checks already covered above).
+    if (activation.apRemaining < 1 || op.order === 'conceal') return;
+    const ranged = getRangedWeapons(op);
+    if (!ranged.length) return;
+
+    candidate = { startX: e.clientX, startY: e.clientY, ranged };
+  });
+
+  svg.addEventListener('mousemove', e => {
+    if (!candidate) return;
+    const dx = e.clientX - candidate.startX, dy = e.clientY - candidate.startY;
+    if (Math.hypot(dx, dy) < THRESHOLD) return;
+
+    const ranged = candidate.ranged;
+    candidate = null;
+    hideRadialMenu();
+    if (ranged.length === 1) {
+      beginShootDrag(playerSlot, ranged[0]);
+    } else {
+      // Multiple ranged weapons: picker appears, same as the button path
+      // ("as today" per the brief) — the one-motion drag ends here, the
+      // player picks a weapon via the existing picker UI, which itself
+      // starts the normal beginShootDrag aim step from there.
+      shootWeapon = 'picking';
+      reRenderPhaseBar();
+    }
+  });
+
+  svg.addEventListener('mouseup', () => { candidate = null; });
 }
 
 // ═══════════════════════════════════════════════════════════
