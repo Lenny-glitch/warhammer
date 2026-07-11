@@ -117,8 +117,8 @@ Full 8th edition Movement Phase. Ghost preview pattern (preview before commit), 
 |-------|--------|
 | WHF-1: Board & Regiment Engine | Complete |
 | WHF-2: Movement Phase | Complete |
-| WHF-3: Charge | Complete (see Phase 4) — Stand and Shoot now resolves real casualties (Phase 6) |
-| WHF-4a: Shooting (basic, direct-fire) | Complete (see Phase 6) — templates/blast/scatter/aura carry to 4b |
+| WHF-3: Charge | Complete (see Phase 4) — Stand and Shoot now resolves real casualties (Phase 6), contact geometry fixed (Phase 7) |
+| WHF-4a: Shooting (basic, direct-fire) | Complete (see Phase 6) — checkpoint fixes in Phase 7; templates/blast/scatter/aura carry to 4b |
 | WHF-4b: Shooting (templates, blast, scatter) | Not started |
 | WHF-5: Combat (Close Combat + Rank Collapse) | Not started |
 
@@ -431,6 +431,87 @@ stage — the exact debt this brief exists to close. 18/18 checks passed. Test
 script was not committed (one-off, same as WHF-3's).
 
 **Commits:** `0b483f4`
+
+---
+
+### Phase 7 — WHF-4a.1: checkpoint fixes (2026-07-10)
+
+Nox playtested the 4a checkpoint and found two real bugs plus one UX gap;
+investigated first, fix scope proposed and approved before touching code.
+
+**1. Stand and Shoot silently greyed (UX, not a bug).** `canStandAndShoot()`
+was exactly RAW — a short-range charge (distance ≤ charger's M) correctly
+disables the reaction — but the button gave no reason, which reads as
+broken rather than as the rule working. Renamed to
+`standAndShootBlockReason()`, returns `"no ranged weapon"` /
+`"too close to react"` / `"engaged in combat"` instead of a bare boolean;
+shown as both a title tooltip and an inline panel line.
+
+**2. Real bug — no engaged/in-combat state existed anywhere.**
+`rollChargeMove()`'s `'contact'` branch only ever wrote the charger back to
+`state.units`; the defender was never touched. The charger's `hasCharged`
+incidentally blocked it from shooting, but for the wrong reason ("already
+moved," not "in melee") and only for that one turn (`hasCharged` resets
+every movement phase) — and it did nothing to stop either unit from being
+a legal shoot *target*. This is why Handgunners could volley the Knights
+they'd just charged into.
+
+Added `engaged` — deliberately **not** part of `movementDefaults()`'s
+per-phase reset, since only WHF-5 (Close Combat resolution, not built yet)
+should ever clear it. Set `true` on both units in the `'contact'` branch.
+RAW-verified before building (per Nox: fetch it for the record, ship the
+simple rule regardless — fun-first either way):
+`8th.whfb.app/shooting/shooting-into-combat` — *"Models are not permitted
+to shoot at enemies that are engaged in close combat... too much danger
+of hitting a friend."* Blanket prohibition both directions, shipped as
+one: `shootingBlocked` now includes `engaged` (blocks shooting *out*),
+`validShootTargets()` excludes engaged enemies (blocks shooting *into*),
+`standAndShootBlockReason()` also checks it (an already-engaged unit can't
+Stand and Shoot against a second charger either). No template-weapon
+carve-out modeled — RAW has one (accidental-hit war machines) but no
+template weapons exist in this app yet; that's WHF-4b's problem, not this
+one's.
+
+Per Nox: engaged-until-WHF-5 is an accepted interim state, but it must be
+*legible* — added an ENGAGED badge to the unit card (`showPanel`'s panel
+header, red per the existing violation-red convention) and to the board
+label itself (`[ENGAGED]`, same red), so a player sees why the shoot
+option disappeared rather than just noticing it's gone.
+
+**3. Real bug — charge contact rendered overlapping, not base-to-base.**
+`chargeReach()`'s `contactPoint` is a point on the *target's* footprint
+boundary. `rollChargeMove()` set the charger's `.position` directly to it
+— but `.position` is the charger's front-**left** slot origin (established
+WHF-1 convention), not its centre or front-centre, and nothing accounted
+for the charger's own footprint half-depth. The charger's body ended up
+extending past the contact point, into and through the target, instead of
+stopping short of it.
+
+Added `positionForFrontCentreContact()`: inverts `unitFootprint()`'s own
+right/backward/localCX/localCY math — given "front-centre touches this
+point, facing this direction," walks back by the charger's own half-depth
+to its true centre, then to its front-left origin. `chargeReach()` now
+returns `finalPosition` alongside `contactPoint` (kept, still useful as
+the actual point of contact for reference/logging); `rollChargeMove()`
+uses `finalPosition`. Side effect, not a regression: `inchesNeeded` drops
+slightly since it no longer measures into the target's own footprint —
+some charges that previously fell just short may now succeed on the same
+roll. The distance is becoming correct, not looser.
+
+Shipped as **separate commits** from the engaged-state fix per Nox — two
+different bugs, different mechanisms, found in the same checkpoint pass.
+
+**Testing:** same jsdom pattern as WHF-3/4a (Playwright still blocked on
+`libasound.so.2`). 13/13 checks: Stand-and-Shoot reason text at both short
+and long range and for a melee-only unit; full charge-to-contact cycle
+confirming both units end up `engaged`, both auto-skip the Shooting phase
+with the right reason, and a third unit's `validShootTargets()` correctly
+excludes the engaged target; contact geometry confirmed base-to-base to
+within 0.000" (charger footprint centre-to-target-boundary distance minus
+the charger's own half-depth). Test script not committed (one-off).
+
+**Commits:** `f74e9c7` (Stand and Shoot reason), `33457bf` (engaged state +
+indicator), `f1cf24b` (contact geometry).
 
 ---
 
