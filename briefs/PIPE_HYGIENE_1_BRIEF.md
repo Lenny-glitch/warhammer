@@ -1,4 +1,5 @@
 # PIPE-H1 — Pipeline Hygiene Pass (five accumulated fixes)
+CLAIMED: 2026-07-10
 
 ## Orientation
 Monorepo, data-pipeline/ + shared/. One recompile + one gated
