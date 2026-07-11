@@ -1,0 +1,11 @@
+# SECURITY FLAG (2026-07-10): warhammershit/warhammerstuff(+.pub) were
+# accidentally committed at 382429b ("asdfasdfasdfX") — real OpenSSH private
+# keys, one unencrypted. Untracked here so they stop moving forward, but the
+# key material is STILL IN GIT HISTORY as of that commit and needs a real
+# purge (git filter-repo / BFG) before this repo is safe to treat as public
+# or hand to anyone else. Nox is aware, pushing with a fresh token in the
+# meantime. Delete this note once the history purge actually happens.
+warhammershit
+warhammershit.pub
+warhammerstuff
+warhammerstuff.pub
