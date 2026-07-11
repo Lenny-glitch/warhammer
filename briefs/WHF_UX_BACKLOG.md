@@ -58,3 +58,41 @@ into the unit-card pass (item 4) where it'll matter most.
 WHF brief after the 4a checkpoint — it touches what players do
 most. 2+3 bundle after that. 4+5 are one combined phase later,
 post-core-mechanics. Nothing here before 4a's checkpoint passes.
+
+## AMENDMENT 1 (2026-07-10) — 4a checkpoint findings
+Checkpoint partial results: Magic pass-through CONFIRMED working.
+Shooting resolution CONFIRMED mathematically correct (10 shots /
+2 hit on 6s / 0 wounds / 0 casualties = right answer, zero
+drama). Still to test before 4a closes: casualties actually
+falling (Handgunners point-blank into Bowmen — rear-rank removal
+per the RAW correction) and Stand-and-Shoot thinning a charger.
+
+New items from play:
+6 — UNIT OVERLAP PREVENTION: regiments can currently move
+    through/onto each other. This is CORE RULES, not polish —
+    ranks/flanks/charges all assume solid bodies. Becomes
+    requirement #1 of the movement brief (item 1), ahead of the
+    UX work.
+7 — Shot feedback: volley needs visible fire (arrow/tracer
+    lines KT-style but period — arcing arrows, powder smoke),
+    an outcome moment (dice/summary that reads at the board, not
+    only the side panel), and casualty removal that is SEEN
+    (models fall/fade, not silently decrement). Bundles with
+    item 2 (wound display).
+8 — Entry point: whf.html is canonical but unguessable. Rename
+    to index.html or add redirect stub; document. One-liner,
+    attach to any next WHF commit.
+
+## AMENDMENT 2 (2026-07-10) — casualties confirmed, gap narrowed
+Casualty cycle CONFIRMED in play: 2 unsaved → 2 models removed,
+rear rank, count updated. Also confirmed working unprompted:
+1" enemy-proximity rule, handgun move-or-fire restriction.
+- Item 6 NARROWED: enemy overlap is already prevented (1" rule);
+  the gap is FRIENDLY units moving through/onto each other only.
+9 — Range indicators: KT-style range visualization — movement
+    reach, shooting range (and casting range when magic exists)
+    shown on the board when a unit is selected/acting. Bundles
+    naturally with item 1's movement-cost preview; the shooting
+    circle should land with item 7's shot feedback.
+Remaining before 4a closes: ONE test — a charge where
+Stand-and-Shoot visibly thins the charger before contact.
