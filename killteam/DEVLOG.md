@@ -1467,4 +1467,4 @@ lists its bonuses) is the brief's actual "Done when" and simultaneously
 closes the BON-2b/KT-RS shoot acceptance — that's the real end-to-end
 check this jsdom pass can't substitute for.
 
-**Commits:** (cite hash after commit below.)
+**Commits:** `83ad935`
