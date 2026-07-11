@@ -21,7 +21,7 @@ A Warhammer Fantasy (Warhammer Fantasy Battle / The Old World) companion app —
 
 ## Stack
 
-- **Frontend:** Vanilla JS, no framework. Single-page app (`whf.html` + `whf.js` + `whf.css`).
+- **Frontend:** Vanilla JS, no framework. Single-page app (`index.html` + `whf.js` + `whf.css`; `whf.html` is a redirect stub as of WHF-5m/Phase 8 — see below).
 - **Data:** Firebase Realtime Database, same project as 40K (`warhammer-5f2f4`). Plain HTTPS REST — no auth token needed while rules are open for dev.
 - **Build/deploy:** `build.js` generates `firebase-config.js` from env vars at Netlify build time. `netlify.toml` wires it up.
 - **Scale:** 1200×900px SVG board = 72"×48" (6'×4' standard). `INCHES_TO_PX = 1200/72 = 16.67px/inch`.
@@ -121,6 +121,7 @@ Full 8th edition Movement Phase. Ghost preview pattern (preview before commit), 
 | WHF-4a: Shooting (basic, direct-fire) | Complete (see Phase 6) — checkpoint fixes in Phase 7; templates/blast/scatter/aura carry to 4b |
 | WHF-4b: Shooting (templates, blast, scatter) | Not started |
 | WHF-5: Combat (Close Combat + Rank Collapse) | Not started |
+| WHF-5m: Movement Pass (overlap rule + movement UX) | Complete (see Phase 8) |
 
 ## Things The Next AI Should Know
 
@@ -130,6 +131,9 @@ Full 8th edition Movement Phase. Ghost preview pattern (preview before commit), 
 - **Shooting-after-reform restriction** is not enforced. Noted for WHF-4.
 - **Character stats (General of the Empire, Empire Captain)** are from training knowledge, not verified against 8th.whfb.app. Unblocks at WHF-5 before character combat is implemented.
 - **Firebase credentials** are in `firebase-config.js` (gitignored). Shape: same as `warhammer40k/firebase-config.js`.
+- **Entry point is `index.html`, not `whf.html`** (WHF-5m, Phase 8). `whf.html` is now a redirect stub for old links — don't add real markup to it.
+- **Friendly-overlap and enemy-1"-proximity are DIFFERENT thresholds, don't merge them.** `violatesFriendlyOverlap()` (2×MODEL_R, literal touching-is-fine-overlap-isn't) vs `violates1InchRule()` (2×MODEL_R + 1", a no-go buffer). Both are checked once, at ghost-commit, not per intermediate point of a move.
+- **Undo (WHF-5m) is one level, phase-scoped, and voluntary-movement-only.** It reverts to a snapshot taken at Movement-phase start (`snapshotUnitsForMovement()`), not a per-action stack. Deliberately excluded: charged/fled units — a charge already resolved reactions/casualties/flees on OTHER units, so rewinding just the charger would strand those side effects.
 
 ---
 
@@ -512,6 +516,96 @@ the charger's own half-depth). Test script not committed (one-off).
 
 **Commits:** `f74e9c7` (Stand and Shoot reason), `33457bf` (engaged state +
 indicator), `f1cf24b` (contact geometry).
+
+---
+
+### Phase 8 — WHF-5m: Movement Pass — Overlap Rule + Movement UX (2026-07-11)
+
+**Brief:** `briefs/WHF5M_MOVEMENT_BRIEF.md`, backlog items 1, 6, 8, 9
+(`briefs/WHF_UX_BACKLOG.md`). **Files:** `whf.js`, `whf.css`,
+`whf.html` → `index.html` (rename) + new `whf.html` redirect stub.
+
+**1. Friendly overlap prevention (item 6, core rules).** New
+`violatesFriendlyOverlap(movingUnit, allUnits)`, checked at `commitGhost()`
+alongside the existing `violates1InchRule()` — same choke point, so it
+automatically covers move, wheel, AND reform without three separate call
+sites. Deliberately a DIFFERENT threshold than the enemy rule: friendly
+ranks stand touching shoulder-to-shoulder in normal formation, so this only
+forbids literal body overlap (2×MODEL_R, centre-to-centre) rather than the
+enemy rule's 1"-buffer-plus-two-radii. Simplification, per the brief's
+"fun-first" allowance: only the final (post-commit) position is checked,
+not every intermediate point of the move — same precedent the enemy rule
+already set (ghosts can phase through during preview; only commit-time
+matters).
+
+**Verify-first caught a real fixture bug while building this.** Once the
+rule existed, `initTestUnits()`'s stock positions failed it at rest:
+Handgunners (added WHF-4a, `y:300`) sat 10px from Halberdiers' nearest
+model (threshold is 20px = 2×MODEL_R), and Peasant Bowmen (`y:520`) sat
+12px from Knights of the Realm. Neither pairing was ever checked for
+mutual spacing when those units were added, because no overlap rule
+existed yet to check against. Fixed by moving both away from their
+faction-mate: Handgunners to `y:176`, Peasant Bowmen to `y:250` — both now
+verified clear (`violatesFriendlyOverlap()` false for all four units at
+init).
+
+**2. Movement-points bar (item 1).** `movementBarHtml(M, committedUsed,
+previewUsed)` — pure function, returns the bar + label markup, called from
+all three active `buildMovementSection()` branches (idle/move/wheel/
+reform) so the preview segment updates live as a wheel or move ghost is
+built. `previewUsed` is `null` in the idle branch (no ghost yet, bar just
+shows the committed total) and the ghost's live `movementUsed` everywhere
+else — no separate tracking needed, the ghost already carries the number.
+CSS: `.move-bar-track`/`.move-bar-used`/`.move-bar-preview` in `whf.css`,
+gold for committed, the existing selection-gold ring colour for the
+preview segment.
+
+**3. Undo move (item 1).** One level, not a per-action stack, per the
+brief ("one level of undo is enough"). `snapshotUnitsForMovement()` records
+every unit's `{position, facing, rankWidth}` at the moment the Movement
+phase starts (called from both `init()` for turn 1 and `endPhase()`'s
+`next === 'movement'` branch every turn after) — `undoMove()` reverts the
+selected unit straight back to that snapshot regardless of how many
+move/wheel/reform actions it chained together since, resetting
+`movementUsed`/`backwardInches`/`hasMoved`/`hasReformed` to fresh-phase
+values and re-running `reassignModels()` to fix row/col after any
+rankWidth change. **Scope decision, not an oversight:** `canUndoMove()`
+excludes charged and fleeing units. A charge has already resolved
+reactions, casualties, and possibly a flee/redirect on OTHER units by the
+time it's done — rewinding just the charger's position would strand those
+side effects with nothing left to explain them. Undo only ever covers
+voluntary Move/Wheel/Reform.
+
+**4. Range indicators (item 9).** Two dashed rings, informational only —
+neither changes what a move/shot can legally reach (`chargeReach()`/
+`wheelUnit()`/`moveUnitForward()`/weapon `range` already gate that; these
+just visualize the existing numbers on the board instead of leaving them
+side-panel-only). `renderMoveRangeIndicator()`: selected unit's remaining
+M this phase, drawn from `moveGhost.unit` when a ghost is active so the
+ring shrinks live with the preview. `renderShootRangeIndicator()`: selected
+unit's ranged-weapon range in the Shooting phase (no-op for melee-only
+units). Both wired into `renderBoard()`'s existing overlay-layer pass.
+
+**5. Entry point rename (item 8).** `whf.html` → `index.html` via `git mv`
+(no other file referenced `whf.html` by path — checked via repo-wide
+grep before renaming). Left a `whf.html` redirect stub (`<meta
+http-equiv="refresh">`) for old bookmarks/links. `build.js`/`netlify.toml`
+don't reference the entry HTML filename at all (that toolchain only
+generates `firebase-config.js`), so nothing else needed updating.
+
+**Testing:** same jsdom-driven functional smoke test pattern as WHF-3/4a/
+4a.1 (Playwright's Chromium still needs `libasound.so.2`, still
+unavailable). Loads `index.html` itself as part of the test — doubles as
+the "index.html loads the game" acceptance check. 15/15 checks: a
+controlled friendly-overlap scenario (2" move accepted, Undo restores
+exact position/facing/movementUsed/hasMoved, redo the 2" then push to a
+cumulative 4" and confirm the overlapping half gets rejected while the
+unit stays at its last legal 2" position), the movement bar's pure-function
+math and its live rendering in the panel during an active ghost, and both
+range-ring types rendering on selection in their respective phases. Test
+script not committed (one-off, same as prior phases).
+
+**Commits:** (cite hash after commit below.)
 
 ---
 

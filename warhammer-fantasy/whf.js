@@ -176,6 +176,35 @@ function violates1InchRule(movingUnit, allUnits) {
   return false;
 }
 
+// WHF-5m: friendly regiments may not move through or end overlapping each
+// other (core rules, not polish — ranks/flanks/charges all assume solid
+// bodies). Deliberately a DIFFERENT threshold than violates1InchRule: that
+// rule enforces a 1" no-go BUFFER around enemies; this one only forbids
+// literal body overlap — friendly ranks stand touching shoulder-to-shoulder
+// in normal formation, so 2×MODEL_R (touching, not overlapping) is the
+// right threshold, not +1". Simplification, noted per the brief: only the
+// FINAL (post-commit) position is checked, not every intermediate point of
+// the move — same precedent violates1InchRule already set for the enemy
+// rule (ghosts can phase through during preview; only commit-time matters).
+function violatesFriendlyOverlap(movingUnit, allUnits) {
+  const threshold = 2 * MODEL_R;
+  const friendlies = allUnits.filter(
+    u => u.instanceId !== movingUnit.instanceId && u.factionId === movingUnit.factionId && isUnitAlive(u)
+  );
+  for (const friend of friendlies) {
+    for (const mm of movingUnit.models.filter(m => m.alive)) {
+      const mp = modelPosition(movingUnit, mm.row, mm.col);
+      for (const fm of friend.models.filter(m => m.alive)) {
+        const fp = modelPosition(friend, fm.row, fm.col);
+        const dx = mp.x - fp.x;
+        const dy = mp.y - fp.y;
+        if (Math.sqrt(dx * dx + dy * dy) < threshold) return true;
+      }
+    }
+  }
+  return false;
+}
+
 // ── Charge geometry (WHF-3) ──────────────────────────────────────────────
 //
 // Pivot-arc / reach: "can this footprint, after pivoting, reach and align
@@ -490,6 +519,7 @@ const state = {
   activePlayer:          'player1',
   movementPhaseComplete: false,
   chargeReactions:       {}, // targetInstanceId -> 'hold'|'standAndShoot'|'flee', cleared each movement phase
+  movementSnapshots:     {}, // WHF-5m: instanceId -> {position,facing,rankWidth} at this movement phase's start, for Undo
 };
 
 // ── Movement interaction state ─────────────────────────────────────────────
@@ -610,6 +640,14 @@ function initTestUnits() {
   // WHF-4a's verify-first pass. Flagged the same way Phase 1 flagged
   // General/Captain before those were later confirmed; unblock by checking
   // the weapon page directly next time someone's on this brief.
+  //
+  // WHF-5m: y moved from 300 to 176. Verify-first caught these coordinates
+  // (unchanged since WHF-4a) already overlapping Halberdiers under the new
+  // friendly-overlap rule — 10px between the two units' nearest models,
+  // well under the 20px (2×MODEL_R) threshold. Nobody had a reason to check
+  // mutual spacing when Handgunners was added in WHF-4a since no overlap
+  // rule existed yet. Same issue found and fixed for Peasant Bowmen/Knights
+  // of the Realm below.
   state.units.push({
     instanceId:   'unit-003',
     unitId:       'handgunners',
@@ -617,7 +655,7 @@ function initTestUnits() {
     name:         'Handgunners',
     factionLabel: 'The Empire',
     category:     'Core Infantry',
-    position:     { x: 460, y: 300 },
+    position:     { x: 460, y: 176 },
     facing:       90,
     rankWidth:    5,
     palette:      'empire',
@@ -636,6 +674,9 @@ function initTestUnits() {
     // clear it, and that doesn't exist yet).
   });
 
+  // WHF-5m: y moved from 520 to 250 — same fixture-overlap issue as
+  // Handgunners above, this time against Knights of the Realm (12px between
+  // nearest models, under the 20px threshold).
   state.units.push({
     instanceId:   'unit-004',
     unitId:       'peasant-bowmen',
@@ -643,7 +684,7 @@ function initTestUnits() {
     name:         'Peasant Bowmen',
     factionLabel: 'Bretonnia',
     category:     'Core Infantry',
-    position:     { x: 740, y: 520 },
+    position:     { x: 740, y: 250 },
     facing:       270,
     rankWidth:    5,
     palette:      'bretonnia',
@@ -727,6 +768,47 @@ function renderBoard() {
   if (shootFlow && shootFlow.stage === 'select-target') {
     renderShootTargetHighlights(overlayLayer);
   }
+
+  // WHF-5m, backlog item 9: KT-style range visualization. Purely
+  // informational — doesn't gate anything chargeReach()/wheelUnit()/
+  // moveUnitForward() don't already gate; just makes reach legible on the
+  // board instead of only in the side-panel numbers.
+  const sel = getSelectedUnit();
+  if (sel && state.phase === 'movement' && !chargeFlow && !sel.phaseDone && !sel.fleeing) {
+    renderMoveRangeIndicator(overlayLayer, moveGhost ? moveGhost.unit : sel);
+  }
+  if (sel && state.phase === 'shooting' && !sel.phaseDone) {
+    renderShootRangeIndicator(overlayLayer, sel);
+  }
+}
+
+// Dashed ring at the selected unit's current remaining-movement reach
+// (footprint edge + remaining M, in inches). Shrinks live with a ghost
+// active since callers pass moveGhost.unit (whose movementUsed already
+// reflects the in-progress preview) instead of the committed unit.
+function renderMoveRangeIndicator(layer, unit) {
+  const fp        = unitFootprint(unit);
+  const remaining = Math.max(0, parseFloat(unit.stats.M) - unit.movementUsed);
+  layer.appendChild(svgEl('circle', {
+    cx: fp.centre.x.toFixed(2), cy: fp.centre.y.toFixed(2),
+    r:  (Math.max(fp.halfW, fp.halfD) + inchesToPx(remaining)).toFixed(2),
+    fill: 'none', stroke: 'var(--selected-ring)', 'stroke-width': '1',
+    'stroke-dasharray': '3 5', opacity: '0.5', 'pointer-events': 'none',
+  }));
+}
+
+// Dashed ring at the selected shooter's weapon range. No-op for units with
+// no ranged weapon (melee-only units have nothing to show here).
+function renderShootRangeIndicator(layer, unit) {
+  const weapon = unit.weapons.find(w => w.type === 'ranged');
+  if (!weapon) return;
+  const fp = unitFootprint(unit);
+  layer.appendChild(svgEl('circle', {
+    cx: fp.centre.x.toFixed(2), cy: fp.centre.y.toFixed(2),
+    r:  (Math.max(fp.halfW, fp.halfD) + inchesToPx(weapon.range)).toFixed(2),
+    fill: 'none', stroke: 'var(--empire-gold)', 'stroke-width': '1',
+    'stroke-dasharray': '3 5', opacity: '0.5', 'pointer-events': 'none',
+  }));
 }
 
 // Highlight rings on units the current shooter can legally target — same
@@ -957,6 +1039,55 @@ function toggleModelDead(unitId, modelId) {
   if (state.selected === unitId) showPanel(unit);
 }
 
+// ── Undo move (WHF-5m) ──────────────────────────────────────────────────────
+// One level of undo, not a per-action stack: snapshot position/facing/
+// rankWidth for every unit at the moment the Movement phase begins, and let
+// Undo revert a unit all the way back to that snapshot regardless of how
+// many move/wheel/reform actions it chained together since. Re-taken every
+// time the phase starts (turn 1's init() counts as a start too).
+function snapshotUnitsForMovement() {
+  state.units.forEach(u => {
+    state.movementSnapshots[u.instanceId] = {
+      position:  { ...u.position },
+      facing:    u.facing,
+      rankWidth: u.rankWidth,
+    };
+  });
+}
+
+// Charges/flees are excluded on purpose: a charge has already resolved
+// reactions, casualties, and possibly a flee/redirect on OTHER units by the
+// time it's done, so reverting just the charger's position would leave
+// those side effects stranded with no unit to have caused them. Simplest
+// safe rule: Undo only covers voluntary Move/Wheel/Reform.
+function canUndoMove(unit) {
+  if (!unit || moveGhost || moveMode || chargeFlow || shootFlow) return false;
+  if (unit.hasCharged || unit.fleeing || unit.phaseDone) return false;
+  const snap = state.movementSnapshots[unit.instanceId];
+  if (!snap) return false;
+  return unit.movementUsed > 0 || unit.rankWidth !== snap.rankWidth;
+}
+
+function undoMove() {
+  const unit = getSelectedUnit();
+  if (!canUndoMove(unit)) return;
+  const snap = state.movementSnapshots[unit.instanceId];
+  const idx  = state.units.findIndex(u => u.instanceId === unit.instanceId);
+  const restored = reassignModels({
+    ...unit,
+    position:       { ...snap.position },
+    facing:         snap.facing,
+    rankWidth:       snap.rankWidth,
+    movementUsed:    0,
+    backwardInches:  0,
+    hasMoved:        false,
+    hasReformed:     false,
+  });
+  state.units[idx] = restored;
+  renderBoard();
+  showPanel(restored);
+}
+
 // ── Movement actions ───────────────────────────────────────────────────────
 function enterMoveMode() {
   const unit = getSelectedUnit();
@@ -1009,6 +1140,12 @@ function commitGhost() {
   if (violates1InchRule(ghost, state.units)) {
     flashGhostViolation();
     flashHint('Too close to enemy (1" rule) — move rejected', 2500);
+    return;
+  }
+
+  if (violatesFriendlyOverlap(ghost, state.units)) {
+    flashGhostViolation();
+    flashHint('Overlaps a friendly unit — move rejected', 2500);
     return;
   }
 
@@ -1459,6 +1596,7 @@ function endPhase() {
 
   if (next === 'movement') {
     state.units.forEach(u => { u.phaseDone = false; });
+    snapshotUnitsForMovement();
   }
   if (next === 'shooting') {
     // Units with nothing to do this phase (no ranged weapon, blocked by
@@ -1524,6 +1662,24 @@ function handleWheelKey(angleDeltaDeg) {
   showPanel(getSelectedUnit());
 }
 
+// Movement-points bar (backlog item 1): total M, spent so far (solid),
+// live cost of the move/wheel currently being lined up (highlighted
+// segment — only present while a ghost is active), remaining (empty track).
+// `previewUsed` is the ghost's cumulative movementUsed; omit it (pass null)
+// when there's no ghost so the bar just shows the committed total.
+function movementBarHtml(M, committedUsed, previewUsed) {
+  const shownUsed  = previewUsed != null ? previewUsed : committedUsed;
+  const usedPct    = Math.max(0, Math.min(100, (committedUsed / M) * 100));
+  const previewPct = previewUsed != null
+    ? Math.max(0, Math.min(100, (previewUsed / M) * 100) - usedPct) : 0;
+  const remaining  = Math.max(0, M - shownUsed);
+  return `<div class="move-bar-track">
+      <div class="move-bar-used" style="width:${usedPct.toFixed(1)}%"></div>
+      ${previewUsed != null ? `<div class="move-bar-preview" style="left:${usedPct.toFixed(1)}%; width:${previewPct.toFixed(1)}%"></div>` : ''}
+    </div>
+    <div class="panel-row move-bar-label">${shownUsed.toFixed(1)}" / ${M}" used &nbsp;·&nbsp; ${remaining.toFixed(1)}" remaining</div>`;
+}
+
 // ── Movement panel HTML ─────────────────────────────────────────────────────
 function buildMovementSection(unit) {
   if (state.phase !== 'movement') return '';
@@ -1549,25 +1705,24 @@ function buildMovementSection(unit) {
     const canMove   = !unit.hasReformed && !unit.hasCharged;
     const canReform = !unit.hasMoved && !unit.hasReformed;
     const canCharge = !unit.hasMoved && !unit.hasReformed && !unit.hasCharged;
-    const remaining = (M - unit.movementUsed).toFixed(1);
     const movedNote   = unit.hasMoved   ? '<div class="panel-row dim">Moved this turn — reform unavailable</div>' : '';
     const reformedNote = unit.hasReformed ? '<div class="panel-row dim">Reformed — no remaining move</div>' : '';
     const chargedNote = unit.hasCharged ? '<div class="panel-row dim">Charged this phase</div>' : '';
+    const canUndo = canUndoMove(unit);
     return `<div class="panel-section">
       <div class="panel-section-title">Movement</div>
-      <div class="panel-row">Allowance: ${M}" &nbsp;|&nbsp; Used: ${unit.movementUsed.toFixed(1)}" &nbsp;|&nbsp; Left: ${remaining}"</div>
+      ${movementBarHtml(M, unit.movementUsed, null)}
       ${movedNote}${reformedNote}${chargedNote}
       <div class="move-btns">
         <button class="move-btn" id="btn-move" ${canMove ? '' : 'disabled'}>Move</button>
         <button class="move-btn" id="btn-wheel" ${canMove ? '' : 'disabled'}>Wheel</button>
         <button class="move-btn" id="btn-reform" ${canReform ? '' : 'disabled'}>Reform</button>
         <button class="move-btn" id="btn-charge" ${canCharge ? '' : 'disabled'}>Charge</button>
+        <button class="move-btn" id="btn-undo" ${canUndo ? '' : 'disabled'}>Undo Move</button>
       </div>
       <button class="move-btn done-btn" id="btn-done">Done — End unit move</button>
     </div>`;
   }
-
-  const remaining = (M - used).toFixed(1);
 
   if (moveMode === 'move') {
     const backUsed = moveGhost ? moveGhost.unit.backwardInches.toFixed(1) : '0.0';
@@ -1575,7 +1730,8 @@ function buildMovementSection(unit) {
     return `<div class="panel-section">
       <div class="panel-section-title">Moving</div>
       <div class="panel-row">↑ forward 1" per press &nbsp; ↓ backward 0.5" per press</div>
-      <div class="panel-row">Remaining: ${remaining}" &nbsp;|&nbsp; Backward: ${backUsed}" / ${halfM}" max</div>
+      ${movementBarHtml(M, unit.movementUsed, used)}
+      <div class="panel-row dim">Backward: ${backUsed}" / ${halfM}" max</div>
       <div class="move-btns">
         <button class="move-btn" id="btn-commit">Confirm (Enter)</button>
         <button class="move-btn" id="btn-cancel">Cancel (Esc)</button>
@@ -1597,7 +1753,7 @@ function buildMovementSection(unit) {
     return `<div class="panel-section">
       <div class="panel-section-title">Wheeling (${wheelPivotSide} pivot)</div>
       <div class="panel-row">← / → to rotate (${WHEEL_DEG}° per press)</div>
-      <div class="panel-row">Remaining: ${remaining}"</div>
+      ${movementBarHtml(M, unit.movementUsed, used)}
       <div class="move-btns">
         <button class="move-btn" id="btn-commit">Confirm (Enter)</button>
         <button class="move-btn" id="btn-cancel">Cancel (Esc)</button>
@@ -1616,6 +1772,7 @@ function buildMovementSection(unit) {
         <button class="move-btn rw-btn" id="rw-plus">+</button>
         <span class="rw-label">&nbsp;(1–${max})</span>
       </div>
+      ${movementBarHtml(M, unit.movementUsed, used)}
       <div class="move-btns">
         <button class="move-btn" id="btn-commit">Confirm (Enter)</button>
         <button class="move-btn" id="btn-cancel">Cancel (Esc)</button>
@@ -1831,6 +1988,7 @@ function attachMovementListeners(unit) {
   q('btn-cancel')?.addEventListener('click', cancelGhost);
   q('rw-minus')?.addEventListener('click', () => adjustReformWidth(unit, -1));
   q('rw-plus')?.addEventListener('click',  () => adjustReformWidth(unit,  1));
+  q('btn-undo')?.addEventListener('click', undoMove);
 
   q('btn-charge-confirm')?.addEventListener('click', confirmChargeTargets);
   q('btn-charge-cancel')?.addEventListener('click', cancelChargeFlow);
@@ -1919,6 +2077,7 @@ function hidePanel() {
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
   initTestUnits();
+  snapshotUnitsForMovement();
   renderGrid();
   renderBoard();
   renderPhaseTracker();
