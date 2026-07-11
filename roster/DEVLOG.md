@@ -972,3 +972,98 @@ in this log.
 - `rb-unit-role` CSS class is now dead (role moved to section headers) —
   left in place, not cleaned up.
 
+## ROSTER-UX-2 — Guided flow + destructive-action gating (2026-07-11)
+
+Brief: `briefs/ROSTER_UX_2_BRIEF.md`. Context that changed the stakes: the
+site is now publicly hosted via Firebase Hosting against the one shared
+database (confirmed via the new root `firebase.json`/`.firebaserc`/
+`index.html` landing page) — a non-technical second player uses this
+unattended, following a shared link. **Root `CLAUDE.md` and
+`PROJECT_STATE.md` still say no live deployment exists anywhere** — that's
+now stale, flagging for Nox's next `PROJECT_STATE.md` regeneration; not
+edited here (planner-owned file, per the standing domain split).
+
+**Item 1 — guided flow.** Home's action-row used to show two buttons once
+a system was picked: "Add Unit to Library" (primary/prominent — a
+maintenance action, first thing a new player saw) and "Browse & Build
+Roster" (secondary) → `#library/{system}`, the Library screen. Library
+conflates two different jobs: browsing/picking a faction to build with,
+and editing/deleting the canonical unit library (search, +Add Unit,
+per-unit Edit/× buttons). A player just wanting to build a roster had to
+navigate a maintenance-tool screen to find the faction's "Build Roster"
+link.
+
+Split them. New `FactionPicker` screen (`#faction-pick/{system}`):
+faction list only, one prominent "Build Roster" button per faction, no
+search/+Add Unit/Edit/Delete. This is now the only button on home's
+action-row. **Verified before building, not assumed**: `RosterBuilder`
+already has its own unit browser (`_renderBrowser`) — the brief's claim
+that "unit browsing for roster-building happens inside the builder as it
+already does" held up; nothing needed building there, `FactionPicker`
+only had to get the player from "picked a system" to "picked a faction"
+in one uncluttered step. `App.goToUnitCreator`/`goToRoster` deleted —
+grepped for callers first, found none left after the home HTML changed
+(replaced by `goToFactionPick`).
+
+**Item 2 — maintenance gate.** `Maintenance` object: `sessionStorage`-backed
+`isUnlocked()`/`gate(label)`, checked against a hardcoded
+`MAINTENANCE_PASSPHRASE` constant. Documented as NOT security in three
+places per the brief's explicit instruction (the constant's own comment,
+inline at the gate call sites, and here) — this app has no auth by
+design, this is a misclick barrier for a trusted-link audience, nothing
+more. Gated at the **router level**, not just on the buttons that link to
+these screens: `MAINTENANCE_SCREENS = new Set(['unit', 'library',
+'clean-drafts'])` checked at the top of `Router.render()`, before the
+switch — so pasting or typing a hash directly (`#library/kill-team`)
+still hits the prompt, not just clicking through the UI normally.
+Verified this specifically in testing, not just assumed from reading the
+code (see below). New `#maintenance` hub screen (gated on entry too):
+system picker into Library, plus a Clean Drafts link — the one explicit
+entry point the brief asked for.
+
+**Item 3 — safety rails.** `Library._delete`'s confirm now names the
+blast radius: "removes it from the shared unit library for ALL rosters
+and future games — not just yours." `MyRosters._deleteExport` gets two
+additions: the previously-logged known gap (a game still `waiting` on a
+second player needs this export to exist at join time — noted in this
+DEVLOG's own "Known gaps" section above, now actually surfaced to the
+person about to click Delete) as an explicit warning line, and the
+Maintenance gate itself — the one My Rosters action that isn't purely the
+user's own draft, unlike `_deleteDraft` which stays ungated per the
+brief's explicit exception ("it's the user's own work product, confirm-
+dialog is enough").
+
+**Testing (real browser, not code-tracing this time):** headless Chromium
+via Playwright worked this session — see `killteam/DEVLOG.md`'s
+2026-07-11 entry for how the `libasound.so.2` sandbox blocker got worked
+around (`apt-get download` + `dpkg -x` + `LD_LIBRARY_PATH`, no root). Ran
+the walkthrough against **live Firebase data** (public rules, no fixture
+needed for the read-heavy parts) — but every destructive dialog
+(Library delete, export delete) was intercepted and **dismissed, never
+accepted**, so confirm-text wording got verified without any canonical
+gameData actually being touched by the test. 25/25 checks: fresh-eyes
+walkthrough never shows Add Unit/Clean Drafts/Edit/Delete before a built
+roster; wrong passphrase rejected with an alert and bounces home; correct
+passphrase unlocks the hub and is session-remembered across both a normal
+click-through and a direct hash paste; a **fresh, locked session**
+attempting `#library/kill-team` directly still gets the prompt (the
+router-level-not-just-buttons design decision, confirmed under actual
+test rather than taken on faith); both confirm-dialog wording upgrades
+present. Test script not committed (one-off, matches this project's
+existing testing precedent).
+
+**Not done — explicitly out of scope per the brief:** real auth/accounts,
+per-user data, Firebase rules changes, 40k/KT/WHF app changes, visual
+redesign beyond moving entries. The KT export-delete `waiting`-status race
+window and the 40k draft/game coupling (both logged in this DEVLOG's
+"Known gaps" section above) are now at least *visible* to whoever's about
+to click Delete, via item 3's warning line, but the underlying gaps
+themselves are still unguarded — the brief asked for a warning, not the
+cross-table lookup machinery that would actually close them.
+
+**Commits:** `d2c504d`
+
+**Deploy note, per the brief's own "Done when":** this fix protects
+nobody until it's actually live — Nox pushes and **redeploys Firebase
+Hosting** (manual, not automatic on push).
+
