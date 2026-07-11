@@ -1758,7 +1758,8 @@ function buildBoardSVG(wrap, playerSlot, status, phase) {
     setupDeployClick(svg, playerSlot);
   } else if (status === 'active' && phase === 'firefight') {
     setupDragMove(svg, playerSlot, unitG, overlay);
-    setupDragToShoot(svg, playerSlot); // KT-2 Part 2
+    // KT-2 Part 2's drag-to-shoot is wired document-level, once, near the
+    // Escape-key binding — not per-render (see its own comment for why).
   }
 }
 
@@ -2407,43 +2408,54 @@ function setupDragMove(svg, playerSlot, unitG, overlay) {
 // reasons) and everything downstream (crit coloring, bonus resolution)
 // come for free, not re-implemented.
 //
+// Document-level, registered once (idempotent via flag, same pattern as
+// the Escape-key binding below) rather than per-render on the SVG. First
+// attempt attached to the SVG only and missed a real conflict: the
+// moment an operative activates, showRadialMenu() draws a 44px "End"
+// button as a plain HTML <div>, positioned exactly on top of the token's
+// screen position — a mousedown starting there never reaches the SVG at
+// all, so a token-scoped listener silently never arms. Checking proximity
+// to the active operative's own screen position (via its board's SVG
+// CTM) instead of walking up from e.target sidesteps the question of
+// which element is actually on top.
+//
 // Below-threshold mousedown+mouseup (a plain click, no real drag) never
 // calls preventDefault/stopPropagation, so the native `click` event still
 // reaches setupDragMove's listener afterward — existing activate/deselect
 // behavior on the active operative's own token is untouched.
-function setupDragToShoot(svg, playerSlot) {
-  const THRESHOLD = 8; // px, screen space
+if (!window._ktDragShootBound) {
+  window._ktDragShootBound = true;
+  const THRESHOLD = 8;   // px, screen space — real drag vs a plain click
+  const ARM_RADIUS = 28; // px, screen space — token radius + the radial menu's End button + slack
   let candidate = null;
 
-  svg.addEventListener('mousedown', e => {
-    if (dragState || shootState || fightState) return;
-    if (!activation || gameData.pendingShot || gameData.pendingFight) return;
+  function ktDragShootArm(e) {
+    if (candidate || dragState || shootState || fightState) return;
+    if (!activation || !gameData || gameData.pendingShot || gameData.pendingFight) return;
 
-    let node = e.target;
-    while (node && node !== svg) {
-      if (node.classList?.contains('op-token')) break;
-      node = node.parentElement;
-    }
-    const opId = node?.classList?.contains('op-token') ? node.getAttribute('data-op-id') : null;
-    if (!opId || opId !== activation.opId) return;
-
-    const op = (gameData.operatives || {})[opId];
-    if (!op || op.player !== playerSlot) return;
-    // Same gate as the Shoot button's shootDisabled (minus the drag/
-    // pending checks already covered above).
+    const playerSlot = activation.playerSlot;
+    const op = (gameData.operatives || {})[activation.opId];
+    if (!op || op.player !== playerSlot || op.x < 0) return;
     if (activation.apRemaining < 1 || op.order === 'conceal') return;
     const ranged = getRangedWeapons(op);
     if (!ranged.length) return;
 
-    candidate = { startX: e.clientX, startY: e.clientY, ranged };
-  });
+    const svg = document.getElementById(`board-wrap-${playerSlot}`)?.querySelector('svg.board-svg');
+    if (!svg) return;
+    const pt = svg.createSVGPoint();
+    pt.x = op.x; pt.y = op.y;
+    const screen = pt.matrixTransform(svg.getScreenCTM());
+    if (Math.hypot(e.clientX - screen.x, e.clientY - screen.y) > ARM_RADIUS) return;
 
-  svg.addEventListener('mousemove', e => {
+    candidate = { startX: e.clientX, startY: e.clientY, ranged, playerSlot };
+  }
+
+  function ktDragShootMove(e) {
     if (!candidate) return;
     const dx = e.clientX - candidate.startX, dy = e.clientY - candidate.startY;
     if (Math.hypot(dx, dy) < THRESHOLD) return;
 
-    const ranged = candidate.ranged;
+    const { ranged, playerSlot } = candidate;
     candidate = null;
     hideRadialMenu();
     if (ranged.length === 1) {
@@ -2456,9 +2468,11 @@ function setupDragToShoot(svg, playerSlot) {
       shootWeapon = 'picking';
       reRenderPhaseBar();
     }
-  });
+  }
 
-  svg.addEventListener('mouseup', () => { candidate = null; });
+  document.addEventListener('mousedown', ktDragShootArm);
+  document.addEventListener('mousemove', ktDragShootMove);
+  document.addEventListener('mouseup',   () => { candidate = null; });
 }
 
 // ═══════════════════════════════════════════════════════════
