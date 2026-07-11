@@ -187,8 +187,11 @@ function violates1InchRule(movingUnit, allUnits) {
 // front-corner footprint and this still answers the same question.
 //
 // Interface: chargeReach(charger, targetUnit, maxInches) -> {
-//   reachable, inchesNeeded, finalFacing, contactPoint
+//   reachable, inchesNeeded, finalFacing, contactPoint, finalPosition
 // }
+// contactPoint is the point touched on the TARGET's boundary; finalPosition
+// (WHF-4a.1) is the charger's own resulting .position — base-to-base, not
+// contactPoint itself, which would overlap the target if used directly.
 
 function pxDistance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -250,18 +253,49 @@ function nearestFootprintPoint(unit, fromPoint) {
   };
 }
 
+// WHF-4a.1 fix: `contactPoint` is a point on the TARGET's own footprint
+// boundary. Placing a charging unit's `.position` (front-LEFT slot origin,
+// not centre) directly on top of it — what this app did before this fix —
+// puts most of the charger's body past that point, into and through the
+// target's footprint, instead of stopping short of it base-to-base.
+// This converts "my front-centre boundary should touch `frontCentrePoint`,
+// facing `facing`" into the actual `.position` origin that achieves that:
+// walk back from the front-centre point by the charger's own half-depth to
+// find its true centre, then from centre to the front-left origin
+// unitFootprint() itself uses — same right/backward/localCX/localCY math,
+// inverted.
+function positionForFrontCentreContact(unit, facing, frontCentrePoint) {
+  const numRanks = Math.ceil(unit.models.length / unit.rankWidth);
+  const halfD    = (numRanks - 1) / 2 * SPACING + MODEL_R;
+  const localCX  = (unit.rankWidth - 1) / 2 * SPACING;
+  const localCY  = (numRanks - 1)   / 2 * SPACING;
+  const rad = facing * Math.PI / 180;
+  const right    = { x: Math.cos(rad),  y: Math.sin(rad) };
+  const backward = { x: -Math.sin(rad), y: Math.cos(rad) };
+  const centre = {
+    x: frontCentrePoint.x + halfD * backward.x,
+    y: frontCentrePoint.y + halfD * backward.y,
+  };
+  return {
+    x: centre.x - localCX * right.x - localCY * backward.x,
+    y: centre.y - localCX * right.y - localCY * backward.y,
+  };
+}
+
 function chargeReach(charger, targetUnit, maxInches) {
   const contactPoint  = nearestFootprintPoint(targetUnit, charger.position);
   const desiredFacing = angleToPoint(charger.position, contactPoint);
   const angleDelta    = shortestAngleDelta(charger.facing, desiredFacing);
   const wheelCost     = wheelArcInches(charger, angleDelta);
-  const straightCost  = pxDistance(charger.position, contactPoint) / INCHES_TO_PX;
+  const finalPosition = positionForFrontCentreContact(charger, desiredFacing, contactPoint);
+  const straightCost  = pxDistance(charger.position, finalPosition) / INCHES_TO_PX;
   const inchesNeeded  = wheelCost + straightCost;
   return {
     reachable: inchesNeeded <= maxInches,
     inchesNeeded,
     finalFacing: desiredFacing,
-    contactPoint,
+    contactPoint,   // the point of contact on the target's boundary (reference/log use)
+    finalPosition,  // WHF-4a.1: the charger's own .position at contact — base-to-base, not contactPoint itself
   };
 }
 
@@ -1263,7 +1297,7 @@ function rollChargeMove() {
     updated = {
       ...charger,
       facing:       reach.finalFacing,
-      position:     reach.contactPoint,
+      position:     reach.finalPosition, // WHF-4a.1: base-to-base, not reach.contactPoint (which overlapped the target)
       movementUsed: reach.inchesNeeded,
       hasMoved:     true,
       hasCharged:   true,
