@@ -534,6 +534,10 @@ function initTestUnits() {
     abilities: [],
     models: buildModels('unit-001', 20, 5),
     ...movementDefaults(),
+    engaged: false, // WHF-4a.1: deliberately NOT part of movementDefaults() —
+    // engaged persists across the movementDefaults() reset at end of
+    // Movement phase (only WHF-5/Close Combat resolution should ever
+    // clear it, and that doesn't exist yet).
   });
 
   // Sv 2+ is the army book default for KotR (full plate + shield).
@@ -557,6 +561,10 @@ function initTestUnits() {
     abilities: ['Blessing of the Lady', 'Knightly Vow', 'Lance Formation'],
     models: buildModels('unit-002', 9, 3),
     ...movementDefaults(),
+    engaged: false, // WHF-4a.1: deliberately NOT part of movementDefaults() —
+    // engaged persists across the movementDefaults() reset at end of
+    // Movement phase (only WHF-5/Close Combat resolution should ever
+    // clear it, and that doesn't exist yet).
   });
 
   // WHF-4a direct-fire test units. Stat lines are the standard Handgunner /
@@ -588,6 +596,10 @@ function initTestUnits() {
     abilities: [],
     models: buildModels('unit-003', 10, 5),
     ...movementDefaults(),
+    engaged: false, // WHF-4a.1: deliberately NOT part of movementDefaults() —
+    // engaged persists across the movementDefaults() reset at end of
+    // Movement phase (only WHF-5/Close Combat resolution should ever
+    // clear it, and that doesn't exist yet).
   });
 
   state.units.push({
@@ -609,6 +621,10 @@ function initTestUnits() {
     abilities: ["Peasant's Duty"],
     models: buildModels('unit-004', 10, 5),
     ...movementDefaults(),
+    engaged: false, // WHF-4a.1: deliberately NOT part of movementDefaults() —
+    // engaged persists across the movementDefaults() reset at end of
+    // Movement phase (only WHF-5/Close Combat resolution should ever
+    // clear it, and that doesn't exist yet).
   });
 }
 
@@ -787,14 +803,15 @@ function renderUnit(layer, unit, isGhost) {
   if (!isGhost) {
     const aliveCount = unit.models.filter(m => m.alive).length;
     const usedStr    = unit.movementUsed > 0 ? ` [${unit.movementUsed.toFixed(1)}"]` : '';
+    const engagedStr = unit.engaged ? ' [ENGAGED]' : ''; // WHF-4a.1 legibility
     const labelPos   = modelPosition(unit, numRanks + 0.3, frontCX);
     const label = svgEl('text', {
-      class: 'unit-label',
+      class: unit.engaged ? 'unit-label unit-label-engaged' : 'unit-label',
       x: labelPos.x.toFixed(2), y: labelPos.y.toFixed(2),
       'text-anchor': 'middle', 'dominant-baseline': 'middle',
       'pointer-events': 'none',
     });
-    label.textContent = `${unit.name} (${aliveCount})${usedStr}`;
+    label.textContent = `${unit.name} (${aliveCount})${usedStr}${engagedStr}`;
     g.appendChild(label);
   }
 
@@ -1072,6 +1089,10 @@ function confirmChargeTargets() {
 // explanation reads as broken, not as RAW working correctly) or null when
 // the reaction is legal.
 function standAndShootBlockReason(target, charger) {
+  // WHF-4a.1: already engaged (from a prior charge this game) can't shoot
+  // at all, reaction or not — same blanket prohibition validShootTargets()
+  // enforces for normal declared shots.
+  if (target.engaged) return 'engaged in combat';
   const weapon = target.weapons.find(w => w.type === 'ranged');
   if (!weapon) return 'no ranged weapon';
   const distance = pxDistance(target.position, charger.position) / INCHES_TO_PX;
@@ -1246,7 +1267,17 @@ function rollChargeMove() {
       movementUsed: reach.inchesNeeded,
       hasMoved:     true,
       hasCharged:   true,
+      engaged:      true,
     };
+    // WHF-4a.1: contact engages BOTH units, not just the charger — the
+    // charger's own hasCharged only ever blocked it from shooting
+    // incidentally ("already moved"), and the defender got no state
+    // change at all, so it stayed a fully legal shooter/target through
+    // the whole rest of the turn. No WHF-5 (Close Combat) yet to clear
+    // this, so it's accepted as a persistent lock until that exists —
+    // see engaged's own comment at declaration.
+    state.units[state.units.findIndex(u => u.instanceId === primaryTarget.instanceId)] =
+      { ...primaryTarget, engaged: true };
   } else {
     outcome = 'failed';
     const moved = moveUnitForward({ ...charger, facing: reach.finalFacing, movementUsed: 0 }, roll);
@@ -1278,7 +1309,14 @@ function finishChargeFlow() {
 function validShootTargets(shooter) {
   const weapon = shooter.weapons.find(w => w.type === 'ranged');
   if (!weapon) return [];
+  // WHF-4a.1, RAW confirmed (8th.whfb.app/shooting/shooting-into-combat):
+  // "Models are not permitted to shoot at enemies that are engaged in
+  // close combat... too much danger of hitting a friend." Blanket
+  // prohibition, no exception modeled here (template war machines have a
+  // narrow accidental-hit carve-out in RAW; out of scope for this app,
+  // which has no template weapons yet — WHF-4b).
   return enemiesOf(shooter, state.units)
+    .filter(t => !t.engaged)
     .filter(t => pxDistance(shooter.position, t.position) / INCHES_TO_PX <= weapon.range);
 }
 
@@ -1367,7 +1405,14 @@ function endPhase() {
     // per-phase flags it's derived from (hasReformed/hasCharged/hasMoved
     // reset here, ready for next turn's movement phase).
     state.units.forEach(u => {
-      u.shootingBlocked  = u.hasReformed || u.hasCharged || u.fleeing;
+      // engaged (WHF-4a.1) is checked separately, not folded into this
+      // OR chain, on purpose — hasCharged/hasReformed/fleeing all reset
+      // every movement phase via movementDefaults() below, but engaged
+      // must keep blocking shooting turn after turn until WHF-5 exists
+      // to clear it. If it were only caught here via hasCharged's
+      // incidental overlap, it would silently stop blocking the very
+      // next turn once hasCharged reset.
+      u.shootingBlocked  = u.hasReformed || u.hasCharged || u.fleeing || u.engaged;
       u.shootingPenalty  = u.hasMoved ? 1 : 0;
     });
     chargeFlow = null;
@@ -1671,7 +1716,8 @@ function buildShootingSection(unit) {
   const moveOrFireBlocked = weapon && weapon.rules && weapon.rules.includes('moveOrFire') && unit.shootingPenalty > 0;
 
   if (unit.phaseDone) {
-    const reason = unit.shootingBlocked ? 'blocked — charged, reformed, or fled this turn'
+    const reason = unit.engaged      ? 'ENGAGED — locked in combat, cannot shoot'
+      : unit.shootingBlocked ? 'blocked — charged, reformed, or fled this turn'
       : !weapon             ? 'no ranged weapon'
       : moveOrFireBlocked   ? 'Move or Fire — moved this turn, cannot shoot'
       : 'complete';
@@ -1789,6 +1835,7 @@ function showPanel(unit) {
     <div class="panel-header">
       <div class="panel-name">${escHtml(unit.name)}</div>
       <div class="panel-faction">${escHtml(unit.factionLabel)} — ${escHtml(unit.category)}</div>
+      ${unit.engaged ? '<div class="panel-engaged-badge">Engaged</div>' : ''}
     </div>
     <div class="panel-section">
       <table class="stat-table">

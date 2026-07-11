@@ -123,6 +123,11 @@ body {
   pointer-events: none;
 }
 
+.unit-label-engaged {
+  fill: var(--violation-red);
+  font-weight: 700;
+}
+
 /* ── Ghost flash animation ─────────────────────────────────────────────────── */
 @keyframes ghost-violation-flash {
   0%, 100% { opacity: 0.35; }
@@ -204,6 +209,22 @@ body {
   letter-spacing: 0.14em;
   color: var(--text-dim);
   text-transform: uppercase;
+}
+
+/* WHF-4a.1: engaged-in-combat lock indicator — same visual language as
+   the ghost-violation flash (violation-red) since both mean "action
+   blocked, here's why". */
+.panel-engaged-badge {
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-bright);
+  background: var(--violation-red);
+  border-radius: 2px;
 }
 
 .panel-section {
