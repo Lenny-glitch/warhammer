@@ -331,6 +331,8 @@
     .dice-group-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; }
     .dice-group-dice { display: flex; gap: 2px; flex-wrap: wrap; }
     .dice-separator { width: 1px; height: 32px; background: var(--border); margin: 0 6px; align-self: center; }
+    /* KT-2 Part 2: click-to-skip hint shown only while a dice tumble is playing */
+    .dice-skip-hint { font-size: 10px; color: var(--text-dim); font-style: italic; text-align: center; padding: 2px 0; }
     .shoot-result { font-size: 12px; padding: 5px 10px; border-radius: 4px; background: var(--surface2); }
 
     /* ── STRATEGY PHASE ── */
@@ -690,6 +692,7 @@ let radialSlot    = null;  // playerSlot whose radial is currently showing
 let expandedOps   = new Set(); // op IDs whose sidebar cards are expanded
 let splatData     = []; // { x, y, pathIdx, rotation, scale, color, bornAt } — permanent death stains
 let diceAnimState = null; // { atkRolls, defRolls, atkStopAt, defStopAt, t0, totalDur, displayAtk, displayDef, _timer }
+let fightDiceAnimState = null; // KT-2 Part 2 — same shape as diceAnimState, Fight's own tumble
 let diceReadoutExpanded = {}; // BON-2b: { shot: bool, fight: bool } — collapsed-by-default readout toggle (always expanded in ?dev=true)
 
 // ═══════════════════════════════════════════════════════════
@@ -3338,9 +3341,9 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
     ? `<button class="btn" onclick="cancelShoot()">Cancel Shot</button>`
     : '';
 
-  let diceHtml = '', resultHtml = '';
+  let diceHtml = '', resultHtml = '', animating = false;
   if (pending.phase === 'rolled' && pending.atkRolls) {
-    const animating  = !!diceAnimState;
+    animating = !!diceAnimState;
     const displayAtk = animating ? (diceAnimState.displayAtk || pending.atkRolls) : pending.atkRolls;
     const displayDef = animating ? (diceAnimState.displayDef || pending.defRolls) : pending.defRolls;
 
@@ -3369,11 +3372,14 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
   const vs    = iAmAttacker
     ? `${escHtml(w.name || '?')} → ${escHtml(tgtName)} &nbsp;|&nbsp; ATK ${w.profiles?.ATK || '?'} / ${w.profiles?.HIT || '?'} / ${w.profiles?.DMG || '?'}`
     : `${escHtml(w.name || '?')} ← ${escHtml(attName)} &nbsp;|&nbsp; DEF ${tgtOp?.def || 3}d / SAVE ${saveStat}+`;
+  // KT-2 Part 2: click-to-skip during the tumble — same affordance Fight's
+  // tumble gets (renderFightResolutionBar).
+  const skipHint = animating ? '<div class="dice-skip-hint">(click to skip)</div>' : '';
 
   return `
     <span class="phase-bar-label">${label}</span>
     <div class="phase-bar-body">
-      <div class="shoot-panel">
+      <div class="shoot-panel"${animating ? ' onclick="skipDiceAnimation()" style="cursor:pointer;"' : ''}>
         <div class="shoot-panel-header">
           <strong style="font-size:13px;">${escHtml(iAmAttacker ? attName : tgtName)}</strong>
           <span class="shoot-stats"><span>${vs}</span></span>
@@ -3382,6 +3388,7 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
         ${coverHtml}
         ${rollBtn}
         ${diceHtml}
+        ${skipHint}
         ${resultHtml}
       </div>
     </div>`;
@@ -3643,10 +3650,15 @@ async function confirmFightDamage(playerSlot) {
 // ── Fight resolution render (auto-resolve) ─────────────────
 
 function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp, defOp) {
-  const atkRolls    = p.atkRolls    || [];
-  const defRolls    = p.defRolls    || [];
-  const atkAnnot    = p.atkAnnotated || [];
-  const defAnnot    = p.defAnnotated || [];
+  // KT-2 Part 2: while fightDiceAnimState is live, show tumbling faces
+  // with no outcome revealed yet (annotations/damage would spoil the
+  // drama) — same gating shape renderShotResolutionBar already uses for
+  // Shoot's tumble.
+  const animating = !!fightDiceAnimState;
+  const atkRolls  = animating ? (fightDiceAnimState.displayAtk || p.atkRolls || []) : (p.atkRolls || []);
+  const defRolls  = animating ? (fightDiceAnimState.displayDef || p.defRolls || []) : (p.defRolls || []);
+  const atkAnnot  = animating ? [] : (p.atkAnnotated || []);
+  const defAnnot  = animating ? [] : (p.defAnnotated || []);
 
   const attName = escHtml(attOp?.name || '?');
   const defName = escHtml(defOp?.name || '?');
@@ -3663,6 +3675,7 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
     'hit-strike':   { label: 'STRIKE',         color: '#e67e22' },
     'miss':         { label: 'MISS',           color: 'var(--text-dim)' },
   };
+  const ROLLING_STYLE = { label: '', color: 'var(--text-dim)' };
 
   function renderDie(roll, style) {
     const isActive = style.label !== 'MISS';
@@ -3672,35 +3685,39 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
     </div>`;
   }
 
-  const atkDice = atkRolls.map((r, i) => renderDie(r, ATK_STYLE[atkAnnot[i] || 'miss'])).join('') ||
+  const atkDice = atkRolls.map((r, i) => renderDie(r, animating ? ROLLING_STYLE : ATK_STYLE[atkAnnot[i] || 'miss'])).join('') ||
     '<span style="font-size:11px;color:var(--text-dim)">No dice</span>';
-  const defDice = defRolls.map((r, j) => renderDie(r, DEF_STYLE[defAnnot[j] || 'miss'])).join('') ||
+  const defDice = defRolls.map((r, j) => renderDie(r, animating ? ROLLING_STYLE : DEF_STYLE[defAnnot[j] || 'miss'])).join('') ||
     '<span style="font-size:11px;color:var(--text-dim)">No dice</span>';
 
   const dmgAtk = p.dmgToDefender || 0;
   const dmgDef = p.dmgToAttacker || 0;
 
-  const summaryParts = [
-    dmgAtk > 0 ? `${attName} deals <strong>${dmgAtk}</strong> wounds to ${defName}` : null,
-    dmgDef > 0 ? `${defName} deals <strong>${dmgDef}</strong> wounds to ${attName}` : null,
-    dmgAtk === 0 && dmgDef === 0 ? 'No damage dealt.' : null,
-  ].filter(Boolean);
+  let confirmHtml = '';
+  if (!animating) {
+    const summaryParts = [
+      dmgAtk > 0 ? `${attName} deals <strong>${dmgAtk}</strong> wounds to ${defName}` : null,
+      dmgDef > 0 ? `${defName} deals <strong>${dmgDef}</strong> wounds to ${attName}` : null,
+      dmgAtk === 0 && dmgDef === 0 ? 'No damage dealt.' : null,
+    ].filter(Boolean);
 
-  const confirmHtml = (iAmAttacker
-    ? `<div class="shoot-result">${summaryParts.join(' &nbsp;|&nbsp; ')}</div>
-       <button class="btn btn-primary" onclick="confirmFightDamage('${playerSlot}')">Apply Damage</button>`
-    : `<div class="shoot-result">${summaryParts.join(' &nbsp;|&nbsp; ')}</div>
-       <span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`)
-    + renderBonusReadout(p, 'fight');
+    confirmHtml = (iAmAttacker
+      ? `<div class="shoot-result">${summaryParts.join(' &nbsp;|&nbsp; ')}</div>
+         <button class="btn btn-primary" onclick="confirmFightDamage('${playerSlot}')">Apply Damage</button>`
+      : `<div class="shoot-result">${summaryParts.join(' &nbsp;|&nbsp; ')}</div>
+         <span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`)
+      + renderBonusReadout(p, 'fight');
+  }
 
   const atkWpn = escHtml(p.atkWeapon?.name || '?');
   const defWpn = escHtml(p.defWeapon?.name || '?');
   const label  = iAmAttacker ? 'Close Combat' : 'Incoming Fight!';
+  const skipHint = animating ? '<div class="dice-skip-hint">(click to skip)</div>' : '';
 
   return `
     <span class="phase-bar-label">${label}</span>
     <div class="phase-bar-body">
-      <div class="fight-panel">
+      <div class="fight-panel"${animating ? ' onclick="skipDiceAnimation()" style="cursor:pointer;"' : ''}>
         <div class="fight-panel-header">
           <strong style="font-size:13px;">${attName} ⚔ ${defName}</strong>
           <span style="font-size:11px;color:var(--text-dim);">${atkWpn} vs ${defWpn}</span>
@@ -3710,14 +3727,15 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
           <div class="fight-pool fight-pool-atk">
             <div class="fight-pool-label">${attName} — ${atkWpn} (ATK ${p.atkWeapon?.profiles?.ATK||'?'}, hit on ${p.atkHitStat}+)</div>
             <div class="fight-dice">${atkDice}</div>
-            <div class="fight-pool-total" style="color:${dmgAtk>0?'var(--red)':'var(--text-dim)'}">Deals: ${dmgAtk} wounds</div>
+            <div class="fight-pool-total" style="color:${dmgAtk>0?'var(--red)':'var(--text-dim)'}">${animating ? '&nbsp;' : `Deals: ${dmgAtk} wounds`}</div>
           </div>
           <div class="fight-pool fight-pool-def">
             <div class="fight-pool-label">${defName} — ${defWpn} (ATK ${p.defWeapon?.profiles?.ATK||'?'}, hit on ${p.defHitStat}+)</div>
             <div class="fight-dice">${defDice}</div>
-            <div class="fight-pool-total" style="color:${dmgDef>0?'var(--red)':'var(--text-dim)'}">Deals: ${dmgDef} wounds</div>
+            <div class="fight-pool-total" style="color:${dmgDef>0?'var(--red)':'var(--text-dim)'}">${animating ? '&nbsp;' : `Deals: ${dmgDef} wounds`}</div>
           </div>
         </div>
+        ${skipHint}
         ${confirmHtml}
       </div>
     </div>`;
@@ -4081,6 +4099,80 @@ function startDiceAnimation(pending) {
   diceAnimState._timer = setTimeout(tick, INTERVAL);
 }
 
+// KT-2 Part 2: Fight's own tumble — same mechanics as startDiceAnimation,
+// separate state because Shoot and Fight can't be mid-resolution at the
+// same time but each needs its own timer/display-value lifecycle. Unlike
+// Shoot's pendingShot (two Firebase phases: coverChoice -> rolled, a
+// natural animation trigger), confirmFightTarget() computes and writes
+// the FULL resolved pendingFight in one shot — so the trigger here is
+// "pendingFight just appeared" (see detectAndPlayEffects), not a phase
+// transition. The reveal itself doesn't need to be synced across
+// clients — both clients already have the same real roll values the
+// moment Firebase delivers pendingFight, so each just runs the same
+// tumble-to-reveal locally.
+function startFightDiceAnimation(pending) {
+  if (fightDiceAnimState?._timer) clearTimeout(fightDiceAnimState._timer);
+
+  const w = pending.atkWeapon || {};
+  const [nDmg, cDmg] = parseDmgPair(w.profiles?.DMG || '1/1');
+  const tier = getAnimTier(nDmg, cDmg);
+
+  const TUMBLE   = { subtle: 300, dramatic: 500, cinematic: 700 }[tier];
+  const STAGGER  = { subtle: 30,  dramatic: 60,  cinematic: 80  }[tier];
+  const INTERVAL = 60;
+
+  const atkRolls = pending.atkRolls || [];
+  const defRolls = pending.defRolls || [];
+
+  let dieIdx = 0;
+  const atkStopAt = atkRolls.map(() => TUMBLE + dieIdx++ * STAGGER);
+  const defStopAt = defRolls.map(() => TUMBLE + dieIdx++ * STAGGER);
+  const totalDur  = dieIdx > 0 ? TUMBLE + (dieIdx - 1) * STAGGER : TUMBLE;
+
+  fightDiceAnimState = { atkRolls, defRolls, atkStopAt, defStopAt, t0: Date.now(), totalDur,
+                         displayAtk: null, displayDef: null, _timer: null };
+
+  const tick = () => {
+    if (!fightDiceAnimState) return;
+    const elapsed = Date.now() - fightDiceAnimState.t0;
+
+    fightDiceAnimState.displayAtk = fightDiceAnimState.atkRolls.map((real, i) =>
+      elapsed >= fightDiceAnimState.atkStopAt[i] ? real : Math.ceil(Math.random() * 6)
+    );
+    fightDiceAnimState.displayDef = fightDiceAnimState.defRolls.map((real, i) =>
+      elapsed >= fightDiceAnimState.defStopAt[i] ? real : Math.ceil(Math.random() * 6)
+    );
+
+    reRenderPhaseBar();
+
+    if (elapsed >= fightDiceAnimState.totalDur) {
+      fightDiceAnimState = null;
+      reRenderPhaseBar();
+    } else {
+      fightDiceAnimState._timer = setTimeout(tick, INTERVAL);
+    }
+  };
+
+  fightDiceAnimState._timer = setTimeout(tick, INTERVAL);
+}
+
+// KT-2 Part 2: click-to-skip for either tumble — jumps straight to the
+// real values and clears whichever animation is running. Only one of
+// Shoot/Fight can be resolving at a time, but check both rather than
+// assume which.
+function skipDiceAnimation() {
+  if (diceAnimState?._timer) {
+    clearTimeout(diceAnimState._timer);
+    diceAnimState = null;
+    reRenderPhaseBar();
+  }
+  if (fightDiceAnimState?._timer) {
+    clearTimeout(fightDiceAnimState._timer);
+    fightDiceAnimState = null;
+    reRenderPhaseBar();
+  }
+}
+
 // Play fight clash + per-operative splats + screen flash on all visible boards
 function playFightEffects(pending, attacker, defender) {
   const atkW = pending.atkWeapon || {};
@@ -4124,6 +4216,13 @@ function detectAndPlayEffects(prev, curr) {
     const at = (curr.operatives || {})[p.attackerOpId] || (prev.operatives || {})[p.attackerOpId];
     const tg = (curr.operatives || {})[p.targetOpId]   || (prev.operatives || {})[p.targetOpId];
     if (at && tg && at.x >= 0 && tg.x >= 0) playBurstAndFlash(p, at, tg);
+  }
+
+  // KT-2 Part 2: Fight's dice tumble, fires the moment pendingFight
+  // appears (no phase transition to key off, unlike Shoot — see
+  // startFightDiceAnimation's own comment).
+  if (!prev.pendingFight && curr.pendingFight) {
+    startFightDiceAnimation(curr.pendingFight);
   }
 
   // Fight resolved (pendingFight cleared)
