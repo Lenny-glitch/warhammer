@@ -19,7 +19,17 @@
 
 'use strict';
 
-const BONUS_RESOLVER_VERSION = '1.3.0';
+const BONUS_RESOLVER_VERSION = '1.4.0';
+
+// v1.4.0 (PIPE-H1 item 3): 'onAttack' — a weapon-keyword rule that applies
+// whenever the weapon attacks, regardless of whether that attack came from
+// Shoot or Fight (KT's Piercing/Rending/etc. all work this way; the old
+// single-trigger-per-keyword compile produced bonuses that could only ever
+// fire from one of the two actions — a melee weapon carrying an
+// onShoot-tagged rule could never trigger it, e.g. Legionaries' Tainted
+// chainsword's Rending). Eligibility-only: matches when context.trigger is
+// either 'onShoot' or 'onFight', same as 'always' matches anything.
+const ATTACK_TRIGGERS = new Set(['onShoot', 'onFight']);
 
 // Stats where a LOWER number is better (roll-target stats: you're trying to
 // beat this number on a die). Every other stat in the abstract vocabulary is
@@ -173,8 +183,12 @@ function eligibleBonuses(allBonuses, context) {
   const usedActivation = new Set(context.usedThisActivation || []);
 
   return allBonuses.filter(bonus => {
-    // trigger
-    if (bonus.trigger !== 'always' && bonus.trigger !== context.trigger) return false;
+    // trigger — 'always' matches anything; 'onAttack' matches either half
+    // of an attack (onShoot or onFight); otherwise exact match required.
+    const triggerOk = bonus.trigger === 'always'
+      || bonus.trigger === context.trigger
+      || (bonus.trigger === 'onAttack' && ATTACK_TRIGGERS.has(context.trigger));
+    if (!triggerOk) return false;
 
     // usage gating
     if (bonus.usage === 'oncePerGame' && usedGame.has(bonus.id)) return false;

@@ -262,6 +262,34 @@ test('aura range + keyword filter, including "!" exclusion', () => {
   assert.strictEqual(elig3.length, 0);
 });
 
+console.log('onAttack trigger (PIPE-H1 item 3)');
+
+test('onAttack-tagged bonus is eligible when context.trigger is onShoot', () => {
+  const b = bonus({ id: 'rending', trigger: 'onAttack' });
+  const elig = eligibleBonuses([b], { trigger: 'onShoot' });
+  assert.strictEqual(elig.length, 1);
+});
+
+test('onAttack-tagged bonus is eligible when context.trigger is onFight (Tainted chainsword case)', () => {
+  const b = bonus({ id: 'rending', trigger: 'onAttack' });
+  const elig = eligibleBonuses([b], { trigger: 'onFight' });
+  assert.strictEqual(elig.length, 1);
+});
+
+test('onAttack-tagged bonus is NOT eligible on unrelated triggers (onDefend, onMove, onCharge)', () => {
+  const b = bonus({ id: 'rending', trigger: 'onAttack' });
+  for (const trigger of ['onDefend', 'onMove', 'onCharge']) {
+    const elig = eligibleBonuses([b], { trigger });
+    assert.strictEqual(elig.length, 0, `expected onAttack to NOT match context.trigger "${trigger}"`);
+  }
+});
+
+test('old single-trigger bonuses are unaffected — onShoot-tagged still excluded from onFight', () => {
+  const b = bonus({ id: 'legacy-onshoot', trigger: 'onShoot' });
+  const elig = eligibleBonuses([b], { trigger: 'onFight' });
+  assert.strictEqual(elig.length, 0);
+});
+
 console.log('validateBonus');
 
 test('passive-with-cost is rejected', () => {
