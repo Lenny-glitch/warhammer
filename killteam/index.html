@@ -424,6 +424,15 @@
       opacity: 0;
     }
     #kt3-vignette.flash { animation: kt3-screen-flash 0.5s ease-out forwards; }
+
+    /* KT-2 Part 2: injured-token ring — slow pulse, distinct from the
+       screen flash above (that's a one-shot hit reaction; this is a
+       standing status, so it loops gently instead of firing once). */
+    @keyframes kt2-injured-pulse {
+      0%, 100% { opacity: 0.35; }
+      50%      { opacity: 0.85; }
+    }
+    .token-injured-ring { animation: kt2-injured-pulse 1.4s ease-in-out infinite; }
   </style>
 </head>
 <body>
@@ -1773,7 +1782,10 @@ function drawHealthArc(parent, op) {
 
   const isInjured  = op.wounds > 0 && op.wounds <= op.maxWounds / 2;
   const fillColor  = isInjured ? '#c0392b' : '#4a9a5a';
-  const emptyColor = 'rgba(255,255,255,0.08)';
+  // KT-2 Part 2 item 2: lost segments were near-invisible dim white — read
+  // as "background," not "wound taken here." Red-tinted instead, louder
+  // but still clearly dimmer than a filled segment.
+  const emptyColor = 'rgba(192,57,43,0.22)';
   const toRad = d => d * Math.PI / 180;
 
   for (let i = 0; i < N; i++) {
@@ -1804,6 +1816,7 @@ function drawOperativeToken(parent, op, viewerSlot, status, phase) {
   const isExpended = !op.ready;
   const isActive   = activation?.opId === op.id;
   const isDead     = op.wounds <= 0;
+  const isInjured  = op.wounds > 0 && op.wounds <= op.maxWounds / 2;
 
   const g = svgEl('g', { 'data-op-id': op.id, class: 'op-token' });
 
@@ -1823,6 +1836,19 @@ function drawOperativeToken(parent, op, viewerSlot, status, phase) {
 
   // Token body
   g.appendChild(svgEl('circle', { cx: op.x, cy: op.y, r: TOKEN_R, fill: baseColor + '60', stroke: rimColor, 'stroke-width': isActive ? 0.18 : 0.12 }));
+
+  // KT-2 Part 2 item 3: injured must be categorically visible, not just a
+  // shorter/redder arc (easy to miss at a glance — 0.09-wide segments).
+  // Slowly pulsing red ring, own radius (TOKEN_R*1.35) distinct from both
+  // the health arc (TOKEN_R+0.15) and the active-activation glow
+  // (TOKEN_R*1.75) so it reads as its own signal, not a variant of either.
+  if (isInjured) {
+    g.appendChild(svgEl('circle', {
+      cx: op.x, cy: op.y, r: TOKEN_R * 1.35,
+      fill: 'none', stroke: '#c0392b', 'stroke-width': 0.1,
+      class: 'token-injured-ring', 'pointer-events': 'none',
+    }));
+  }
 
   // Health arc
   drawHealthArc(g, op);
@@ -4034,6 +4060,37 @@ function playBeamOnly(pending, attacker, target) {
 }
 
 // Impact burst + screen flash fires at damage confirm
+// KT-2 Part 2: floating "-N" text at the point of damage, so a hit reads
+// as an event you SEE, not just a wounds number that quietly decremented.
+// Same lifecycle pattern as the other transient effects here (SMIL
+// animate + timeout cleanup) — best-effort like the rest of this layer; a
+// re-render mid-animation can cut it short (accepted, same tradeoff as
+// the beam-timing issue noted elsewhere in this file).
+function spawnDamageFloater(parent, x, y, amount) {
+  if (!amount) return;
+  const DUR = 900, RISE = 1.4;
+  const text = svgEl('text', {
+    x, y, 'text-anchor': 'middle', fill: '#ff5050',
+    'font-size': 0.55, 'font-family': 'sans-serif', 'font-weight': 900,
+    'paint-order': 'stroke', stroke: '#1a0808', 'stroke-width': 0.08,
+    'pointer-events': 'none',
+  });
+  text.textContent = `-${amount}`;
+
+  const rise = document.createElementNS(NS, 'animate');
+  rise.setAttribute('attributeName', 'y');
+  rise.setAttribute('from', y); rise.setAttribute('to', y - RISE);
+  rise.setAttribute('dur', (DUR / 1000) + 's'); rise.setAttribute('fill', 'freeze');
+  const fade = document.createElementNS(NS, 'animate');
+  fade.setAttribute('attributeName', 'opacity');
+  fade.setAttribute('from', '1'); fade.setAttribute('to', '0');
+  fade.setAttribute('begin', '0.3s'); fade.setAttribute('dur', ((DUR - 300) / 1000) + 's'); fade.setAttribute('fill', 'freeze');
+  text.appendChild(rise); text.appendChild(fade);
+
+  parent.appendChild(text);
+  setTimeout(() => { if (parent.contains(text)) parent.removeChild(text); }, DUR + 100);
+}
+
 function playBurstAndFlash(pending, attacker, target) {
   const w = pending.weapon || {};
   const [nDmg, cDmg] = parseDmgPair(w.profiles?.DMG || '1/1');
@@ -4045,6 +4102,7 @@ function playBurstAndFlash(pending, attacker, target) {
     if (!burstG) continue;
     if (hasDmg) {
       drawImpactBurst(burstG, target.x, target.y, tier);
+      spawnDamageFloater(burstG, target.x, target.y, pending.totalDamage);
       const isDefender = devMode ? (slot === target.player) : (target.player === myPlayer);
       if (isDefender) triggerScreenFlash();
     }
@@ -4188,8 +4246,14 @@ function playFightEffects(pending, attacker, defender) {
 
     drawClash(beamG, attacker.x, attacker.y, defender.x, defender.y, totalDmg);
     if (burstG) {
-      if ((pending.dmgToDefender || 0) > 0) drawImpactBurst(burstG, defender.x, defender.y, tier);
-      if ((pending.dmgToAttacker || 0) > 0) drawImpactBurst(burstG, attacker.x, attacker.y, tier);
+      if ((pending.dmgToDefender || 0) > 0) {
+        drawImpactBurst(burstG, defender.x, defender.y, tier);
+        spawnDamageFloater(burstG, defender.x, defender.y, pending.dmgToDefender);
+      }
+      if ((pending.dmgToAttacker || 0) > 0) {
+        drawImpactBurst(burstG, attacker.x, attacker.y, tier);
+        spawnDamageFloater(burstG, attacker.x, attacker.y, pending.dmgToAttacker);
+      }
     }
 
     // Each player flashes if their operative took damage
