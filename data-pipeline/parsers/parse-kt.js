@@ -121,6 +121,20 @@ function buildSharedMaps(catalogue) {
     byId[attrStr(entry, '@_id')] = entry;
   }
 
+  // CAT-AUDIT: entryLinks of type="selectionEntryGroup" can target a
+  // selectionEntryGroup that's itself top-level/shared (e.g. Void-dancer
+  // Troupe's "Pistol"/"Melee weapon" groups, referenced by both Lead
+  // Player and Player), not nested inside a selectionEntry. Those group
+  // ids were never indexed, so every entryLink pointing at one silently
+  // resolved to nothing. IDs are unique regardless of node kind, so this
+  // shares the one byId map rather than needing a separate lookup.
+  for (const grp of [
+    ...asArray(catalogue.sharedSelectionEntryGroups?.selectionEntryGroup),
+    ...asArray(catalogue.selectionEntryGroups?.selectionEntryGroup),
+  ]) {
+    byId[attrStr(grp, '@_id')] = grp;
+  }
+
   const sharedProfiles = {};
   for (const p of asArray(catalogue.sharedProfiles?.profile)) {
     sharedProfiles[attrStr(p, '@_id')] = p;
@@ -261,19 +275,58 @@ function weaponProfilesFromEntry(entry) {
     .filter(p => attrStr(p, '@_typeName') === 'Weapons');
 }
 
-function buildWeapon(profile, glossary, crossGlossary) {
-  const rawName = attrStr(profile, '@_name');
-  const isRanged = rawName.startsWith('⌖');
-  const isMelee  = rawName.startsWith('⚔');
-  if (!isRanged && !isMelee) return null;
-
-  const type      = isRanged ? 'ranged' : 'melee';
-  const cleanName = rawName.replace(/^[⌖⚔]\s*/, '').trim();
+function buildWeapon(profile, glossary, crossGlossary, groupNameHint) {
+  const rawName = attrStr(profile, '@_name').trim();
+  let isRanged = rawName.startsWith('⌖');
+  let isMelee  = rawName.startsWith('⚔');
 
   const chars = {};
   for (const c of asArray(profile.characteristics?.characteristic)) {
     chars[attrStr(c, '@_name')] = charText(c);
   }
+
+  // CAT-AUDIT: ~34 KT 2024 Weapons profiles (Fists, Combat blade, Meltagun
+  // in several factions, Phosphor blaster, etc.) ship with no ⌖/⚔ glyph at
+  // all anywhere in the raw .cat — a real, widespread BSData source gap
+  // (confirmed file-by-file), not a name-collision and not isolated to one
+  // unit. Previously these silently returned null and vanished, producing
+  // fully-unarmed operatives. Infer type instead of dropping the weapon:
+  // an embedded "Range N" in WR is the strongest signal (every glyphed
+  // ranged weapon's own WR text has one — also catches the pre-existing
+  // "Rang 8"" typo case extractRange() already handles below); falling
+  // back to the enclosing weapon-choice group's own name (BSData names
+  // some "Ranged Weapon") catches "Phosphor blaster", the one case with
+  // neither a glyph nor a stated range (that weapon's missing range value
+  // is a separate BSData gap, not fixed here — inventing the number would
+  // violate "never invent weapon stats"). Defaults to melee otherwise,
+  // which is also every remaining case's correct real-world classification
+  // (Fists, Combat blade, Gun butts, Cult knife, ... are all genuinely
+  // melee weapons with no range to state).
+  if (!isRanged && !isMelee) {
+    const wr = chars.WR || '';
+    if (/\bRang?e\s+\d/i.test(wr)) {
+      isRanged = true;
+    } else if (groupNameHint && /ranged/i.test(groupNameHint)) {
+      isRanged = true;
+    } else {
+      isMelee = true;
+    }
+  }
+
+  const cleanName = rawName.replace(/^[⌖⚔]\s*/, '').trim();
+
+  // CAT-AUDIT: Novitiates' "Neural whips" ships BOTH profiles glyphed ⌖
+  // (ranged) even though one is explicitly named "... (melee)" — confirmed
+  // by sweeping every "(melee)"/"(ranged)"-suffixed weapon pair in the
+  // 2024 catalogues (13 pairs total): this is the only one where the
+  // glyph disagrees with the weapon's own stated name, so it's a single
+  // upstream typo, not an ambiguous convention. The explicit suffix is the
+  // more specific signal (it exists solely to disambiguate a dual-profile
+  // weapon) and wins when the two disagree.
+  if (/\(melee\)$/i.test(cleanName))  { isRanged = false; isMelee = true; }
+  if (/\(ranged\)$/i.test(cleanName)) { isRanged = true;  isMelee = false; }
+
+  const type      = isRanged ? 'ranged' : 'melee';
 
   const wrString = chars.WR || '-';
   const rng      = isRanged ? extractRange(wrString) : null;
@@ -306,48 +359,55 @@ function collectWeapons(modelEntry, sharedById, glossary, crossGlossary) {
   // strictly bigger miss: the weapon object never existed at all).
   // Recursive so any further nesting is handled too, not just this one
   // observed depth.
-  function extractFromEntry(entry) {
+  // CAT-AUDIT: entryLinks can appear at ANY depth, not just directly on
+  // modelEntry — a group's options are sometimes entryLinks straight to a
+  // shared weapon (e.g. Angels of Death's "Melee Weapon" group links
+  // "Chainsword"/"Power fist"/... by id, no inline <selectionEntries> at
+  // all), and a "combo" upgrade entry like Death Korps's "Boltgun;
+  // bayonet" has no <profiles> of its own, only nested entryLinks to the
+  // real Boltgun and Bayonet entries. The old code only resolved entryLinks
+  // sitting directly on modelEntry, so both shapes silently produced zero
+  // weapons. extractFromEntry/extractFromLink now recurse into each other
+  // so entryLinks resolve wherever they occur.
+  function extractFromEntry(entry, groupName) {
     for (const p of weaponProfilesFromEntry(entry)) {
-      const w = buildWeapon(p, glossary, crossGlossary);
+      const w = buildWeapon(p, glossary, crossGlossary, groupName);
       if (w) weapons.push(w);
     }
     for (const grp of asArray(entry.selectionEntryGroups?.selectionEntryGroup)) {
+      const nestedGroupName = attrStr(grp, '@_name') || groupName;
       for (const e of asArray(grp.selectionEntries?.selectionEntry)) {
-        extractFromEntry(e);
+        extractFromEntry(e, nestedGroupName);
+      }
+      for (const link of asArray(grp.entryLinks?.entryLink)) {
+        extractFromLink(link, nestedGroupName);
       }
     }
     for (const e of asArray(entry.selectionEntries?.selectionEntry)) {
-      extractFromEntry(e);
+      extractFromEntry(e, groupName);
+    }
+    for (const link of asArray(entry.entryLinks?.entryLink)) {
+      extractFromLink(link, groupName);
     }
   }
 
-  // Inline selectionEntries (weapon upgrades defined directly)
-  for (const e of asArray(modelEntry.selectionEntries?.selectionEntry)) {
-    extractFromEntry(e);
-  }
-
-  // selectionEntryGroups (e.g. "choose one weapon")
-  for (const grp of asArray(modelEntry.selectionEntryGroups?.selectionEntryGroup)) {
-    for (const e of asArray(grp.selectionEntries?.selectionEntry)) {
-      extractFromEntry(e);
-    }
-  }
-
-  // entryLinks → resolve from sharedById
-  for (const link of asArray(modelEntry.entryLinks?.entryLink)) {
+  function extractFromLink(link, groupName) {
+    const target = sharedById[attrStr(link, '@_targetId')];
+    if (!target) return;
     if (attrStr(link, '@_type') === 'selectionEntry') {
-      const target = sharedById[attrStr(link, '@_targetId')];
-      if (target) extractFromEntry(target);
-    }
-    if (attrStr(link, '@_type') === 'selectionEntryGroup') {
-      const target = sharedById[attrStr(link, '@_targetId')];
-      if (target) {
-        for (const e of asArray(target.selectionEntries?.selectionEntry)) {
-          extractFromEntry(e);
-        }
+      extractFromEntry(target, groupName);
+    } else if (attrStr(link, '@_type') === 'selectionEntryGroup') {
+      const nestedGroupName = attrStr(target, '@_name') || groupName;
+      for (const e of asArray(target.selectionEntries?.selectionEntry)) {
+        extractFromEntry(e, nestedGroupName);
+      }
+      for (const l of asArray(target.entryLinks?.entryLink)) {
+        extractFromLink(l, nestedGroupName);
       }
     }
   }
+
+  extractFromEntry(modelEntry, null);
 
   // Mark first of each type as default
   let firstRanged = true, firstMelee = true;
@@ -472,13 +532,7 @@ function extractComposition(catalogue) {
 
 // ── Main parse ─────────────────────────────────────────────────────────────────
 
-function parseCat(catPath, glossary, crossGlossary) {
-  const xml    = fs.readFileSync(catPath, 'utf8');
-  const parser = new XMLParser(PARSER_OPTS);
-  const doc    = parser.parse(xml);
-  const cat    = doc.catalogue;
-  if (!cat) return null;
-
+function parseCat(cat, glossary, crossGlossary, globalById) {
   const catName = attrStr(cat, '@_name');
   const slug    = FACTION_SLUG[catName];
   if (slug === null) {
@@ -490,7 +544,7 @@ function parseCat(catPath, glossary, crossGlossary) {
     return null;
   }
 
-  const { byId, sharedProfiles } = buildSharedMaps(cat);
+  const { sharedProfiles } = buildSharedMaps(cat);
   const operatives = [];
   const warnings  = [];
 
@@ -508,7 +562,7 @@ function parseCat(catPath, glossary, crossGlossary) {
       continue;
     }
 
-    const weapons   = collectWeapons(entry, byId, glossary, crossGlossary);
+    const weapons   = collectWeapons(entry, globalById, glossary, crossGlossary);
     const abilities = collectAbilities(entry);
     const keywords  = extractKeywords(entry);
 
@@ -569,16 +623,46 @@ function main() {
 
   console.log(`Found ${catFiles.length} 2024 faction files\n`);
 
+  // CAT-AUDIT: two-pass. Some catalogues (e.g. "Inquisitorial Agents",
+  // which explicitly declares <catalogueLinks> to Kasrkin/Death Korps/
+  // Exaction Squad/Imperial Navy Breachers) reference weapon
+  // selectionEntries by id that are only ever DEFINED in one of those
+  // OTHER files, not their own. A per-file sharedById map can never
+  // resolve those entryLinks, so every operative built purely from
+  // cross-catalogue links (most of Inquisitorial Agents' 56) came out
+  // with zero weapons. Parse every catalogue's XML first, then merge
+  // every file's own shared-entry map into one global registry before
+  // extracting any weapons. IDs are globally-unique GUIDs in this
+  // dataset (confirmed: merging produced zero overwritten keys across
+  // all 47 files), so this can only ever resolve an entryLink's already-
+  // explicit targetId — it can't introduce an ambiguous match.
+  const xmlParser = new XMLParser(PARSER_OPTS);
+  const catDocs = catFiles
+    .map(catPath => ({ catPath, cat: xmlParser.parse(fs.readFileSync(catPath, 'utf8')).catalogue }))
+    .filter(d => d.cat);
+
+  const globalById = {};
+  let overwrites = 0;
+  for (const { cat } of catDocs) {
+    for (const [id, entry] of Object.entries(buildSharedMaps(cat).byId)) {
+      if (globalById[id]) overwrites++;
+      globalById[id] = entry;
+    }
+  }
+  if (overwrites) {
+    console.warn(`  WARN: ${overwrites} duplicate selectionEntry id(s) across catalogues — global registry may be unreliable`);
+  }
+
   const patches = loadPatches();
   const patchesApplied = [];
   const results = [];
 
-  for (const catPath of catFiles) {
+  for (const { catPath, cat } of catDocs) {
     const catName = path.basename(catPath).replace(/^2024 - /, '').replace(/\.cat$/, '');
     console.log(`Parsing: ${catName}`);
 
     try {
-      const faction = parseCat(catPath, glossary, crossGlossary);
+      const faction = parseCat(cat, glossary, crossGlossary, globalById);
       if (!faction) continue;
 
       // Fails loud (throws, aborting the whole run) if a patch no longer

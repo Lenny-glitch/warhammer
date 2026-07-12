@@ -458,3 +458,124 @@ brief's "Done when" — fresh KT game from the Legionary export via
 `?dev=true`, shoot with Fireblast, confirm the bonus lines read correctly
 and (per Nox) that unlimited range doesn't block the shot. If it does,
 the fix is in `killteam/`'s range-check, not here.
+
+## 2026-07-12 — CAT-AUDIT: weapon/unit completeness sweep
+
+Audit script swept all 47 parsed KT factions (493+ operatives). No
+sparse factions (<4 units) — the "AM = 1" case in the brief turned out
+to be a Firebase-only artifact, not a parsed faction (see below). Before
+any fix: **49 zero-weapon operatives**, **23 no-melee-weapon operatives**.
+
+Nox's own suspicion ("weapons whose name matches the unit/ability name
+may be getting dropped by a name-collision") checked and **not** the
+mechanism — Blessed Blade's weapon (Commune blade) and the operative
+named Blessed Blade never collide anywhere in `parse-kt.js`; keyword
+extraction (`categoryLinks`) and weapon extraction (`profiles`) are
+fully separate code paths. Root cause was three independent, unrelated
+parser gaps in `parse-kt.js`, found by tracing specific named cases from
+the brief against raw BSData source in `~/projects/bsdata-killteam`:
+
+1. **Missing glyph prefix (~34 weapons, 15+ factions).** `buildWeapon()`
+   classified ranged/melee purely from a leading ⌖/⚔ glyph on the
+   profile name and silently returned `null` — dropping the weapon
+   entirely — when neither was present. Confirmed by file sweep: BSData
+   itself ships ~34 real Weapons profiles (Fists, Combat blade, Meltagun
+   in 4 different factions, Phosphor blaster, ...) with no glyph at all,
+   a genuine widespread source gap. Fix infers type instead of dropping:
+   an embedded "Range N" in the WR characteristic (same signal every
+   glyphed ranged weapon's own WR text carries) first, falling back to
+   the enclosing weapon-choice group's own name (catches "Phosphor
+   blaster", the one case with neither — Battleclade's own
+   `<selectionEntryGroup name="Ranged Weapon">`), defaulting to melee
+   otherwise (correct for every remaining case checked by name/context).
+   Also fixed: `startsWith()` on an un-trimmed name failed Wyrmblade's
+   " ⚔ Sanctus bio-dagger" (leading space before the glyph).
+2. **entryLinks not resolved below the top level.** The old recursive
+   weapon walker only resolved `entryLinks` sitting directly on
+   `modelEntry` itself. Two shapes below that depth silently vanished:
+   a weapon-choice group whose options are `entryLinks` straight to a
+   shared entry with no inline `<selectionEntries>` (Angels of Death's
+   Intercessor Sergeant — explicitly named in the brief), and a "combo"
+   upgrade entry with no `<profiles>` of its own, only nested
+   `entryLinks` to the real weapons (Death Korps Watchmaster's "Boltgun;
+   bayonet" — also named in the brief). `extractFromEntry`/
+   `extractFromLink` now recurse into each other so entryLinks resolve
+   at any depth.
+3. **Cross-catalogue references, two shapes.** "Inquisitorial Agents"
+   (56 operatives, by far the largest KT catalogue) declares
+   `<catalogueLinks>` importing Kasrkin/Death Korps/Exaction
+   Squad/Imperial Navy Breachers and reuses their weapon entries by id
+   — ids that only exist in those OTHER files' own shared-entry maps.
+   A per-file `sharedById` can never resolve that. Fix: two-pass parse
+   — read every 2024 catalogue's XML first, merge every file's own
+   shared-entry map into one global registry (ids are unique GUIDs
+   across this whole dataset — confirmed zero collisions merging all
+   47 files, so this can only ever resolve an entryLink's already-
+   explicit targetId, never introduce an ambiguous match), then extract
+   weapons against the global registry. Second shape of the same class:
+   `buildSharedMaps` only indexed `selectionEntry` ids, never
+   `selectionEntryGroup` ids — Void-dancer Troupe's "Pistol"/"Melee
+   weapon" groups are top-level `sharedSelectionEntryGroups`, referenced
+   by `entryLink type="selectionEntryGroup"` from both Lead Player and
+   Player, and were unresolvable for the same structural reason. Now
+   indexed into the same global map (group and entry ids never collide).
+
+Also fixed, found while sweeping: Novitiates' "Neural whips (melee)"
+profile is glyphed ⌖ (ranged) in the raw source — the only glyph/name
+mismatch across all 13 "(melee)"/"(ranged)"-suffixed weapon pairs in the
+2024 catalogues, confirmed a genuine single upstream typo, not an
+ambiguous convention. The explicit "(melee)"/"(ranged)" suffix — which
+exists in this dataset specifically to disambiguate dual-profile
+weapons — now wins when it disagrees with the glyph.
+
+**After fix: 5 zero-weapon, 2 no-melee — all confirmed RAW-correct, not
+bugs.** Investigated every remaining case against its own printed
+ability text before accepting it:
+- Navis Gheistskull ×2 (imperial-navy-breachers, inquisitorial-agents),
+  Navis C.A.T. Unit ×2 (same two factions), Tome-skull
+  (inquisitorial-agents): each carries a **Machine** ability reading
+  "cannot retaliate or assist in a fight" (Gheistskull/Tome-skull) or
+  stronger. Genuinely unarmed support drones by design. Per the brief's
+  own "never invent weapon stats" — giving these a Fists default would
+  directly contradict their own printed rule, not fix a gap.
+- Ratling Bomber (ratlings): Tripwire/Mine specialist, no melee
+  weapon by design, no Machine tag needed — a real archetype choice.
+- Aquilon Servo-sentry (tempestus-aquilons): explicit **Machine**/
+  **Turret** — "cannot retaliate, assist in a fight... or use any
+  weapons that aren't on its datacard." Sentry-gun, ranged-only by
+  design.
+
+No patches.json entries were needed — every fix landed in the parser
+because every case was a genuine parse gap or a single confirmed source
+typo, not a hole in the source data itself.
+
+**AM mystery (coordinates with ROSTER-VAL's Phase 0, same question).**
+`gameData/kill-team/factions/astra-militarum` exists live in Firebase
+with exactly one unit, but `astra-militarum` is not a slug the parser
+has ever produced (not in `FACTION_SLUG`, no matching `.cat` file) and
+its one unit's shape doesn't match the pipeline's schema at all (no
+`weapons` array, `MOVE`/`SAVE` keys uppercase instead of `Move`/`Save`,
+a Firebase-pushid key typical of hand-entry through the Unit Creator).
+It's leftover manual/test data, not a parsed catalogue — real Astra
+Militarum KT content already exists correctly split across Kasrkin,
+Death Korps, Tempestus Aquilons, Ratlings, and Inquisitorial Agents (all
+present, all now fixed above). **Not deleted this session** — a live
+Firebase delete of a whole faction node is exactly the kind of
+hard-to-reverse, shared-state action worth Nox's explicit go rather
+than a unilateral call; flagging for that decision, per the brief's own
+"propose, Nox decides" framing.
+
+**Ship:** `parse-kt.js` recompiled clean (no warnings) after each fix,
+re-audited after each to confirm the count actually moved. Dry-run
+reviewed (`--dry-run`, all 47 KT factions, ploys/rules/bonuses
+correctly skipped as unchanged) before the real upload. Live-verified
+post-upload: `chaos-cult/units/blessed-blade` now carries Commune blade,
+`death-korps/units/watchmaster` carries its full Boltgun/bayonet +
+sidearm/melee loadout, `imperial-navy-breachers/units/
+navis-sergeant-at-arms` carries its full shotgun/hatchet/pistol/sword
+loadout — the three examples named in the brief, confirmed live, not
+just in local output.
+
+Files: `data-pipeline/parsers/parse-kt.js` (buildWeapon, collectWeapons,
+buildSharedMaps, main — all four changes above). No changes to
+`patches.json`, `compile-keywords.js`, or any other faction system.
