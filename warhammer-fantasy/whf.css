@@ -388,6 +388,15 @@ body {
   margin-bottom: 0.3rem;
 }
 
+/* WHF-5m.1, backlog item 3 (minimal cut): a new player looking at an idle
+   unit's panel shouldn't have to already know the four action buttons
+   exist — call them out in one line before the buttons themselves. */
+.action-prompt {
+  color: var(--text-bright);
+  font-size: 0.72rem;
+  margin: 0.4rem 0 0.15rem;
+}
+
 /* ── Reform rank stepper ───────────────────────────────────────────────────── */
 .rw-control {
   display: flex;
@@ -415,14 +424,19 @@ body {
 }
 
 /* ── Hint bar ──────────────────────────────────────────────────────────────── */
+/* WHF-5m.1, backlog item 3: playtest feedback was that this line is the
+   ONLY place controls are discoverable, so it needed to read as more than
+   footnote text — bumped size/weight/color and a gold top border instead
+   of the plain dim divider. */
 #hint-bar {
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
-  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-bright);
   text-transform: uppercase;
   text-align: center;
-  padding: 0.3rem;
+  padding: 0.45rem;
   background: var(--bg-panel);
-  border-top: 1px solid var(--border-dark);
+  border-top: 1px solid var(--border-accent);
   flex-shrink: 0;
 }

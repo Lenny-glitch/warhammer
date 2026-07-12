@@ -78,8 +78,9 @@ function frontCorners(unit) {
   };
 }
 
-// Returns a new unit moved forward by `inches`. Does NOT handle backward
-// tracking — caller is responsible for backwardInches.
+// Returns a new unit moved forward by `inches`. Only used by the Charge
+// flow's failed/uncaught-flee moves (WHF-3) — the interactive Movement-
+// phase 'move' ghost uses its own net-cost model (WHF-5m.1), not this.
 function moveUnitForward(unit, inches) {
   const d = inchesToPx(inches);
   const v = facingVector(unit);
@@ -573,7 +574,7 @@ function buildModels(instanceId, count, rankWidth) {
 
 function movementDefaults() {
   return {
-    movementUsed: 0, backwardInches: 0, hasReformed: false, hasMoved: false,
+    movementUsed: 0, hasReformed: false, hasMoved: false,
     phaseDone: false, hasCharged: false, fleeing: false,
   };
 }
@@ -1079,7 +1080,6 @@ function undoMove() {
     facing:         snap.facing,
     rankWidth:       snap.rankWidth,
     movementUsed:    0,
-    backwardInches:  0,
     hasMoved:        false,
     hasReformed:     false,
   });
@@ -1093,7 +1093,11 @@ function enterMoveMode() {
   const unit = getSelectedUnit();
   if (!unit || unit.hasReformed || unit.phaseDone || chargeFlow) return;
   moveMode = 'move';
-  showGhost({ ...unit }, 'move');
+  // WHF-5m.1: net-cost model — moveNetInches/moveSessionStart are transient,
+  // stripped again at commitGhost(). Everything downstream (movementUsed,
+  // the movement bar, the range ring) reads plain `movementUsed`, computed
+  // fresh from these two each keypress — see handleMoveKey().
+  showGhost({ ...unit, moveNetInches: 0, moveSessionStart: { ...unit.position } }, 'move');
   showPanel(unit);
 }
 
@@ -1152,10 +1156,15 @@ function commitGhost() {
   const idx = state.units.findIndex(u => u.instanceId === state.selected);
   if (idx === -1) return;
 
+  // Strip the 'move' session's transient net-cost fields (WHF-5m.1) —
+  // they're meaningless once committed and would otherwise linger on the
+  // persisted unit until the next move session overwrites them.
+  const { moveNetInches, moveSessionStart, ...committed } = ghost;
+
   // Reform ghost already carries hasReformed:true; move/wheel need hasMoved:true
   state.units[idx] = type !== 'reform'
-    ? { ...ghost, hasMoved: true }
-    : ghost;
+    ? { ...committed, hasMoved: true }
+    : committed;
 
   clearGhost();
   moveMode = null;
@@ -1623,32 +1632,49 @@ function updateEndPhaseButton() {
 }
 
 // ── Arrow-key handlers ─────────────────────────────────────────────────────
+// WHF-5m.1: net-cost pricing for the straight-line 'move' ghost. Cost is a
+// pure function of NET displacement from this move session's start (not a
+// per-press running total) — net forward costs 1"/inch, net backward costs
+// 2"/inch (RAW's "half speed" backward, expressed as pricing instead of the
+// old physical-distance cap). Backing the ghost up while still ahead of
+// start is free editing: it only reduces the net-forward figure, it isn't
+// charged as its own action. Wheel is unaffected — priced as before via
+// wheelArcInches().
+function costOfNet(netInches) {
+  return netInches >= 0 ? netInches : -2 * netInches;
+}
+
 function handleMoveKey(direction) {
   if (!moveGhost) return;
   const unit = getSelectedUnit();
   if (!unit) return;
-  const ghost     = moveGhost.unit;
-  const M         = parseFloat(unit.stats.M);
-  const remaining = M - ghost.movementUsed;
-  if (remaining <= 0) { flashHint('No movement remaining'); return; }
+  const ghost      = moveGhost.unit;
+  const M          = parseFloat(unit.stats.M);
+  const usedBefore = unit.movementUsed; // cost already spent before this session began
+  const budget     = M - usedBefore;    // total cost this session may spend
+  const netMax     = budget;            // 1:1 pricing forward
+  const netMin     = -budget / 2;       // 2:1 pricing backward
 
-  let newGhost;
+  let newNet;
   if (direction > 0) {
-    const step = Math.min(1, remaining);
-    newGhost = moveUnitForward(ghost, step);
+    if (ghost.moveNetInches >= netMax) { flashHint('No movement remaining'); return; }
+    newNet = Math.min(ghost.moveNetInches + 1, netMax);
   } else {
-    const halfM   = M / 2;
-    const maxBack = Math.min(0.5, remaining, halfM - ghost.backwardInches);
-    if (maxBack <= 0) { flashHint(`Backward limit reached (max ${halfM.toFixed(1)}")`); return; }
-    const d = inchesToPx(maxBack);
-    const v = facingVector(ghost);
-    newGhost = {
-      ...ghost,
-      position: { x: ghost.position.x - v.x * d, y: ghost.position.y - v.y * d },
-      movementUsed:   ghost.movementUsed   + maxBack,
-      backwardInches: ghost.backwardInches + maxBack,
-    };
+    if (ghost.moveNetInches <= netMin) { flashHint('No further backward move affordable'); return; }
+    newNet = Math.max(ghost.moveNetInches - 0.5, netMin);
   }
+
+  const d = inchesToPx(newNet);
+  const v = facingVector(ghost);
+  const newGhost = {
+    ...ghost,
+    position: {
+      x: ghost.moveSessionStart.x + v.x * d,
+      y: ghost.moveSessionStart.y + v.y * d,
+    },
+    moveNetInches: newNet,
+    movementUsed:  usedBefore + costOfNet(newNet),
+  };
 
   showGhost(newGhost, 'move');
   showPanel(unit);
@@ -1713,6 +1739,7 @@ function buildMovementSection(unit) {
       <div class="panel-section-title">Movement</div>
       ${movementBarHtml(M, unit.movementUsed, null)}
       ${movedNote}${reformedNote}${chargedNote}
+      <div class="panel-row action-prompt">Choose an action: Move · Wheel · Reform · Charge</div>
       <div class="move-btns">
         <button class="move-btn" id="btn-move" ${canMove ? '' : 'disabled'}>Move</button>
         <button class="move-btn" id="btn-wheel" ${canMove ? '' : 'disabled'}>Wheel</button>
@@ -1725,13 +1752,19 @@ function buildMovementSection(unit) {
   }
 
   if (moveMode === 'move') {
-    const backUsed = moveGhost ? moveGhost.unit.backwardInches.toFixed(1) : '0.0';
-    const halfM    = (M / 2).toFixed(1);
+    // WHF-5m.1: net-cost display — net forward is 1:1 (free to walk back
+    // down since it's just editing the same forward commitment), net
+    // backward is priced 2:1, called out explicitly so the doubled cost
+    // isn't a surprise at commit time.
+    const net = moveGhost ? moveGhost.unit.moveNetInches : 0;
+    const netNote = net >= 0
+      ? `<div class="panel-row dim">Net: ${net.toFixed(1)}" ahead of start</div>`
+      : `<div class="panel-row dim">Net: ${(-net).toFixed(1)}" behind start (×2 cost)</div>`;
     return `<div class="panel-section">
       <div class="panel-section-title">Moving</div>
       <div class="panel-row">↑ forward 1" per press &nbsp; ↓ backward 0.5" per press</div>
       ${movementBarHtml(M, unit.movementUsed, used)}
-      <div class="panel-row dim">Backward: ${backUsed}" / ${halfM}" max</div>
+      ${netNote}
       <div class="move-btns">
         <button class="move-btn" id="btn-commit">Confirm (Enter)</button>
         <button class="move-btn" id="btn-cancel">Cancel (Esc)</button>

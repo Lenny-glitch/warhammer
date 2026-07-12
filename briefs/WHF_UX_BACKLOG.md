@@ -96,3 +96,22 @@ rear rank, count updated. Also confirmed working unprompted:
     circle should land with item 7's shot feedback.
 Remaining before 4a closes: ONE test — a charge where
 Stand-and-Shoot visibly thins the charger before contact.
+
+## AMENDMENT 3 (2026-07-11) — WHF-5m playtest: 8/8, one correction
+Passed 8/8 with one design correction (movement cost pricing —
+became WHF-5m.1, see WHF5M1_MOVEMENT_PATCH.md) and one more
+controls-visibility ask (below). Confirmed positives worth
+recording: overlap rejection reads clearly via the ghost-blink
+(both move AND wheel), the ENGAGED highlight lands, and the
+unit-label/movement-bar numbers are trusted at the table — no
+complaints about legibility of the numbers themselves, only
+about the OLD accumulation-not-net cost model (item 1 in
+WHF5M1_MOVEMENT_PATCH.md) and controls discovery (below).
+
+10 — Movement animation, ALL THREE GAMES (Nox verbatim): click
+     move → model/unit animates A→B with a dust puff +
+     walk/drive/clank audio cue. Late priority — an atmosphere
+     win once core mechanics settle, not a legibility fix. Applies
+     across warhammer-fantasy, warhammer40k, and killteam, not
+     just this project — flag to whichever AI/session picks it up
+     for any of the three, not WHF-only scope.

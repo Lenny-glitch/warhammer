@@ -121,7 +121,7 @@ Full 8th edition Movement Phase. Ghost preview pattern (preview before commit), 
 | WHF-4a: Shooting (basic, direct-fire) | Complete (see Phase 6) — checkpoint fixes in Phase 7; templates/blast/scatter/aura carry to 4b |
 | WHF-4b: Shooting (templates, blast, scatter) | Not started |
 | WHF-5: Combat (Close Combat + Rank Collapse) | Not started |
-| WHF-5m: Movement Pass (overlap rule + movement UX) | Complete (see Phase 8) |
+| WHF-5m: Movement Pass (overlap rule + movement UX) | Complete (see Phase 8) — cost pricing patched in Phase 9 (WHF-5m.1) |
 
 ## Things The Next AI Should Know
 
@@ -134,6 +134,7 @@ Full 8th edition Movement Phase. Ghost preview pattern (preview before commit), 
 - **Entry point is `index.html`, not `whf.html`** (WHF-5m, Phase 8). `whf.html` is now a redirect stub for old links — don't add real markup to it.
 - **Friendly-overlap and enemy-1"-proximity are DIFFERENT thresholds, don't merge them.** `violatesFriendlyOverlap()` (2×MODEL_R, literal touching-is-fine-overlap-isn't) vs `violates1InchRule()` (2×MODEL_R + 1", a no-go buffer). Both are checked once, at ghost-commit, not per intermediate point of a move.
 - **Undo (WHF-5m) is one level, phase-scoped, and voluntary-movement-only.** It reverts to a snapshot taken at Movement-phase start (`snapshotUnitsForMovement()`), not a per-action stack. Deliberately excluded: charged/fled units — a charge already resolved reactions/casualties/flees on OTHER units, so rewinding just the charger would strand those side effects.
+- **`backwardInches` no longer exists (WHF-5m.1, Phase 9).** Movement cost for the 'move' ghost is priced by `costOfNet()` off NET displacement from the session's start (`moveSessionStart`/`moveNetInches`, both transient — stripped by `commitGhost()` before the unit is written back to `state.units`). Don't reintroduce per-press physical-distance tracking; if a future change needs it, it should extend `costOfNet()`, not resurrect the old field.
 
 ---
 
@@ -604,6 +605,89 @@ unit stays at its last legal 2" position), the movement bar's pure-function
 math and its live rendering in the panel during an active ghost, and both
 range-ring types rendering on selection in their respective phases. Test
 script not committed (one-off, same as prior phases).
+
+**Commits:** `02e4067`.
+
+---
+
+### Phase 9 — WHF-5m.1: Movement Cost Patch + Playtest Follow-ups (2026-07-12)
+
+**Brief:** `briefs/WHF5M1_MOVEMENT_PATCH.md`. Follow-up to WHF-5m's
+playtest (8/8 pass, one design correction). **Files:** `whf.js`, `whf.css`.
+
+**1. Movement cost, net-from-session-start (the fix).** WHF-5m's bar
+priced every keypress as its own charge — forward 3" then backward 2"
+showed 5" used, forcing a Cancel to correct course instead of just editing
+the move. Replaced with `costOfNet(netInches)`, a pure function of NET
+displacement from where the current 'move' session began: `net` if
+`net >= 0` (net forward, 1:1), `-2*net` if `net < 0` (net backward, 2:1 —
+the same "half speed" backward rate the old physical-distance cap
+enforced, now expressed as pricing instead). `handleMoveKey()` no longer
+accumulates a running total; it recomputes the ghost's position directly
+from `moveSessionStart` (captured once in `enterMoveMode()`) plus the
+signed net each press, and derives `movementUsed` fresh from
+`costOfNet()` every time. Net range per session is clamped to
+`[-budget/2, budget]` where `budget = M - unit.movementUsed` at session
+start — algebraically the same reachable-distance envelope the old
+physical `M/2` backward cap produced, just computed from cost instead of
+distance. Backing the ghost up while still ahead of start is free editing
+(it only lowers the net-forward figure, not a separately-charged action) —
+confirmed by test: fwd 3" then back 1" nets +2" and costs 2.0", not the
+old model's 3.5"+ accumulation.
+
+**Verify-first note on the brief's own smoke cases.** The brief's first
+example ("fwd3+back2 → 1.0\" used") reconciles cleanly under literal net
+subtraction (3−2=+1, cost 1.0"). Its second ("fwd1+back3 → 2.0\" used
+(1" net back × 2)") does not: fwd1−back3 = −2" net, which the brief's own
+stated formula would price at 2×2=4.0", not 2.0" — the annotation's own
+math implies a net of −1", which only follows from fwd1−back2 or
+fwd2−back3. Reported rather than silently reproduced: implemented the
+**stated rule** ("net forward at 1:1, net backward at 2:1") and verified
+it against a self-consistent case (fwd1+back2 → net −1" → 2.0", matching
+the annotation's own numbers exactly) instead of chasing the
+inconsistent example. Flagging for Nox to confirm which side of that
+example had the typo.
+
+`backwardInches` (the WHF-2-era per-press physical-distance tracker,
+superseded by this net model) is removed entirely — from
+`movementDefaults()`, `undoMove()`, and the 'move' panel's display line
+(now shows net-from-start instead, with the ×2 called out when behind
+start) — rather than left as a dead field. `commitGhost()` strips the two
+new transient ghost-only fields (`moveNetInches`, `moveSessionStart`)
+before writing the committed unit back to `state.units`, so they don't
+linger on persisted state between move sessions. Wheel is untouched —
+still priced via `wheelArcInches()` as WHF-3/WHF-5m left it, per the
+brief's explicit scope note.
+
+**2. Controls discoverability (backlog item 3, minimal cut).** Playtest:
+new players wouldn't know to look for the per-unit action buttons. Added
+a one-line prompt ("Choose an action: Move · Wheel · Reform · Charge")
+in the idle Movement panel, above the button row. Made the footer hint
+bar (`#hint-bar`) visually louder — brighter text colour, bold, larger,
+gold top border matching the `--border-accent` used elsewhere for
+active/important chrome — instead of the same dim divider styling as
+disabled-state text. Full onboarding remains out of scope, per the brief.
+
+**3. Recorded, no action taken.** Movement-animation triggers (click move
+→ animate A→B with dust puff + walk/drive/clank audio) — Nox flagged this
+across all three games (warhammer-fantasy, warhammer40k, killteam), not
+WHF-specific. Logged as backlog item 10 in `WHF_UX_BACKLOG.md` with an
+explicit note that it isn't WHF-only scope. Playtest positives (overlap
+blink feedback for both move and wheel, ENGAGED highlighting, movement-bar
+numbers all trusted at the table) recorded in the same amendment for the
+historical record — no action needed, they already work.
+
+**Testing:** same jsdom pattern as prior phases (Playwright still blocked
+on `libasound.so.2`). 15/15 checks: the `costOfNet()` formula in isolation,
+the brief's own literal first case (fwd3+back2 → net +1" → 1.0"), the
+corrected self-consistent second case (fwd1+back2 → net −1" → 2.0"), the
+free-editing case (fwd3 then back 1" nets +2" at 2.0", not 4.0"+),
+commit/Undo still functioning with the transient fields cleanly stripped,
+and the new action-prompt line rendering in the idle panel. Re-ran the
+prior WHF-5m friendly-overlap regression under the new pricing model
+directly (not part of the committed test file) — still rejects correctly.
+Confirmed `shared/bonus-resolver.test.js` (28/28) unaffected. Test script
+not committed (one-off, same as prior phases).
 
 **Commits:** (cite hash after commit below.)
 
