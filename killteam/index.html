@@ -559,6 +559,41 @@ function snapToGrid(x, y) {
   };
 }
 
+// BUG_KT_PLAYTEST_2 item 3: bases are impassable — friend or foe, no
+// distinction (unlike WHF's separate friendly-overlap vs enemy-1"-buffer
+// rules). 2×TOKEN_R is "touching but not overlapping," same threshold
+// WHF-5m uses for its own friendly-overlap check.
+function wouldCollideWithOperative(x, y, excludeOpId) {
+  const threshold = 2 * TOKEN_R;
+  return Object.values(gameData.operatives || {}).some(o =>
+    o.id !== excludeOpId && o.wounds > 0 && o.x >= 0 && o.y >= 0 &&
+    Math.hypot(o.x - x, o.y - y) < threshold
+  );
+}
+
+// Walks FORWARD from the start toward the range+grid-clamped destination
+// (tx,ty), one grid step at a time, and returns the last free square
+// before the first occupied one — or the destination itself if the whole
+// line is clear. Checking every intermediate step (not just the
+// destination) is what stops a long drag from passing straight through an
+// operative sitting between start and target, not just landing on one.
+// Movement here is direct teleport-to-point (no pathfinding through
+// intermediate squares already exists in this system), so walking the
+// straight line at 1" grid resolution is the right-sized fix.
+function resolveMoveDestination(fx, fy, tx, ty, excludeOpId) {
+  const dist = Math.hypot(tx - fx, ty - fy);
+  if (dist === 0) return { x: fx, y: fy };
+  const steps = Math.max(1, Math.round(dist));
+  let last = { x: fx, y: fy };
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const cand = snapToGrid(fx + (tx - fx) * t, fy + (ty - fy) * t);
+    if (wouldCollideWithOperative(cand.x, cand.y, excludeOpId)) return last;
+    last = cand;
+  }
+  return last;
+}
+
 // ═══════════════════════════════════════════════════════════
 //  SHARED MATH UTILITIES
 //  SOURCE: warhammer40k/js/shooting.js + board.js — keep in sync.
@@ -1070,7 +1105,19 @@ function subscribeToGame() {
 // ═══════════════════════════════════════════════════════════
 
 function render() {
-  if (devMode) { renderDev(); return; }
+  // BUG_KT_PLAYTEST_2 item 1: this fires on EVERY Firebase snapshot,
+  // including echoes of your own writes and anything the opponent does —
+  // far more often than the local-action-only reRender() below. It used
+  // to skip refreshRadialIfActive() entirely, so the radial menu (a
+  // separate always-present DOM node, positioned via a one-off screen-
+  // coordinate calc off the operative's token) went stale the moment any
+  // snapshot rebuilt the board out from under it: wrong position after a
+  // move, or just never (re)shown after the initial local click. Exactly
+  // the "worked initially, degrades" pattern reported from real play —
+  // the radial menu is only as fresh as the last call that happened to
+  // refresh it, and most of a live game's renders come through here, not
+  // through reRender().
+  if (devMode) { renderDev(); refreshRadialIfActive(); return; }
 
   const status = gameData.meta?.status;
 
@@ -1090,6 +1137,7 @@ function render() {
 
   showScreen('game');
   renderGame(myPlayer);
+  refreshRadialIfActive();
 }
 
 function renderDev() {
@@ -1697,7 +1745,11 @@ function renderActivationBar(playerSlot, turn) {
   const hasDashed     = activation.hasDashed;
   const hasShot       = activation.hasShot;
   const hasFought     = activation.hasFought;
-  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal;
+  // BUG_KT_PLAYTEST_2 item 2: fightDisabled already gated on hasFought;
+  // shootDisabled never gated on hasShot even though activation.hasShot
+  // is tracked and set — the same operative could Shoot repeatedly in one
+  // activation. RAW: Move/Dash repeat, Shoot/Fight don't.
+  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal || hasShot;
   const fightDisabled = ap < 1 || !melee.length  || !hasFightTarget(op) || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
   const dragActive    = !!shootState || !!fightState || !!dragState;
   const moveDisabled  = ap < 1 || dragActive || hasMoved;
@@ -1732,7 +1784,7 @@ function renderActivationBar(playerSlot, turn) {
       <div class="activation-actions">
         <button class="action-btn" onclick="startMove('${playerSlot}',false)" ${moveDisabled ? 'disabled' : ''} title="${hasMoved ? 'Already moved this activation' : ''}">Move (1AP)</button>
         <button class="action-btn" onclick="startMove('${playerSlot}',true)"  ${dashDisabled ? 'disabled' : ''} title="${hasDashed ? 'Already dashed' : '3&quot; — combine with Move for max distance'}">Dash (1AP)</button>
-        <button class="action-btn" onclick="startShoot('${playerSlot}')" ${shootDisabled ? 'disabled' : ''} title="${conceal ? 'Locked: Conceal order' : ''}">Shoot (1AP)</button>
+        <button class="action-btn" onclick="startShoot('${playerSlot}')" ${shootDisabled ? 'disabled' : ''} title="${hasShot ? 'Already shot this activation' : conceal ? 'Locked: Conceal order' : ''}">Shoot (1AP)</button>
         <button class="action-btn" onclick="startFight('${playerSlot}')" ${fightDisabled ? 'disabled' : ''} title="${hasFought ? 'Already fought this activation' : !hasFightTarget(op) ? 'No enemies in control range (1&quot;)' : !melee.length ? 'No melee weapons' : ''}">Fight (1AP)</button>
         <button class="action-btn stub" ${conceal ? 'title="Locked: Conceal order"' : 'title="Coming in KT-3"'} disabled>Charge (1AP)</button>
       </div>
@@ -2300,7 +2352,8 @@ function startMove(playerSlot, isDash) {
     const p   = pt.matrixTransform(svg.getScreenCTM().inverse());
     const clamped = clampVec(dragState.startX, dragState.startY, p.x, p.y, maxMove);
     const snapped = snapToGrid(clamped.x, clamped.y);
-    updateDragOverlay(snapped.x, snapped.y);
+    const resolved = resolveMoveDestination(dragState.startX, dragState.startY, snapped.x, snapped.y, dragState.opId);
+    updateDragOverlay(resolved.x, resolved.y);
   }
 
   function onMouseUp(e) {
@@ -2314,12 +2367,13 @@ function startMove(playerSlot, isDash) {
     const p       = pt.matrixTransform(svg.getScreenCTM().inverse());
     const clamped = clampVec(dragState.startX, dragState.startY, p.x, p.y, maxMove);
     const snapped = snapToGrid(clamped.x, clamped.y);
+    const resolved = resolveMoveDestination(dragState.startX, dragState.startY, snapped.x, snapped.y, dragState.opId);
 
     if (activation) {
       if (isDash) activation.hasDashed = true;
       else        activation.hasMoved  = true;
     }
-    commitMove(snapped.x, snapped.y, 1, playerSlot);
+    commitMove(resolved.x, resolved.y, 1, playerSlot);
     dragState = null;
   }
 
@@ -2539,7 +2593,11 @@ function showRadialMenu(opId, playerSlot) {
   const hasShot   = activation?.hasShot   || false;
   const hasFought = activation?.hasFought || false;
 
-  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal;
+  // BUG_KT_PLAYTEST_2 item 2: fightDisabled already gated on hasFought;
+  // shootDisabled never gated on hasShot even though activation.hasShot
+  // is tracked and set — the same operative could Shoot repeatedly in one
+  // activation. RAW: Move/Dash repeat, Shoot/Fight don't.
+  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal || hasShot;
   const fightDisabled = ap < 1 || !melee.length  || !hasFightTarget(op) || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
   const moveDisabled  = ap < 1 || hasMoved;
   const dashDisabled  = ap < 1 || hasDashed;
@@ -2568,7 +2626,7 @@ function showRadialMenu(opId, playerSlot) {
       title: hasDashed ? 'Already dashed' : '3″ — combine with Move for max distance' },
     { id: 'shoot',  label: 'Shoot', ap: 1, angle: 90, cls: 'r-shoot',
       fn: `startShoot('${playerSlot}')`, disabled: shootDisabled, locks: 'order',
-      title: conceal ? 'Locked: Conceal order' : '' },
+      title: hasShot ? 'Already shot this activation' : conceal ? 'Locked: Conceal order' : '' },
     { id: 'fight',  label: 'Fight',  ap: 1, angle: 150, cls: 'r-fight',
       fn: `startFight('${playerSlot}')`, disabled: fightDisabled, locks: '',
       title: hasFought ? 'Already fought this activation' : !hasFightTarget(op) ? 'No enemies in control range (1")' : !melee.length ? 'No melee weapons' : '' },
@@ -3695,6 +3753,14 @@ async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
   const flags      = Array.from(new Set([...atkSide.flags, ...defSide.flags]));
   const conditions = atkSide.conditions.concat(defSide.conditions);
 
+  // BUG_KT_PLAYTEST_2 item 4 (decided, fun-first): RAW is ambiguous on
+  // whether attacking in melee reveals a Concealed operative — legibility
+  // wins, attacking in Fight sets the attacker to Engage, same as the
+  // Shoot order-lock above.
+  if (attacker.order !== 'engage') {
+    await db.ref(`games-kt/${gameId}/operatives/${attacker.id}/order`).set('engage');
+  }
+
   await db.ref(`games-kt/${gameId}/pendingFight`).set({
     attackerOpId: attacker.id,
     defenderOpId: target.id,
@@ -4413,6 +4479,12 @@ function reRenderPhaseBar() {
     const phase  = status === 'active' ? (gameData.turn?.phase || 'strategy') : status;
     bar.innerHTML = renderPhaseBar(status, phase, slot, gameData.turn || {});
   });
+  // BUG_KT_PLAYTEST_2 item 1: the radial menu shows the same AP/action
+  // state as the phase bar (e.g. after a move that doesn't end the
+  // activation) — folded in here once so every one of this function's
+  // ~15 call sites gets a correctly positioned/shown menu for free,
+  // instead of patching each call site individually.
+  refreshRadialIfActive();
 }
 
 // ═══════════════════════════════════════════════════════════
