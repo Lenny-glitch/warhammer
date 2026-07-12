@@ -217,6 +217,7 @@ body {
 .panel-engaged-badge {
   display: inline-block;
   margin-top: 0.35rem;
+  margin-right: 0.35rem;
   padding: 0.15rem 0.5rem;
   font-size: 0.65rem;
   font-weight: 700;
@@ -225,6 +226,13 @@ body {
   color: var(--text-bright);
   background: var(--violation-red);
   border-radius: 2px;
+}
+
+/* WHF-5: same visual language as ENGAGED — "locked out of normal actions,
+   here's why" — just a distinct label so the two states read apart. */
+.panel-fleeing-badge {
+  background: var(--empire-gold);
+  color: var(--bg-dark);
 }
 
 .panel-section {

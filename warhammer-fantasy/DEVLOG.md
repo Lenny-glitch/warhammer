@@ -120,13 +120,13 @@ Full 8th edition Movement Phase. Ghost preview pattern (preview before commit), 
 | WHF-3: Charge | Complete (see Phase 4) — Stand and Shoot now resolves real casualties (Phase 6), contact geometry fixed (Phase 7) |
 | WHF-4a: Shooting (basic, direct-fire) | Complete (see Phase 6) — checkpoint fixes in Phase 7; templates/blast/scatter/aura carry to 4b |
 | WHF-4b: Shooting (templates, blast, scatter) | Not started |
-| WHF-5: Combat (Close Combat + Rank Collapse) | Not started |
 | WHF-5m: Movement Pass (overlap rule + movement UX) | Complete (see Phase 8) — cost pricing patched in Phase 9 (WHF-5m.1) |
+| WHF-5: Combat (melee, Combat Result, Break/flee/pursuit, Rally) | Complete (see Phase 10) — rank collapse NOT built, see Phase 10 |
 
 ## Things The Next AI Should Know
 
 - **`modelPosition()` is the load-bearing geometry function.** All movement, charge, and arc calculations derive from it. It is standalone at the top of `whf.js`. Do not embed it inside objects or render loops.
-- **`reassignModels()` is NOT rank collapse.** It only fixes row/col slot indices after a `rankWidth` change. Dead models stay at their array index. Rank collapse (sliding alive models forward to fill gaps) is WHF-5.
+- **`reassignModels()` is NOT rank collapse, and still isn't built.** It only fixes row/col slot indices after a `rankWidth` change. Dead models stay at their array index (ghosted in place). WHF-2's DEVLOG earmarked full rank collapse (sliding alive models forward to fill gaps) as "WHF-5" — but WHF-5's actual brief (Combat) never asked for it, so it wasn't built. Combat's front/second-rank attacker counts (`meleeAttackCount()`) use `row===0`/`row===1` directly, same as Shooting's Fire-in-Two-Ranks — meaning a front-rank casualty from an earlier phase leaves a permanent gap rather than a row-2 model stepping up mid-unit. Flagged as a divergence, not silently expanded — see Phase 10.
 - **`frontCorners()` is simplified.** Uses slot centres, not outer model edges. Arc distance is ~0.6" short on a 5-wide unit. Fix: add MODEL_R to radius in `wheelUnit()` if tighter fidelity is needed.
 - **Shooting-after-reform restriction** is not enforced. Noted for WHF-4.
 - **Character stats (General of the Empire, Empire Captain)** are from training knowledge, not verified against 8th.whfb.app. Unblocks at WHF-5 before character combat is implemented.
@@ -135,6 +135,9 @@ Full 8th edition Movement Phase. Ghost preview pattern (preview before commit), 
 - **Friendly-overlap and enemy-1"-proximity are DIFFERENT thresholds, don't merge them.** `violatesFriendlyOverlap()` (2×MODEL_R, literal touching-is-fine-overlap-isn't) vs `violates1InchRule()` (2×MODEL_R + 1", a no-go buffer). Both are checked once, at ghost-commit, not per intermediate point of a move.
 - **Undo (WHF-5m) is one level, phase-scoped, and voluntary-movement-only.** It reverts to a snapshot taken at Movement-phase start (`snapshotUnitsForMovement()`), not a per-action stack. Deliberately excluded: charged/fled units — a charge already resolved reactions/casualties/flees on OTHER units, so rewinding just the charger would strand those side effects.
 - **`backwardInches` no longer exists (WHF-5m.1, Phase 9).** Movement cost for the 'move' ghost is priced by `costOfNet()` off NET displacement from the session's start (`moveSessionStart`/`moveNetInches`, both transient — stripped by `commitGhost()` before the unit is written back to `state.units`). Don't reintroduce per-press physical-distance tracking; if a future change needs it, it should extend `costOfNet()`, not resurrect the old field.
+- **`fleeing` is NOT part of `movementDefaults()` (Phase 10 fix).** It used to be, which was a real bug: it got wiped the moment the SAME movement phase ended (before Shooting/Combat/next-turn Rally ever saw it). Treat it like `engaged` — persists across phase transitions, cleared only by an explicit event (`fightCombatRound`'s flee handling, or a passed `attemptRally()`). A destroyed unit keeps `fleeing:true` forever too (`killUnit()` doesn't touch it) — anything that iterates fleeing units needs an `isUnitAlive()` guard, same as the Rally loop in `endPhase()` has.
+- **`engagedWith: instanceId|null` sits alongside `engaged: boolean`** (added WHF-5, Phase 10) — `engaged` alone was enough for the WHF-4a.1 shooting-block use case, but Combat needs to know WHICH unit, not just "in combat." Both are set together at charge contact (`rollChargeMove()`) and cleared together (`fightCombatRound()`'s wipeout/flee branches, or Steadfast-hold leaves both unchanged since combat continues).
+- **Combat Result "wounds caused" == casualties here, on purpose.** `models` carry `wounds`/`maxWounds` fields from WHF-1 but nothing in Shooting or Combat decrements them — every test unit is 1-Wound. Multi-wound models/characters in combat are explicitly out of WHF-5's scope; whoever builds that needs to make `removeCasualties()`/wound-counting multi-wound-aware, not just Combat Result's tally.
 
 ---
 
@@ -688,6 +691,168 @@ prior WHF-5m friendly-overlap regression under the new pricing model
 directly (not part of the committed test file) — still rejects correctly.
 Confirmed `shared/bonus-resolver.test.js` (28/28) unaffected. Test script
 not committed (one-off, same as prior phases).
+
+**Commits:** `cf6f681`.
+
+---
+
+### Phase 10 — WHF-5: Combat Phase (2026-07-12)
+
+**Brief:** `briefs/WHF5_COMBAT_BRIEF.md`. **Files:** `whf.js`, `whf.css`,
+`index.html` (topbar subtitle).
+
+One full playable combat round end to end: melee resolution, Combat
+Result scoring, Break tests, flee, pursuit, and Rally — closing the
+`engaged` lifecycle WHF-4a.1 left open ("this brief is what the 'engaged
+never clears' interim was waiting for," per the brief's own framing).
+
+**RAW verified against 8th.whfb.app's actual embedded chart/rule data
+before building** (not just page prose, which can be a lossy summary —
+see the To Hit chart note below):
+- **Striking order:** Initiative order, highest first, ties simultaneous
+  (`/close-combat/striking-order`). No charge bonus to Initiative anywhere
+  in 8th — the brief's own framing ("8th's 'charging grants no I bonus'
+  vs older editions") is correct; the charge bonus is +1 Combat Result
+  instead, confirmed at `/close-combat/charge-combat-resolution`.
+- **WS-vs-WS to-hit:** pulled the full 10×10 chart out of the page's
+  embedded table data, not just its prose. The prose only describes 3
+  bands (equal=4+, attacker-higher=3+, defender-more-than-double=5+) and
+  reads like it could imply a symmetric "attacker more-than-double=2+"
+  band the way some editions' folklore has it — the actual table has NO
+  such band; attacker-higher is a flat 3+ at any margin. `meleeToHitTarget()`
+  implements the verified 3-band version, confirmed correct against the
+  full table, not the folklore version.
+- **Supporting attacks:** front rank (row 0) fights at full Attacks each;
+  second rank (row 1) gets exactly one supporting attack each regardless
+  of their own Attacks stat (`/close-combat/supporting-attacks`). Ranks
+  beyond the second contribute nothing.
+- **Combat Result:** wounds caused (not casualties — matters for multi-
+  wound models, moot here, see below) + extra ranks (+1 each, 5-wide
+  minimum, incomplete rear rank of 5+ still counts, max +3) + charge (+1)
+  + standard bearer (+1) — verified at `/close-combat/wounds-inflicted`,
+  `/close-combat/extra-ranks`, `/close-combat/charge-combat-resolution`,
+  `/close-combat/standard`. **No "outnumber" bonus exists in core 8th** —
+  checked the full close-combat category listing, no such rule page
+  exists; it's an army-specific special rule in some books, not invented
+  here.
+- **Steadfast:** a defeated unit ignores the Combat-Result-difference
+  Break-test penalty if it has MORE qualifying ranks (same 5-wide gate)
+  than its opponent (`/close-combat/steadfast`) — implemented, since it's
+  a one-function addition given `qualifyingRanks()` already exists for
+  the rank bonus, and skipping it would make a big blob of infantry feel
+  wrong losing to a smaller unit's charge bonus alone.
+- **Break test:** a Leadership test with the CR difference (0 if
+  Steadfast) as a penalty; a natural double-1 always passes regardless
+  (Insane Courage) — verified at `/close-combat/taking-a-break-test`,
+  `/close-combat/insane-courage`. Rolled as two INDIVIDUAL d6
+  (`breakTest()`), not the existing `roll2D6()`, specifically so Insane
+  Courage can see the dice — a new function rather than an "ignore
+  double-1" flag bolted onto the shared `testLeadership()` (Panic/Rally
+  tests), since Insane Courage is RAW-scoped to Break tests only.
+- **Flee/pursuit:** loser flees 2D6" directly away (reused `fleeMove()` —
+  WHF-3's existing mechanic, same move, different trigger). Winner
+  chooses pursue (fresh 2D6 — meet or beat the flee roll, fleeing unit
+  destroyed, `/close-combat/caught`) or hold, per the brief's framing of
+  it as a free choice. **Simplified, noted:** RAW actually gates
+  "restrain pursuit" behind its own Leadership test (fail = involuntary
+  pursuit) and moves the pursuing unit into the vacated space regardless
+  of outcome (`/close-combat/restrain-or-pursue`, `/close-combat/move-
+  pursuers`) — the brief frames pursue/hold as a simple choice, so that's
+  what's built; the CATCH/DESTROY numbers themselves are exact RAW, only
+  the restrain-test and pursuer-repositioning geometry are skipped as
+  board-fidelity/drama polish (backlog item 7 territory).
+- **Rally:** Leadership test at the start of the fleeing unit's Movement
+  phase; a unit at 25% or less of its starting model count can only pass
+  on a natural double-1 (`/movement/rally-fleeing-units`). Simplified,
+  noted: RAW has a passed rally immediately perform a reform maneuver
+  (facing/rankWidth) and a failed one flee again as a compulsory move —
+  neither is built (`attemptRally()`'s own comment); WHF-2 already
+  deferred all of RAW's Movement sub-phases as later infra, and a second
+  flee-move is exactly that machinery.
+
+**Two real bugs found and fixed while building this, both via the smoke
+test, same pattern WHF-3/4a.1 set:**
+1. **`fleeing` was part of `movementDefaults()`.** That reset fires when
+   the movement phase ENDS — meaning a unit that fled via a charge
+   reaction during that SAME movement phase had its `fleeing` flag wiped
+   before Shooting/Combat/next-turn Rally ever got to see it. `fleeing`
+   is now excluded from `movementDefaults()` and set explicitly per unit
+   at init, same treatment `engaged` already got in WHF-4a.1 — persists
+   until an actual game event (combat resolution, a passed Rally test)
+   clears it.
+2. **A destroyed-while-fleeing unit kept `fleeing:true` forever**
+   (`killUnit()` only zeroes models, doesn't touch the flag) and the
+   Rally loop had no `isUnitAlive()` guard — a dead unit was taking a
+   pointless rally attempt every turn, consuming a real dice roll ahead
+   of an actually-fleeing unit's own attempt (caught because the smoke
+   test's hand-queued dice landed on the wrong unit). Fixed by gating the
+   Rally loop on `isUnitAlive()`.
+3. Also caught pre-commit (not a bug, a self-inflicted one from this same
+   brief): the first cut of the Movement-phase-entry Rally logic set
+   `phaseDone` in a SEPARATE pass that re-read `u.fleeing` — but a passed
+   Rally already flips `fleeing` to false in the first pass, so the
+   second pass saw the POST-rally value and left a unit that just
+   rallied able to act again immediately. Fixed by deciding `phaseDone`
+   in the same pass as the Rally check itself.
+
+**`engagedWith: instanceId` added alongside `engaged: boolean`.** WHF-
+4a.1's `engaged` boolean was enough to gate shooting; Combat needs to
+know WHICH enemy, not just "in combat" — set on both units together at
+charge contact (`rollChargeMove()`), read via `engagedOpponent()`.
+
+**Movement-phase gating closed for engaged units.** `enterMoveMode()`/
+`enterWheelPickMode()`/`enterReformMode()`/`enterChargeDeclare()` didn't
+check `unit.engaged` at all before this — an engaged unit could still try
+to act in the Movement phase (WHF-4a.1 only ever blocked shooting). Real
+gap, closed as part of finishing engaged's lifecycle, not scope creep.
+
+**Divergence from the brief, reported rather than silently resolved:**
+WHF-2's own DEVLOG (Phase 3, "Things The Next AI Should Know") explicitly
+earmarked full rank collapse ("sliding alive models forward to fill
+gaps") as "WHF-5" work. This brief's actual scope list (items 1-7) never
+mentions it. Rather than silently expanding scope to match the old note,
+or silently ignoring the old note, **it's flagged here**: Combat's
+front/second-rank attacker counts use `row===0`/`row===1` directly, the
+same no-rank-collapse convention Shooting already uses (dead models
+"ghost in place" per WHF-1, don't get replaced by a live model stepping
+up). A unit that took front-rank casualties from an earlier phase fights
+with a real gap in its front rank rather than a rank-3 model filling it.
+This is a materially separate, nontrivial geometry feature (reassigning
+row/col after casualties, redistributing gaps) — building it wasn't a
+small addition to this already-large brief, so it wasn't built. Someone
+should decide explicitly whether WHF-2's old earmark still stands.
+
+**"Wounds caused" == casualties, not tracked separately.** `models` carry
+`wounds`/`maxWounds` from WHF-1 but nothing decrements them per-wound —
+every test unit is 1-Wound, so casualties and wounds are numerically
+identical here. Multi-wound models/characters in combat are explicitly
+out of this brief's scope; that's where the distinction would start to
+matter.
+
+**Combat phase UI:** one "Fight!" button resolves a WHOLE round (melee,
+CR, Break test, flee) in a single click — unlike Charge/Shooting there's
+no target to pick, the opponent is fixed by `engagedWith`. Pursue/Hold is
+the one decision point offered afterward, only when the round ends in a
+flee that didn't already leave the board. FLEEING badge added next to
+ENGAGED (board label and side-panel badge), same red/gold "action
+blocked, here's why" visual language. `GATED_PHASES` now includes
+`'combat'` — only engaged units have anything to do there, everyone else
+auto-skips on phase entry (same pattern Shooting already established).
+
+**Testing:** same jsdom pattern as prior phases (Playwright still blocked
+on `libasound.so.2`). 23/23 checks across three scenarios: (A) a full
+round via the actual Combat-phase UI functions (`enterCombatFlow` →
+`rollCombat` → `choosePursuit(true)` → `finishCombatFlow`) — Knights of
+the Realm (charged, Lance +2S) kill a Halberdiers model, Halberdiers'
+survivor strikes back and misses, Combat Result 2-0, Halberdiers fails
+its Break test, flees 7", pursuit rolls 12 and catches, unit destroyed;
+(B) tied-Initiative simultaneous resolution ending in a draw, confirming
+both units stay `engaged` and combat continues rather than resolving a
+Break test; (C) a unit at 11% starting strength rallying only via a
+forced natural double-1, confirming the 25%-or-less clause. Also
+re-confirmed the WHF-5m friendly-overlap rule and `shared/bonus-
+resolver.test.js` (28/28) are unaffected by this phase's changes. Test
+script not committed (one-off, same as prior phases).
 
 **Commits:** (cite hash after commit below.)
 

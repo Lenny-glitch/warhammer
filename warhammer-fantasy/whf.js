@@ -512,6 +512,369 @@ function resolveShot(shooter, target, situational) {
   return { log, updatedTarget, hits, wounds, unsaved };
 }
 
+// ── Melee resolver (WHF-5) ────────────────────────────────────────────────
+//
+// RAW verified against 8th.whfb.app before building. Striking order:
+// "Blows are struck in Initiative order... if a model is killed before its
+// turn to strike, it does not fight" (/close-combat/striking-order) — no
+// charge bonus to Initiative anywhere in 8th (verified; the charge bonus is
+// +1 Combat Result instead, applied later, not a strike-order edge). Ties
+// strike simultaneously. Full WS-vs-WS to-hit table pulled from the page's
+// embedded chart data, not just its prose summary — the prose only
+// describes 3 of the bands (equal=4+, attacker-higher=3+, defender-more-
+// than-double=5+) and could be misread as implying a symmetric "attacker
+// more-than-double = 2+" band; the actual table has no such band —
+// attacker-higher is a flat 3+ at any margin.
+function meleeToHitTarget(attackerWS, defenderWS) {
+  if (attackerWS === defenderWS) return 4;
+  if (attackerWS > defenderWS) return 3;
+  return defenderWS > 2 * attackerWS ? 5 : 4;
+}
+
+// Front rank (row 0, alive) fights at full Attacks each; second rank
+// (row 1, alive) makes exactly one supporting attack each regardless of
+// their own Attacks stat (RAW: /close-combat/supporting-attacks). Ranks
+// beyond the second contribute nothing. Same "no rank collapse"
+// simplification the project has carried since WHF-2 (dead models stay at
+// their array index, ghosted in place) — a front-rank casualty from an
+// earlier phase leaves a gap rather than a row-2 model stepping up
+// mid-unit. WHF-2's own DEVLOG earmarked full rank collapse as "WHF-5"
+// work; this brief's own scope list doesn't ask for it, so it's NOT built
+// here — flagged as a divergence rather than silently expanding scope,
+// see DEVLOG Phase 10.
+function meleeAttackCount(unit) {
+  const attacksEach = parseInt(unit.stats.A, 10);
+  const front  = unit.models.filter(m => m.alive && m.row === 0).length;
+  const second = unit.models.filter(m => m.alive && m.row === 1).length;
+  return front * attacksEach + second * 1;
+}
+
+function meleeWeaponOf(unit) {
+  return unit.weapons.find(w => w.type === 'melee');
+}
+
+// Base Strength + weapon's flat mod (e.g. Halberd's S+1) + weapon's
+// charge-only bonus (e.g. Lance's +2S, RAW: only on the turn the unit
+// charged — matches this app's existing `hasCharged`, which already only
+// stays true through the Combat phase of the turn it was set, reset at the
+// next Movement phase).
+function meleeStrength(unit) {
+  const weapon = meleeWeaponOf(unit);
+  const base = parseInt(unit.stats.S, 10);
+  const mod = (weapon && weapon.strengthMod) || 0;
+  const chargeMod = (unit.hasCharged && weapon && weapon.chargeBonus) ? weapon.chargeBonus : 0;
+  return base + mod + chargeMod;
+}
+
+// One side's attacks against the other. Same resolver-profile shape as
+// resolveShot() (attackProfile/defenseProfile through BonusResolver before
+// rolling) per the brief's explicit ask — reuses toWoundTarget/
+// armourPenetration/svToNumber/removeCasualties/rollAgainstTarget as-is,
+// only the to-hit and attack-count pieces are melee-specific. Casualties
+// are computed and returned but NOT applied to any live array here — the
+// caller (resolveMeleeRound) decides when (immediately if this side struck
+// first by Initiative, so a dead model truly "doesn't fight"; deferred if
+// simultaneous).
+function resolveMeleeAttacks(attacker, defender, situational) {
+  const attackCount = meleeAttackCount(attacker);
+  if (attackCount === 0) {
+    return { log: [`${attacker.name} has no models able to strike`], updatedDefender: defender, hits: 0, wounds: 0, unsaved: 0 };
+  }
+
+  const ws = parseInt(attacker.stats.WS, 10);
+  const strength = meleeStrength(attacker);
+  const ctx = { trigger: 'onFight', round: 0 };
+
+  const attack = BonusResolver.resolveStats(
+    { hit: meleeToHitTarget(ws, parseInt(defender.stats.WS, 10)), strength, attacks: attackCount }, [], ctx
+  ).stats;
+
+  const penetration = armourPenetration(attack.strength);
+  const baseSave = svToNumber(defender.stats.Sv);
+  const saveMods = penetration > 0
+    ? [{ id: 'strength-penetration', effects: [{ type: 'mod', stat: 'save', op: 'add', value: penetration }] }]
+    : [];
+  const defense = BonusResolver.resolveStats(
+    { save: baseSave === null ? 99 : baseSave, wardSave: svToNumber(defender.stats.wardSave) ?? 99, toughness: parseInt(defender.stats.T, 10) },
+    saveMods, ctx
+  ).stats;
+
+  const woundTarget = toWoundTarget(attack.strength, defense.toughness);
+
+  const log = [`${attacker.name} strikes — ${attack.attacks} attack${attack.attacks === 1 ? '' : 's'} at ${defender.name}`];
+  let hits = 0, wounds = 0, unsaved = 0;
+  for (let i = 0; i < attack.attacks; i++) {
+    if (!rollAgainstTarget(attack.hit).success) continue;
+    hits++;
+    if (!rollAgainstTarget(woundTarget).success) continue;
+    wounds++;
+    if (rollAgainstTarget(defense.save).success) continue;
+    if (rollAgainstTarget(defense.wardSave).success) continue;
+    unsaved++;
+  }
+
+  log.push(
+    `${hits}/${attack.attacks} hit, ${wounds}/${hits} wound, ${unsaved} unsaved ` +
+    `(to-hit ${attack.hit}+, to-wound ${woundTarget}+, save ${baseSave === null ? 'none' : defense.save + '+'})`
+  );
+
+  const updatedDefender = unsaved > 0 ? removeCasualties(defender, unsaved) : defender;
+  if (unsaved > 0) log.push(`${defender.name} loses ${unsaved} model${unsaved === 1 ? '' : 's'} (rear rank)`);
+
+  return { log, updatedDefender, hits, wounds, unsaved };
+}
+
+// One full combat round between two engaged units. Returns updated copies
+// of both (post-casualties) plus wounds each side inflicted (for Combat
+// Result scoring — "wounds" not "casualties": for these 1-Wound test units
+// they're numerically identical, multi-wound models/characters in combat
+// are explicitly out of this brief's scope).
+function resolveMeleeRound(unitA, unitB) {
+  const log = [];
+  const iA = parseFloat(unitA.stats.I);
+  const iB = parseFloat(unitB.stats.I);
+
+  if (iA === iB) {
+    const rAtoB = resolveMeleeAttacks(unitA, unitB, {});
+    const rBtoA = resolveMeleeAttacks(unitB, unitA, {});
+    rAtoB.log.forEach(l => log.push(l));
+    rBtoA.log.forEach(l => log.push(l));
+    log.push(`Initiative tied (I${iA}) — simultaneous, casualties applied together`);
+    return {
+      log,
+      updatedA: rBtoA.updatedDefender,
+      updatedB: rAtoB.updatedDefender,
+      woundsOnA: rBtoA.unsaved,
+      woundsOnB: rAtoB.unsaved,
+    };
+  }
+
+  const strikerIsA = iA > iB;
+  const striker = strikerIsA ? unitA : unitB;
+  const struck  = strikerIsA ? unitB : unitA;
+  log.push(`${striker.name} strikes first (I${Math.max(iA, iB)} vs I${Math.min(iA, iB)})`);
+
+  const r1 = resolveMeleeAttacks(striker, struck, {});
+  r1.log.forEach(l => log.push(l));
+  const struckAfter = r1.updatedDefender;
+
+  let strikerAfter = striker, strikeBackUnsaved = 0;
+  if (isUnitAlive(struckAfter)) {
+    const r2 = resolveMeleeAttacks(struckAfter, striker, {});
+    r2.log.forEach(l => log.push(l));
+    strikerAfter = r2.updatedDefender;
+    strikeBackUnsaved = r2.unsaved;
+  } else {
+    log.push(`${struck.name} wiped out before it could strike back`);
+  }
+
+  return strikerIsA
+    ? { log, updatedA: strikerAfter, updatedB: struckAfter, woundsOnA: strikeBackUnsaved, woundsOnB: r1.unsaved }
+    : { log, updatedA: struckAfter, updatedB: strikerAfter, woundsOnA: r1.unsaved, woundsOnB: strikeBackUnsaved };
+}
+
+// ── Combat Result scoring + Steadfast (WHF-5) ────────────────────────────
+//
+// RAW verified: extra-rank bonus is +1 per extra rank of five-or-more
+// models (front/fighting rank doesn't count as "extra"), max +3, formation
+// must be at least 5 wide, an incomplete REAR rank still counts if it has
+// >=5 models in it (/close-combat/extra-ranks). Steadfast: a defeated unit
+// ignores the Combat-Result-difference penalty on its Break test if it has
+// MORE qualifying ranks than its opponent — same >=5-wide gate applies to
+// both sides independently, so a <5-wide unit contributes zero qualifying
+// ranks and can neither claim Steadfast nor deny it to a wider opponent
+// (/close-combat/steadfast). Charge: +1 flat if the unit charged this turn
+// (/close-combat/charge-combat-resolution). Standard: +1 if a standard
+// bearer is alive (/close-combat/standard) — included since `isStandardBearer`
+// already exists on the model shape from WHF-1, even though no current test
+// unit has one flagged true; genuinely a one-line add, not scope creep.
+// Outnumber is NOT a core-rulebook Combat Result bonus in 8th (checked the
+// full close-combat category listing — no such page exists; it's an army-
+// specific special rule in some books, not implemented here) — omitted
+// rather than invented.
+function qualifyingRanks(unit) {
+  if (unit.rankWidth < 5) return 0;
+  const alive = unit.models.filter(m => m.alive).length;
+  const full = Math.floor(alive / unit.rankWidth);
+  const remainder = alive % unit.rankWidth;
+  return full + (remainder >= 5 ? 1 : 0);
+}
+
+function rankBonus(unit) {
+  return Math.min(Math.max(0, qualifyingRanks(unit) - 1), 3);
+}
+
+function hasStandardBearer(unit) {
+  return unit.models.some(m => m.alive && m.isStandardBearer);
+}
+
+// woundsCaused: this unit's unsaved wounds inflicted on the OPPONENT this
+// round (resolveMeleeRound's woundsOnA/woundsOnB, whichever is this unit's
+// opponent-facing figure).
+function combatResultScore(unit, woundsCaused) {
+  const ranks = rankBonus(unit);
+  const charge = unit.hasCharged ? 1 : 0;
+  const standard = hasStandardBearer(unit) ? 1 : 0;
+  return {
+    score: woundsCaused + ranks + charge + standard,
+    breakdown: { wounds: woundsCaused, ranks, charge, standard },
+  };
+}
+
+function isSteadfast(loser, winner) {
+  return qualifyingRanks(loser) > qualifyingRanks(winner);
+}
+
+// ── Break test, flee, pursuit (WHF-5) ────────────────────────────────────
+//
+// A Break test is a Leadership test with the winner/loser Combat Result
+// difference applied as a penalty (0 if Steadfast) — verified:
+// /close-combat/taking-a-break-test. Rolled as two INDIVIDUAL d6 (not
+// roll2D6()) because Insane Courage needs to see the dice, not just the
+// sum: a natural double-1 always passes regardless of how far underwater
+// the modified Leadership is (/close-combat/insane-courage). This is a
+// separate function from the existing `testLeadership()` (Panic tests,
+// Rally tests) rather than an extra parameter on it — Insane Courage is
+// RAW-scoped to Break tests specifically, not Leadership tests generally,
+// and bolting an "ignore double-1" flag onto testLeadership's shared
+// call sites would be easy to apply somewhere RAW doesn't want it.
+function breakTest(ldValue, penalty) {
+  const d1 = rollD6(), d2 = rollD6();
+  const roll = d1 + d2;
+  const target = parseInt(ldValue, 10) - penalty;
+  const insaneCourage = d1 === 1 && d2 === 1;
+  return { roll, dice: [d1, d2], target, penalty, insaneCourage, passed: insaneCourage || roll <= target };
+}
+
+// Winner's choice after a failed Break test: pursue (a fresh 2D6 vs the
+// Flee roll — meet or beat it and the fleeing unit is destroyed outright,
+// /close-combat/caught) or hold. Simplification, noted: RAW moves the
+// pursuing unit forward into the space the enemy vacated regardless of
+// whether the pursuit catches (/close-combat/move-pursuers); this app
+// leaves the winner's board position unchanged either way. That's
+// board-fidelity/drama polish (backlog item 7 territory), not what the
+// brief's "engaged/fleeing states correct throughout" acceptance bar
+// actually needs — the CATCH/DESTROY numbers themselves are exact RAW.
+function resolvePursuit(fleeRoll) {
+  const roll = roll2D6();
+  return { roll, fleeRoll, caught: roll >= fleeRoll };
+}
+
+// Rally attempt for a fleeing unit at the start of its Movement phase
+// (RAW: /movement/rally-fleeing-units). A unit at 25% or less of its
+// STARTING model count can only pass on a natural double-1, regardless of
+// Leadership (`models.length` never shrinks — dead models stay in the
+// array at 28% opacity per WHF-1, so it's a stable "starting count").
+// Simplification, noted: on a pass, RAW has the unit "immediately perform
+// a reform maneuver" to face back toward the battle; this app just clears
+// `fleeing` and marks the unit done for the phase (matching "loses further
+// Movement-phase actions" and "loses its Shooting-phase attack") without
+// picking a facing/rankWidth for it — a reform decision with no natural
+// default, left as a simplification rather than an arbitrary invented one.
+// On a fail, RAW has the unit flee again (a further compulsory move) —
+// also not built here; WHF-2 already deferred all of RAW's Movement
+// sub-phases (Start/Charge/Compulsory/Remaining) as later infra, and a
+// second flee-move is exactly that compulsory-moves machinery.
+function attemptRally(unit) {
+  const startingCount = unit.models.length;
+  const alive = unit.models.filter(m => m.alive).length;
+  const quarterOrLess = alive <= startingCount * 0.25;
+  const d1 = rollD6(), d2 = rollD6();
+  const roll = d1 + d2;
+  const isDouble1 = d1 === 1 && d2 === 1;
+  const passed = quarterOrLess ? isDouble1 : roll <= parseInt(unit.stats.Ld, 10);
+  return { roll, dice: [d1, d2], quarterOrLess, passed };
+}
+
+// Full combat round: melee (resolveMeleeRound) -> Combat Result both sides
+// -> winner/draw -> (if not a draw) loser's Break test -> (if failed)
+// flee via the existing fleeMove() (WHF-3's 2D6-directly-away mechanic,
+// reused as-is — same move, different trigger). Pursuit is intentionally
+// left as a separate step the Combat-phase UI asks the winning player for,
+// since it's the one genuine decision point left once the round itself
+// resolves deterministically from here.
+function fightCombatRound(unitA, unitB) {
+  const round = resolveMeleeRound(unitA, unitB);
+  const log = [...round.log];
+  const { updatedA, updatedB, woundsOnA, woundsOnB } = round;
+
+  const aAlive = isUnitAlive(updatedA);
+  const bAlive = isUnitAlive(updatedB);
+
+  // Wipeout: combat ends immediately — no CR/Break test needed for a unit
+  // that's already gone. Engaged clears on the survivor (if any); no unit
+  // to hold an `engagedWith` reference to either way.
+  if (!aAlive || !bAlive) {
+    if (!aAlive) log.push(`${unitA.name} wiped out — combat ends`);
+    if (!bAlive) log.push(`${unitB.name} wiped out — combat ends`);
+    const clear = u => ({ ...u, engaged: false, engagedWith: null });
+    return {
+      log,
+      updatedA: aAlive ? clear(updatedA) : updatedA,
+      updatedB: bAlive ? clear(updatedB) : updatedB,
+      outcome: 'wipeout', breakTest: null, pursuitPending: false,
+    };
+  }
+
+  // Wounds CAUSED by a side = damage the OTHER side suffered.
+  const crA = combatResultScore(updatedA, woundsOnB);
+  const crB = combatResultScore(updatedB, woundsOnA);
+  log.push(`${updatedA.name} Combat Result: ${crA.score} (wounds ${crA.breakdown.wounds}, ranks +${crA.breakdown.ranks}, charge +${crA.breakdown.charge}, standard +${crA.breakdown.standard})`);
+  log.push(`${updatedB.name} Combat Result: ${crB.score} (wounds ${crB.breakdown.wounds}, ranks +${crB.breakdown.ranks}, charge +${crB.breakdown.charge}, standard +${crB.breakdown.standard})`);
+
+  if (crA.score === crB.score) {
+    log.push('Draw — combat continues next turn');
+    return { log, updatedA, updatedB, outcome: 'draw', breakTest: null, pursuitPending: false };
+  }
+
+  const winnerIsA = crA.score > crB.score;
+  const winner = winnerIsA ? updatedA : updatedB;
+  const loser  = winnerIsA ? updatedB : updatedA;
+  const diff   = Math.abs(crA.score - crB.score);
+  log.push(`${winner.name} wins the combat by ${diff}`);
+
+  const steadfast = isSteadfast(loser, winner);
+  const penalty   = steadfast ? 0 : diff;
+  if (steadfast) log.push(`${loser.name} is Steadfast — tests on unmodified Leadership`);
+
+  const bt = breakTest(loser.stats.Ld, penalty);
+  log.push(
+    `${loser.name} Break test: rolled ${bt.roll} (${bt.dice.join(',')}) vs Ld ${loser.stats.Ld}-${penalty}=${bt.target}` +
+    (bt.insaneCourage ? ' — INSANE COURAGE, automatically passes' : '') +
+    ` — ${bt.passed ? 'holds' : 'BREAKS and flees'}`
+  );
+
+  if (bt.passed) {
+    return { log, updatedA, updatedB, outcome: 'hold', breakTest: bt, pursuitPending: false };
+  }
+
+  const move = fleeMove(loser, winner.position);
+  log.push(`${loser.name} flees ${move.fleeInches}" (roll ${move.fleeRoll})` + (move.offBoard ? ' — off the table, destroyed' : ''));
+
+  let fledLoser = {
+    ...loser,
+    position:  move.offBoard ? move.fromPos : move.toPos,
+    facing:    move.facing,
+    fleeing:   true,
+    engaged:   false, engagedWith: null,
+    phaseDone: true,
+  };
+  if (move.offBoard) fledLoser = killUnit(fledLoser);
+  const clearedWinner = { ...winner, engaged: false, engagedWith: null };
+
+  return {
+    log,
+    updatedA: winnerIsA ? clearedWinner : fledLoser,
+    updatedB: winnerIsA ? fledLoser : clearedWinner,
+    outcome: move.offBoard ? 'fled-offboard' : 'fled',
+    breakTest: bt,
+    pursuitPending: !move.offBoard, // already destroyed by leaving the board — nothing left to pursue
+    fleeRoll: move.fleeRoll,
+    winnerId: clearedWinner.instanceId,
+    loserId: fledLoser.instanceId,
+  };
+}
+
 // ── Game state ─────────────────────────────────────────────────────────────
 const state = {
   units:                 [],
@@ -539,6 +902,11 @@ let chargeFlow = null;
 // { shooterId, targetId, stage, log }
 // stage: 'select-target' -> 'ready-to-roll' -> 'resolved'
 let shootFlow = null;
+
+// ── Combat interaction state (WHF-5) ─────────────────────────────────────────
+// { aId, bId, stage, log, outcome, pursuitPending, fleeRoll, winnerId, loserId }
+// stage: 'ready' -> 'resolved' -> ['pursue-choice'] -> (finished via btn-combat-done)
+let combatFlow = null;
 
 // ── Faction palettes ───────────────────────────────────────────────────────
 const PALETTES = {
@@ -575,7 +943,7 @@ function buildModels(instanceId, count, rankWidth) {
 function movementDefaults() {
   return {
     movementUsed: 0, hasReformed: false, hasMoved: false,
-    phaseDone: false, hasCharged: false, fleeing: false,
+    phaseDone: false, hasCharged: false,
   };
 }
 
@@ -593,16 +961,19 @@ function initTestUnits() {
     palette:      'empire',
     stats: { M: '4"', WS: '3', BS: '3', S: '3', T: '3', W: '1', I: '3', A: '1', Ld: '7', Sv: '5+' },
     weapons: [
-      { name: 'Halberd',     type: 'melee', desc: 'S+1' },
+      { name: 'Halberd',     type: 'melee', desc: 'S+1', strengthMod: 1 },
       { name: 'Hand weapon', type: 'melee', desc: '' },
     ],
     abilities: [],
     models: buildModels('unit-001', 20, 5),
     ...movementDefaults(),
-    engaged: false, // WHF-4a.1: deliberately NOT part of movementDefaults() —
-    // engaged persists across the movementDefaults() reset at end of
-    // Movement phase (only WHF-5/Close Combat resolution should ever
-    // clear it, and that doesn't exist yet).
+    engaged: false, engagedWith: null, fleeing: false, // WHF-4a.1/WHF-5: deliberately NOT part of movementDefaults() —
+    // engaged/fleeing persist across the movementDefaults() reset at end
+    // of Movement phase, on purpose — this WAS a real bug: fleeing used to
+    // be part of movementDefaults() and got wiped the moment the SAME
+    // movement phase ended, before Shooting/Combat/next-turn Rally ever
+    // saw it. Only Close Combat resolution (fightCombatRound) or a
+    // successful Rally test clears these now.
   });
 
   // Sv 2+ is the army book default for KotR (full plate + shield).
@@ -620,16 +991,19 @@ function initTestUnits() {
     palette:      'bretonnia',
     stats: { M: '7"', WS: '4', BS: '3', S: '4', T: '3', W: '1', I: '4', A: '1', Ld: '8', Sv: '2+' },
     weapons: [
-      { name: 'Lance',       type: 'melee', desc: '+2S on charge, Lance Formation' },
+      { name: 'Lance',       type: 'melee', desc: '+2S on charge, Lance Formation', strengthMod: 0, chargeBonus: 2 },
       { name: 'Hand weapon', type: 'melee', desc: '' },
     ],
     abilities: ['Blessing of the Lady', 'Knightly Vow', 'Lance Formation'],
     models: buildModels('unit-002', 9, 3),
     ...movementDefaults(),
-    engaged: false, // WHF-4a.1: deliberately NOT part of movementDefaults() —
-    // engaged persists across the movementDefaults() reset at end of
-    // Movement phase (only WHF-5/Close Combat resolution should ever
-    // clear it, and that doesn't exist yet).
+    engaged: false, engagedWith: null, fleeing: false, // WHF-4a.1/WHF-5: deliberately NOT part of movementDefaults() —
+    // engaged/fleeing persist across the movementDefaults() reset at end
+    // of Movement phase, on purpose — this WAS a real bug: fleeing used to
+    // be part of movementDefaults() and got wiped the moment the SAME
+    // movement phase ended, before Shooting/Combat/next-turn Rally ever
+    // saw it. Only Close Combat resolution (fightCombatRound) or a
+    // successful Rally test clears these now.
   });
 
   // WHF-4a direct-fire test units. Stat lines are the standard Handgunner /
@@ -669,10 +1043,13 @@ function initTestUnits() {
     abilities: [],
     models: buildModels('unit-003', 10, 5),
     ...movementDefaults(),
-    engaged: false, // WHF-4a.1: deliberately NOT part of movementDefaults() —
-    // engaged persists across the movementDefaults() reset at end of
-    // Movement phase (only WHF-5/Close Combat resolution should ever
-    // clear it, and that doesn't exist yet).
+    engaged: false, engagedWith: null, fleeing: false, // WHF-4a.1/WHF-5: deliberately NOT part of movementDefaults() —
+    // engaged/fleeing persist across the movementDefaults() reset at end
+    // of Movement phase, on purpose — this WAS a real bug: fleeing used to
+    // be part of movementDefaults() and got wiped the moment the SAME
+    // movement phase ended, before Shooting/Combat/next-turn Rally ever
+    // saw it. Only Close Combat resolution (fightCombatRound) or a
+    // successful Rally test clears these now.
   });
 
   // WHF-5m: y moved from 520 to 250 — same fixture-overlap issue as
@@ -697,10 +1074,13 @@ function initTestUnits() {
     abilities: ["Peasant's Duty"],
     models: buildModels('unit-004', 10, 5),
     ...movementDefaults(),
-    engaged: false, // WHF-4a.1: deliberately NOT part of movementDefaults() —
-    // engaged persists across the movementDefaults() reset at end of
-    // Movement phase (only WHF-5/Close Combat resolution should ever
-    // clear it, and that doesn't exist yet).
+    engaged: false, engagedWith: null, fleeing: false, // WHF-4a.1/WHF-5: deliberately NOT part of movementDefaults() —
+    // engaged/fleeing persist across the movementDefaults() reset at end
+    // of Movement phase, on purpose — this WAS a real bug: fleeing used to
+    // be part of movementDefaults() and got wiped the moment the SAME
+    // movement phase ended, before Shooting/Combat/next-turn Rally ever
+    // saw it. Only Close Combat resolution (fightCombatRound) or a
+    // successful Rally test clears these now.
   });
 }
 
@@ -921,14 +1301,15 @@ function renderUnit(layer, unit, isGhost) {
     const aliveCount = unit.models.filter(m => m.alive).length;
     const usedStr    = unit.movementUsed > 0 ? ` [${unit.movementUsed.toFixed(1)}"]` : '';
     const engagedStr = unit.engaged ? ' [ENGAGED]' : ''; // WHF-4a.1 legibility
+    const fleeingStr = unit.fleeing ? ' [FLEEING]' : ''; // WHF-5, same reasoning
     const labelPos   = modelPosition(unit, numRanks + 0.3, frontCX);
     const label = svgEl('text', {
-      class: unit.engaged ? 'unit-label unit-label-engaged' : 'unit-label',
+      class: (unit.engaged || unit.fleeing) ? 'unit-label unit-label-engaged' : 'unit-label',
       x: labelPos.x.toFixed(2), y: labelPos.y.toFixed(2),
       'text-anchor': 'middle', 'dominant-baseline': 'middle',
       'pointer-events': 'none',
     });
-    label.textContent = `${unit.name} (${aliveCount})${usedStr}${engagedStr}`;
+    label.textContent = `${unit.name} (${aliveCount})${usedStr}${engagedStr}${fleeingStr}`;
     g.appendChild(label);
   }
 
@@ -1012,7 +1393,7 @@ function getSelectedUnit() {
 }
 
 function selectUnit(instanceId) {
-  if (moveGhost || moveMode || chargeFlow || shootFlow) return; // block switching units during active action
+  if (moveGhost || moveMode || chargeFlow || shootFlow || combatFlow) return; // block switching units during active action
   if (state.selected === instanceId) { deselectAll(); return; }
   state.selected = instanceId;
   renderBoard();
@@ -1024,6 +1405,7 @@ function deselectAll() {
   if (moveGhost || moveMode) cancelGhost();
   if (chargeFlow) cancelChargeFlow();
   if (shootFlow) cancelShootFlow();
+  if (combatFlow) cancelCombatFlow();
   state.selected = null;
   renderBoard();
   hidePanel();
@@ -1091,7 +1473,7 @@ function undoMove() {
 // ── Movement actions ───────────────────────────────────────────────────────
 function enterMoveMode() {
   const unit = getSelectedUnit();
-  if (!unit || unit.hasReformed || unit.phaseDone || chargeFlow) return;
+  if (!unit || unit.hasReformed || unit.phaseDone || unit.engaged || chargeFlow) return;
   moveMode = 'move';
   // WHF-5m.1: net-cost model — moveNetInches/moveSessionStart are transient,
   // stripped again at commitGhost(). Everything downstream (movementUsed,
@@ -1103,7 +1485,7 @@ function enterMoveMode() {
 
 function enterWheelPickMode() {
   const unit = getSelectedUnit();
-  if (!unit || unit.hasReformed || unit.phaseDone || chargeFlow) return;
+  if (!unit || unit.hasReformed || unit.phaseDone || unit.engaged || chargeFlow) return;
   moveMode = 'wheel-pick';
   wheelPivotSide = null;
   renderBoard();
@@ -1121,7 +1503,7 @@ function pickWheelPivot(side) {
 
 function enterReformMode() {
   const unit = getSelectedUnit();
-  if (!unit || unit.hasMoved || unit.hasReformed || unit.phaseDone || chargeFlow) return;
+  if (!unit || unit.hasMoved || unit.hasReformed || unit.phaseDone || unit.engaged || chargeFlow) return;
   reformRankWidth = unit.rankWidth;
   moveMode = 'reform';
   showGhost(reformUnit(unit, reformRankWidth), 'reform');
@@ -1216,7 +1598,7 @@ function validChargeTargets(charger) {
 // skipped entirely rather than stubbed.
 function enterChargeDeclare() {
   const unit = getSelectedUnit();
-  if (!unit || unit.hasMoved || unit.hasReformed || unit.hasCharged || unit.phaseDone || unit.fleeing) return;
+  if (!unit || unit.hasMoved || unit.hasReformed || unit.hasCharged || unit.phaseDone || unit.fleeing || unit.engaged) return;
   if (!validChargeTargets(unit).length) { flashHint('No enemy unit in charge reach'); return; }
   chargeFlow = { chargerId: unit.instanceId, targetIds: [], stage: 'select-targets', log: [] };
   renderBoard();
@@ -1448,16 +1830,17 @@ function rollChargeMove() {
       hasMoved:     true,
       hasCharged:   true,
       engaged:      true,
+      engagedWith:  primaryTarget.instanceId, // WHF-5: which unit, not just "in combat"
     };
     // WHF-4a.1: contact engages BOTH units, not just the charger — the
     // charger's own hasCharged only ever blocked it from shooting
     // incidentally ("already moved"), and the defender got no state
     // change at all, so it stayed a fully legal shooter/target through
-    // the whole rest of the turn. No WHF-5 (Close Combat) yet to clear
-    // this, so it's accepted as a persistent lock until that exists —
-    // see engaged's own comment at declaration.
+    // the whole rest of the turn. WHF-5 (Close Combat, this brief) is
+    // what actually clears it now — see engaged's own comment at
+    // declaration and the Combat phase functions below.
     state.units[state.units.findIndex(u => u.instanceId === primaryTarget.instanceId)] =
-      { ...primaryTarget, engaged: true };
+      { ...primaryTarget, engaged: true, engagedWith: charger.instanceId };
   } else {
     outcome = 'failed';
     const moved = moveUnitForward({ ...charger, facing: reach.finalFacing, movementUsed: 0 }, roll);
@@ -1568,13 +1951,98 @@ function holdFire() {
   updateEndPhaseButton();
 }
 
+// ── Combat flow (WHF-5) ───────────────────────────────────────────────────
+// One "Fight!" action resolves a WHOLE combat round (melee, Combat Result,
+// Break test, flee) in a single click — unlike Charge/Shooting there's no
+// target to pick, the opponent is already fixed by `engagedWith`. Pursue/
+// Hold is the one decision point left, offered only when the round ends in
+// a flee that didn't already leave the board (already-destroyed units have
+// nothing left to pursue).
+
+function engagedOpponent(unit) {
+  if (!unit || !unit.engagedWith) return null;
+  return state.units.find(u => u.instanceId === unit.engagedWith) || null;
+}
+
+function enterCombatFlow() {
+  const unit = getSelectedUnit();
+  if (!unit || unit.phaseDone || !unit.engaged || chargeFlow || shootFlow) return;
+  const opponent = engagedOpponent(unit);
+  if (!opponent) return;
+  combatFlow = { aId: unit.instanceId, bId: opponent.instanceId, stage: 'ready', log: [] };
+  renderBoard();
+  showPanel(unit);
+}
+
+// Unconditional null on cancel, matching cancelChargeFlow()/cancelShootFlow()
+// exactly — the Cancel BUTTON only ever renders at the 'ready' stage (before
+// any dice are rolled), same precedent those two flows already set.
+function cancelCombatFlow() {
+  combatFlow = null;
+  const unit = getSelectedUnit();
+  renderBoard();
+  if (unit) showPanel(unit);
+}
+
+function rollCombat() {
+  if (!combatFlow || combatFlow.stage !== 'ready') return;
+  const unitA = state.units.find(u => u.instanceId === combatFlow.aId);
+  const unitB = state.units.find(u => u.instanceId === combatFlow.bId);
+  const result = fightCombatRound(unitA, unitB);
+
+  state.units[state.units.findIndex(u => u.instanceId === unitA.instanceId)] = result.updatedA;
+  state.units[state.units.findIndex(u => u.instanceId === unitB.instanceId)] = result.updatedB;
+
+  combatFlow.log            = result.log;
+  combatFlow.outcome        = result.outcome;
+  combatFlow.pursuitPending = result.pursuitPending;
+  combatFlow.fleeRoll       = result.fleeRoll;
+  combatFlow.winnerId       = result.winnerId;
+  combatFlow.loserId        = result.loserId;
+  combatFlow.stage          = result.pursuitPending ? 'pursue-choice' : 'resolved';
+
+  renderBoard();
+  showPanel(getSelectedUnit());
+}
+
+function choosePursuit(willPursue) {
+  if (!combatFlow || combatFlow.stage !== 'pursue-choice') return;
+  if (willPursue) {
+    const pursuit = resolvePursuit(combatFlow.fleeRoll);
+    combatFlow.log.push(
+      `Pursuit roll: ${pursuit.roll} vs Flee roll ${pursuit.fleeRoll} — ` +
+      (pursuit.caught ? 'CAUGHT, fleeing unit destroyed' : 'not caught, unit escapes')
+    );
+    if (pursuit.caught) {
+      const idx = state.units.findIndex(u => u.instanceId === combatFlow.loserId);
+      if (idx !== -1) state.units[idx] = killUnit(state.units[idx]);
+    }
+  } else {
+    combatFlow.log.push('Winner holds position — no pursuit');
+  }
+  combatFlow.stage = 'resolved';
+  renderBoard();
+  showPanel(getSelectedUnit());
+}
+
+function finishCombatFlow() {
+  if (!combatFlow) return;
+  [combatFlow.aId, combatFlow.bId].forEach(id => {
+    const idx = state.units.findIndex(u => u.instanceId === id);
+    if (idx !== -1) state.units[idx] = { ...state.units[idx], phaseDone: true };
+  });
+  combatFlow = null;
+  deselectAll();
+  updateEndPhaseButton();
+}
+
 // ── Phase advance ────────────────────────────────────────────────────────
 const PHASE_ORDER  = ['movement', 'magic', 'shooting', 'combat', 'end'];
 const PHASE_LABELS = { movement: 'Movement', magic: 'Magic', shooting: 'Shooting', combat: 'Combat', end: 'Turn' };
 // Phases gated on every unit finishing its action before the bar shows;
-// magic/combat/end have no per-unit action implemented yet (WHF-5+), so
-// their bar is always available.
-const GATED_PHASES = new Set(['movement', 'shooting']);
+// magic/end have no per-unit action (WHF-5+ for magic), so their bar is
+// always available. Combat is gated now (WHF-5) alongside movement/shooting.
+const GATED_PHASES = new Set(['movement', 'shooting', 'combat']);
 
 function endPhase() {
   const leaving = state.phase;
@@ -1585,13 +2053,15 @@ function endPhase() {
     // per-phase flags it's derived from (hasReformed/hasCharged/hasMoved
     // reset here, ready for next turn's movement phase).
     state.units.forEach(u => {
-      // engaged (WHF-4a.1) is checked separately, not folded into this
-      // OR chain, on purpose — hasCharged/hasReformed/fleeing all reset
-      // every movement phase via movementDefaults() below, but engaged
-      // must keep blocking shooting turn after turn until WHF-5 exists
-      // to clear it. If it were only caught here via hasCharged's
-      // incidental overlap, it would silently stop blocking the very
-      // next turn once hasCharged reset.
+      // engaged and fleeing are checked here but NOT reset by
+      // movementDefaults() below (WHF-5: both now persist until an actual
+      // game event clears them — Close Combat resolution or a Rally test
+      // — not a phase transition). hasCharged/hasReformed/hasMoved DO
+      // reset every movement phase; engaged/fleeing used to incidentally
+      // ride along with fleeing being part of movementDefaults(), which
+      // was a real bug (a charge-reaction flee got wiped by the end of
+      // the SAME movement phase, before Rally could ever see it) — fixed
+      // as part of building WHF-5's Rally mechanic.
       u.shootingBlocked  = u.hasReformed || u.hasCharged || u.fleeing || u.engaged;
       u.shootingPenalty  = u.hasMoved ? 1 : 0;
     });
@@ -1600,11 +2070,37 @@ function endPhase() {
     state.units.forEach(u => Object.assign(u, movementDefaults()));
   }
   if (leaving === 'shooting') shootFlow = null;
+  if (leaving === 'combat')   combatFlow = null;
 
   state.phase = next;
 
   if (next === 'movement') {
-    state.units.forEach(u => { u.phaseDone = false; });
+    // Single pass: phaseDone is decided HERE, in the same iteration as the
+    // rally check, not by re-reading `u.fleeing` afterward — a passed
+    // rally already flips `fleeing` to false, so a later "phaseDone =
+    // u.fleeing" pass would (wrongly) read the POST-rally value and leave
+    // a unit that just rallied able to act again this phase. Caught by
+    // the smoke test. Pass or fail, a unit that took a rally attempt gets
+    // no further Movement-phase action this turn (pass: "too busy
+    // reorganizing"; fail: still fleeing, RAW's compulsory second flee
+    // move isn't built — see attemptRally()'s own note).
+    state.units.forEach(u => {
+      // isUnitAlive() guard: a unit destroyed while fleeing (caught by
+      // pursuit, or run off the table) keeps `fleeing:true` forever —
+      // killUnit() only zeroes out models, it doesn't clear this flag,
+      // since a dead unit has no further state transitions to make. Found
+      // via the smoke test: without this guard, a destroyed unit still
+      // took a pointless rally attempt, consuming a real dice roll ahead
+      // of an actually-fleeing unit's own attempt.
+      if (u.fleeing && isUnitAlive(u)) {
+        const rally = attemptRally(u);
+        u.rallyLog = `Rally test: rolled ${rally.roll}${rally.quarterOrLess ? ' (≤25% strength, needs double-1)' : ''} vs Ld ${u.stats.Ld} — ${rally.passed ? 'rallies' : 'still fleeing'}`;
+        if (rally.passed) u.fleeing = false;
+        u.phaseDone = true;
+      } else {
+        u.phaseDone = false;
+      }
+    });
     snapshotUnitsForMovement();
   }
   if (next === 'shooting') {
@@ -1617,12 +2113,20 @@ function endPhase() {
       if (u.shootingBlocked || !weapon || moveOrFireBlocked) u.phaseDone = true;
     });
   }
+  if (next === 'combat') {
+    // Definitive assignment both ways, not just "set true if blocked" —
+    // unlike the shooting-entry block above, nothing reset phaseDone to
+    // false for everyone before this (that only happens once, leaving
+    // Movement, via movementDefaults()). Without an explicit false here,
+    // an engaged unit would inherit phaseDone:true from having completed
+    // the Shooting phase and never get a chance to fight.
+    state.units.forEach(u => { u.phaseDone = !u.engaged; });
+  }
 
   renderPhaseTracker();
   updateEndPhaseButton();
   renderBoard();
-  if (next === 'magic')  flashHint('Magic phase — not yet implemented, skip ahead');
-  if (next === 'combat') flashHint('Combat phase — not yet implemented (WHF-5)');
+  if (next === 'magic') flashHint('Magic phase — not yet implemented, skip ahead');
 }
 
 function updateEndPhaseButton() {
@@ -1713,17 +2217,35 @@ function buildMovementSection(unit) {
   const M    = parseFloat(unit.stats.M);
   const used = moveGhost ? moveGhost.unit.movementUsed : unit.movementUsed;
 
-  if (unit.phaseDone) {
-    return `<div class="panel-section">
-      <div class="panel-section-title">Movement</div>
-      <div class="panel-row panel-done">Movement complete (${unit.movementUsed.toFixed(1)}" used)</div>
-    </div>`;
-  }
-
+  // Checked before phaseDone: a fleeing unit is ALWAYS phaseDone this phase
+  // (endPhase()'s rally block sets it either way — pass or fail — so this
+  // branch has to come first or it'd never be reached).
   if (unit.fleeing) {
+    const rallyNote = unit.rallyLog ? `<div class="panel-row dim">${escHtml(unit.rallyLog)}</div>` : '';
     return `<div class="panel-section">
       <div class="panel-section-title">Movement</div>
       <div class="panel-row panel-done">Fleeing — no further actions this phase</div>
+      ${rallyNote}
+    </div>`;
+  }
+
+  if (unit.phaseDone) {
+    const rallyNote = unit.rallyLog ? `<div class="panel-row dim">${escHtml(unit.rallyLog)}</div>` : '';
+    return `<div class="panel-section">
+      <div class="panel-section-title">Movement</div>
+      <div class="panel-row panel-done">Movement complete (${unit.movementUsed.toFixed(1)}" used)</div>
+      ${rallyNote}
+    </div>`;
+  }
+
+  // WHF-5: locked in combat — RAW units can't Move/Wheel/Reform/Charge while
+  // engaged (they're already fighting an enemy in base contact). This gap
+  // predates the Combat phase existing to make it matter (WHF-4a.1 only
+  // blocked shooting), closed now alongside the rest of engaged's lifecycle.
+  if (unit.engaged) {
+    return `<div class="panel-section">
+      <div class="panel-section-title">Movement</div>
+      <div class="panel-row panel-done">Engaged in combat — resolve it in the Combat phase</div>
     </div>`;
   }
 
@@ -2010,6 +2532,82 @@ function attachShootingListeners(unit) {
   q('btn-shoot-done')?.addEventListener('click', finishShootFlow);
 }
 
+// ── Combat panel HTML (WHF-5) ───────────────────────────────────────────────
+function buildCombatSection(unit) {
+  if (state.phase !== 'combat') return '';
+  if (combatFlow) return buildCombatFlowSection(unit);
+
+  if (unit.phaseDone) {
+    const reason = !unit.engaged ? 'not engaged — nothing to fight' : 'complete';
+    return `<div class="panel-section">
+      <div class="panel-section-title">Combat</div>
+      <div class="panel-row panel-done">${escHtml(reason)}</div>
+    </div>`;
+  }
+
+  const opponent = engagedOpponent(unit);
+  return `<div class="panel-section">
+    <div class="panel-section-title">Combat</div>
+    <div class="panel-row">Engaged with ${escHtml(opponent ? opponent.name : '?')}</div>
+    <div class="move-btns"><button class="move-btn" id="btn-combat-fight">Fight!</button></div>
+  </div>`;
+}
+
+function buildCombatFlowSection(unit) {
+  const a = state.units.find(u => u.instanceId === combatFlow.aId);
+  const b = state.units.find(u => u.instanceId === combatFlow.bId);
+  if (unit.instanceId !== a?.instanceId && unit.instanceId !== b?.instanceId) {
+    return `<div class="panel-section">
+      <div class="panel-row dim">Combat in progress elsewhere on the board.</div>
+    </div>`;
+  }
+  const logHtml = combatFlow.log.length
+    ? `<ul class="panel-list">${combatFlow.log.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul>` : '';
+
+  if (combatFlow.stage === 'ready') {
+    return `<div class="panel-section">
+      <div class="panel-section-title">Fight Combat — ${escHtml(a.name)} vs ${escHtml(b.name)}</div>
+      <div class="move-btns">
+        <button class="move-btn" id="btn-combat-roll">Roll Combat</button>
+        <button class="move-btn" id="btn-combat-cancel">Cancel (Esc)</button>
+      </div>
+    </div>`;
+  }
+
+  if (combatFlow.stage === 'pursue-choice') {
+    const winner = state.units.find(u => u.instanceId === combatFlow.winnerId);
+    return `<div class="panel-section">
+      <div class="panel-section-title">Combat Resolved</div>
+      ${logHtml}
+      <div class="panel-row">${escHtml(winner ? winner.name : '?')} may pursue the fleeing enemy:</div>
+      <div class="move-btns">
+        <button class="move-btn" id="btn-combat-pursue">Pursue</button>
+        <button class="move-btn" id="btn-combat-hold">Hold</button>
+      </div>
+    </div>`;
+  }
+
+  if (combatFlow.stage === 'resolved') {
+    return `<div class="panel-section">
+      <div class="panel-section-title">Combat Resolved — ${escHtml(combatFlow.outcome)}</div>
+      ${logHtml}
+      <div class="move-btns"><button class="move-btn" id="btn-combat-done">Continue</button></div>
+    </div>`;
+  }
+
+  return '';
+}
+
+function attachCombatListeners(unit) {
+  const q = id => document.getElementById(id);
+  q('btn-combat-fight')?.addEventListener('click', enterCombatFlow);
+  q('btn-combat-cancel')?.addEventListener('click', cancelCombatFlow);
+  q('btn-combat-roll')?.addEventListener('click', rollCombat);
+  q('btn-combat-pursue')?.addEventListener('click', () => choosePursuit(true));
+  q('btn-combat-hold')?.addEventListener('click', () => choosePursuit(false));
+  q('btn-combat-done')?.addEventListener('click', finishCombatFlow);
+}
+
 function attachMovementListeners(unit) {
   const q = id => document.getElementById(id);
   q('btn-move')?.addEventListener('click', enterMoveMode);
@@ -2061,6 +2659,7 @@ function showPanel(unit) {
       <div class="panel-name">${escHtml(unit.name)}</div>
       <div class="panel-faction">${escHtml(unit.factionLabel)} — ${escHtml(unit.category)}</div>
       ${unit.engaged ? '<div class="panel-engaged-badge">Engaged</div>' : ''}
+      ${unit.fleeing ? '<div class="panel-engaged-badge panel-fleeing-badge">Fleeing</div>' : ''}
     </div>
     <div class="panel-section">
       <table class="stat-table">
@@ -2095,12 +2694,14 @@ function showPanel(unit) {
     </div>
     ${buildMovementSection(unit)}
     ${buildShootingSection(unit)}
+    ${buildCombatSection(unit)}
   `;
 
   panel.classList.add('panel-open');
 
   if (state.phase === 'movement') attachMovementListeners(unit);
   if (state.phase === 'shooting') attachShootingListeners(unit);
+  if (state.phase === 'combat')   attachCombatListeners(unit);
 }
 
 function hidePanel() {
@@ -2134,6 +2735,7 @@ function init() {
       if (moveGhost || moveMode) { cancelGhost(); return; }
       if (chargeFlow) { cancelChargeFlow(); return; }
       if (shootFlow) { cancelShootFlow(); return; }
+      if (combatFlow) { cancelCombatFlow(); return; }
       deselectAll();
       return;
     }
