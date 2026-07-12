@@ -1692,3 +1692,118 @@ against the actual tiled-window repro conditions.
 
 **Commit:** `a1b00c5` (items 2, 3, polish — combined, since none of the
 three touch overlapping code and all were verified together).
+
+---
+
+## 2026-07-11 — BUG_KT_PLAYTEST_2: brother-game 2 findings
+
+Brief: `briefs/BUG_KT_PLAYTEST_2.md`, explicitly extending
+BUG_KT_PLAYTEST_1_1 above with new data from a second real two-window
+game. Read as a continuation, not a fresh investigation.
+
+**Item 1 — lockout cluster: found the real bug this time.** PT1 ruled out
+KT-2 Part 2's document-level drag listener but left the actual mechanism
+unresolved. PT2's new data point — "radial menu stops appearing entirely
+after ~turn 1-2, worked initially" — was the thread to pull. Traced it to
+`render()`, the callback wired to Firebase's `.on('value')` and therefore
+firing on **every** snapshot of the shared game doc: your own writes
+echoing back, the opponent's moves, anything. It never called
+`refreshRadialIfActive()` — only `reRender()` (used solely after local
+button clicks) did. The radial menu is a single persistent `<div
+id="radial-menu">` sitting outside `#screen-game` (confirmed by reading
+the static HTML shell — it survives `renderGame()`'s innerHTML rebuild,
+so it isn't destroyed), positioned via a one-off screen-coordinate
+calculation off the active operative's current token position. Every
+snapshot-triggered rebuild left that calculation stale: after a move, the
+underlying board redraws the token in its new spot but the menu stays
+glued to the old screen coordinates. In a real two-player game, snapshots
+arrive constantly — far more often than in an isolated single-action
+test — so this compounds fast, matching "worked initially, degrades"
+precisely.
+
+Verified as a real regression, not a guess: stashed the fix, re-ran the
+new test script against pre-fix code — activate an operative, commit a
+move via the app's own `commitMove()`, let the Firebase echo round-trip
+back, and check the menu's `style.left`. Pre-fix: stuck at the original
+position. Current code: repositions correctly. Fixed at two points —
+`render()` now calls `refreshRadialIfActive()` directly, and
+`reRenderPhaseBar()` (used by ~15 call sites across the move/shoot/fight
+flows, many of which only needed to touch the phase bar before) now folds
+in the same refresh, so every one of those call sites gets a correctly
+positioned menu without individually patching each one.
+
+Separately verified the brief's other new data point — "when player1 has
+no ready operatives left, player2's remaining operatives CANNOT act" —
+against `advanceActivatingPlayer()`'s actual logic: `next = otherReady ?
+otherSlot : justActivatedSlot`, i.e. it already stays with whichever side
+still has ready operatives. Confirmed correct both by reading it and with
+a real two-context test: P1's only operative activates and ends, turn
+correctly passes to P2, and P2 solo-activates two operatives back to back
+via real token clicks (not direct state manipulation) — each one shows a
+full radial menu (Move enabled, not just End) and can actually spend AP.
+This piece was very likely a symptom of the same staleness above rather
+than an independent turn-logic bug — a real activation with an unusably
+stale/mispositioned menu looks, from the player's chair, exactly like
+"nothing but End is available."
+
+**Item 2 — Shoot repeatable in one activation.** `fightDisabled` already
+gated on `activation.hasFought`; `shootDisabled` never gated on
+`activation.hasShot`, even though that flag was already tracked and set
+by `confirmShootTarget()`. One missing condition, present in both UI
+surfaces (the phase-bar activation panel and the radial menu both compute
+their own `shootDisabled`). Added `|| hasShot` to both, plus a matching
+disabled-button tooltip ("Already shot this activation") consistent with
+Fight's existing one. Move/Dash correctly remain repeatable (RAW).
+
+**Item 3 — base collision (new).** Movement was pure distance-clamp +
+grid-snap with no notion of occupied squares at all — operatives could
+walk straight onto or through any other operative's base. Added
+`wouldCollideWithOperative(x, y, excludeOpId)` (`2×TOKEN_R` — "touching,
+not overlapping" — the same threshold and phrasing `warhammer-fantasy`'s
+WHF-5m uses for its own friendly-overlap rule, borrowed as a concept, no
+shared code) and `resolveMoveDestination()`, which walks the drag line
+forward in 1"-grid steps from start to the range-clamped destination and
+returns the last free square before the first occupied one. Checking
+every intermediate step (not just the endpoint) is what stops a long drag
+from passing straight through an operative parked between start and
+target, not just landing on one — caught by the test suite itself: an
+early version only checked the destination, and a straight shot fully
+past a blocker slipped through undetected until the test's "stops short
+of it, not past it" assertion failed. No friend/foe distinction per the
+brief (unlike WHF's separate friendly-overlap vs. enemy-1"-buffer rules).
+Wired into both the drag preview and the commit path.
+
+**Item 4 — Fight reveals (decided ruling).** RAW is ambiguous on whether
+attacking in melee reveals a Concealed operative. Per Nox: legibility
+wins. `confirmFightTarget()` now sets the attacker's `order` to `'engage'`
+when it isn't already, mirroring Shoot's existing order-lock
+(`orderDisabled = hasShot` in the radial menu).
+
+**Item 5 — scroll, re-checked, not re-broken.** The brief reports this
+"still broken... confirmed still open in game 2," but PT1's fix
+(`a1b00c5`) hasn't been deployed yet — Nox pushes and redeploys hosting
+himself, and that hadn't happened between the two playtests. Re-ran a
+scroll-height check against current code, including at a narrower
+700×750 viewport (closer to two windows tiled on one screen than the
+original 1280×800 test) through an activate→Fight-resolution sequence —
+`scrollHeight == innerHeight` held throughout. No regression found; the
+brief's report almost certainly reflects the stale deployed build, not
+current code. Flagging this explicitly rather than silently assuming —
+if it reproduces again after this deploys, something else is going on.
+
+**Testing:** three throwaway Playwright scripts (not committed, per this
+project's established pattern), real headless Chromium via
+`.playwright-libs`, disposable `games-kt/` fixtures via direct Firebase
+REST, deleted after each run. 21/21 checks: once-per-activation Shoot (2)
++ Fight-reveals (2) + base collision unit-level and end-to-end (5, one
+failure caught and fixed mid-session as noted above) in one script;
+radial-menu staleness before/after a move plus an unrelated remote update
+(3), and the full P1-exhausts/P2-solo-activates scenario via real token
+clicks (8) in a second; the scroll re-check (3) in a third. The
+radial-menu fix was additionally verified against pre-fix code via `git
+stash` to confirm it catches a real regression, not a tautological test.
+
+**Commit:** `b425c03` (all five items — items 1's fix, 2, 3, and 4 all
+touch the same handful of functions closely enough that splitting them
+would have meant re-testing the same scenarios repeatedly; item 5 is
+verification-only, no code change).
