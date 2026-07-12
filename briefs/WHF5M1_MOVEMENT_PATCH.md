@@ -1,4 +1,5 @@
 # WHF-5m.1 — Movement Cost Patch + Playtest Follow-ups
+# CLAIMED: 2026-07-12
 
 ## Orientation
 Monorepo, warhammer-fantasy/. Small follow-up: WHF-5m passed
