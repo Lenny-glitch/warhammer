@@ -52,6 +52,13 @@
       display: flex; align-items: center; justify-content: center;
       min-height: 100vh; padding: 2rem;
     }
+    /* BUG_KT_PLAYTEST_1_1 item 3: #screen-game is full-bleed by design
+       (height:100vh, padding:0 on itself) — this parent's own padding/
+       min-height must get out of its way, or the two stack into
+       100vh + 4rem, taller than the actual viewport. Every other screen
+       keeps the centered padding above; only the active game screen
+       toggles this via showScreen(). */
+    #app.app-fullbleed { min-height: 0; padding: 0; align-items: stretch; }
     body.dev-mode #app { display: none; }
 
     .screen { display: none; flex-direction: column; align-items: center; width: 100%; }
@@ -156,8 +163,17 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── GAME LAYOUT ── */
+    /* BUG_KT_PLAYTEST_1_1 item 3: was min-height:100vh — a floor, not a
+       ceiling. .game-main's flex:1/min-height:0/overflow:hidden below only
+       actually constrains anything if THIS container is capped at the
+       viewport; with min-height alone, a taller .phase-bar (KT-2 Part 2
+       added dice pools, floater/skip-hint content) just grows the whole
+       page instead of being contained, forcing a page-level scroll. height
+       (a real ceiling) instead of min-height fixes that: .phase-bar keeps
+       its natural height, .game-main's board+sidebars absorb the
+       remaining space via flex, same as originally intended. */
     #screen-game {
-      flex-direction: column; min-height: 100vh;
+      flex-direction: column; height: 100vh;
       padding: 0; align-items: stretch; max-width: none;
     }
     .game-topbar {
@@ -1235,16 +1251,36 @@ function renderWaiting() {
       <div class="field-label" style="margin-bottom:5px;">Share this link</div>
       <div class="link-row">
         <input class="link-input" type="text" value="${escHtml(gameUrl)}" readonly />
-        <button class="btn" onclick="copyLink(this, ${JSON.stringify(gameUrl)})">Copy</button>
+        <button class="btn" onclick="copyLink(this)">Copy</button>
       </div>
     </div>
   `;
 }
 
-function copyLink(btn, url) {
-  navigator.clipboard.writeText(url).catch(() => {});
-  btn.textContent = 'Copied!';
-  setTimeout(() => { btn.textContent = 'Copy'; }, 1800);
+function copyLink(btn) {
+  // BUG_KT_PLAYTEST_1_1 item 2: the real bug was that the url used to be
+  // passed as a JSON.stringify()'d second argument inside the onclick=""
+  // attribute — JSON.stringify's own wrapping double-quotes terminated the
+  // attribute early, so the browser never parsed a valid call and this
+  // function never ran at all, for any url, always. Reading the url from
+  // the link-input element sidesteps the attribute-quoting problem
+  // entirely. Also was unconditional about success — "Copied!" showed even
+  // when navigator.clipboard.writeText failed (Brave shields, denied
+  // permission, non-secure context) or didn't exist, silently lying to the
+  // player. Falls back to selecting the link-input's text so manual
+  // Ctrl+C still works, and says so instead of pretending it copied.
+  const input = btn.closest('.link-row')?.querySelector('.link-input');
+  const url = input?.value ?? '';
+  const fallback = () => {
+    if (input) { input.focus(); input.select(); }
+    btn.textContent = 'Select & Ctrl+C';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 2600);
+  };
+  if (!navigator.clipboard?.writeText) { fallback(); return; }
+  navigator.clipboard.writeText(url).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1800);
+  }).catch(fallback);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2780,6 +2816,27 @@ const STAT_LABELS = {
   rerollOne: 'reroll worst die', rerollAll: 'reroll all failed dice',
 };
 const WHEN_LABELS = { critScored: 'on a crit', noCritScored: 'if no crit scored', halfRange: 'at half range' };
+// BUG_KT_PLAYTEST_1_1 "also": flag readout lines were circular ("Psychic:
+// flags psychic") — the flag's own machine name echoed back at the
+// player. Player-contract wording per flag; anything not listed here
+// falls back to the old generic phrasing (same "unknown flags pass
+// through safely" philosophy the resolver itself already uses — a flag
+// this table doesn't know about isn't an error, just undescribed).
+// shock/brutal deliberately NOT included — no source-verified mechanical
+// text for either in this codebase (compile-keywords.js ships them as
+// bare pass-through flags with no rules comment), and guessing specifics
+// risks shipping confidently-wrong rules text, worse than the plain
+// "flags X" fallback it would replace.
+const FLAG_LABELS = {
+  blast:          'can hit multiple targets near the aim point (applied by agreement for now)',
+  torrent:        'auto-hits — no roll to hit needed',
+  heavy:          'no penalty for moving and shooting this weapon',
+  silent:         "doesn't reveal the shooter's position",
+  ignoreObscured: 'can target through intervening terrain',
+  ignoreCover:    "ignores the target's cover save",
+  hot:            'risks hurting its own wielder on a bad roll',
+  psychic:        'a psychic attack — subject to any psychic-specific rules in play',
+};
 
 // Generates the dice-readout's plain-English line for one applied bonus.
 // Reads bonus.name + effect shape, NOT bonus.description — see the
@@ -2788,7 +2845,7 @@ const WHEN_LABELS = { critScored: 'on a crit', noCritScored: 'if no crit scored'
 function describeBonus(bonus) {
   const parts = (bonus.effects || []).map(e => {
     const whenTxt = e.when ? ` (${WHEN_LABELS[e.when] || e.when})` : '';
-    if (e.type === 'flag') return `flags ${e.flag}`;
+    if (e.type === 'flag') return FLAG_LABELS[e.flag] || `flags ${e.flag}`;
     if (e.type === 'condition') return `applies ${e.condition}${whenTxt}`;
     if (e.type === 'mod') {
       const label = STAT_LABELS[e.stat] || e.stat;
@@ -4430,6 +4487,14 @@ function showScreen(name) {
   document.querySelectorAll('#app .screen').forEach(s => s.classList.remove('active'));
   const t = document.getElementById(`screen-${name}`);
   if (t) t.classList.add('active');
+  // BUG_KT_PLAYTEST_1_1 item 3: #app's generic 2rem padding + min-height:
+  // 100vh (meant for the small centered screens — home, library, etc.) was
+  // stacking with #screen-game's OWN height:100vh, pushing the real page
+  // height to 100vh + 4rem — the remaining overflow after fixing
+  // #screen-game's min-height->height further up. The game screen is
+  // already full-bleed by design (padding:0 on #screen-game itself); it
+  // just needed its parent to stop adding padding around it too.
+  document.getElementById('app')?.classList.toggle('app-fullbleed', name === 'game');
 }
 
 function showError(msg) {
