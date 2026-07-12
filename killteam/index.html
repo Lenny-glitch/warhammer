@@ -134,6 +134,17 @@
     .waiting-name { font-size: 1.3rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
     .waiting-sub  { font-size: 13px; color: var(--text-dim); margin-bottom: 2rem; }
 
+    /* ── GAME OVER ── */
+    .gameover-wrap { text-align: center; max-width: 440px; width: 100%; }
+    .gameover-title {
+      font-size: 3rem; font-weight: 800; letter-spacing: 4px; text-transform: uppercase;
+      margin-bottom: 0.75rem; text-shadow: 0 0 24px currentColor;
+    }
+    .gameover-wrap.win  .gameover-title { color: var(--green); }
+    .gameover-wrap.lose .gameover-title { color: var(--red); }
+    .gameover-wrap.draw .gameover-title { color: var(--gold); }
+    .gameover-sub { font-size: 14px; color: var(--text-dim); margin-bottom: 2rem; }
+
     /* ── BUTTONS ── */
     .btn {
       background: var(--surface2); border: 1px solid var(--border);
@@ -275,6 +286,28 @@
     /* ── BOARD WRAP ── */
     .board-wrap { flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 12px; }
     .board-svg  { display: block; max-height: 100%; }
+    /* KT-3 item 3: hover-only so touch devices (no real hover) never get a
+       stuck pointer cursor or anything that could interfere with tap-select. */
+    @media (hover: hover) {
+      .op-token.token-selectable { cursor: pointer; }
+    }
+
+    /* ── ACTION LOG (KT-3 item 4) ── */
+    .action-log-strip {
+      flex-shrink: 0; background: var(--surface); border-top: 1px solid var(--border);
+      font-size: 11px; color: var(--text-dim); cursor: pointer;
+    }
+    .action-log-strip:not(.expanded) {
+      padding: 5px 16px; display: flex; align-items: center; gap: 10px;
+    }
+    .action-log-latest { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+    .action-log-toggle { flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.5px; }
+    .action-log-header {
+      padding: 5px 16px; display: flex; align-items: center; justify-content: space-between;
+      text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer;
+    }
+    .action-log-list { max-height: 130px; overflow-y: auto; padding: 0 16px 6px; }
+    .action-log-line { color: var(--text); padding: 2px 0; }
 
     /* ── PHASE BAR ── */
     .phase-bar {
@@ -364,7 +397,7 @@
       opacity: 0; transition: opacity 0.12s ease;
     }
     #radial-menu.visible { opacity: 1; }
-    .radial-item, .radial-end {
+    .radial-item {
       position: absolute;
       width: 50px; height: 50px; border-radius: 50%;
       border: 1px solid var(--border-hi); background: var(--surface2); color: var(--text);
@@ -376,12 +409,13 @@
     }
     .radial-item:hover:not([disabled]) { background: var(--surface); border-color: var(--gold); color: var(--gold); }
     .radial-item[disabled] { opacity: 0.35; cursor: default; border-style: dashed; }
-    .radial-end { width: 44px; height: 44px; border-color: var(--border); color: var(--text-dim); }
-    .radial-end:hover { background: var(--red-dim); border-color: var(--red); color: var(--red); }
     .r-order  { border-color: var(--gold); color: var(--gold); }
     .r-engage { border-color: var(--green); color: var(--green); }
     .r-conceal { border-color: var(--border-hi); color: var(--text-dim); }
     .r-shoot:not([disabled]) { border-color: var(--p1); color: var(--p1); }
+    .r-weapon { border-color: var(--gold); color: var(--gold); }
+    .r-back   { border-color: var(--border); color: var(--text-dim); font-size: 10px; }
+    .r-back:hover { background: var(--red-dim); border-color: var(--red); color: var(--red); }
     .ri-ap { font-size: 9px; color: var(--text-dim); font-weight: 400; }
     .radial-item.restriction-target { border-color: var(--red) !important; }
     .radial-item.restriction-target::after {
@@ -471,6 +505,7 @@
   <div id="screen-lobby"   class="screen"></div>
   <div id="screen-waiting" class="screen"></div>
   <div id="screen-game"    class="screen"></div>
+  <div id="screen-gameover" class="screen"></div>
 </div>
 
 <!-- Dev mode: two columns side by side -->
@@ -744,16 +779,24 @@ let terrainTier   = 'rough';
 let terrainActive = false; // debounce for terrain writes
 let deploySelId   = null;  // selected operative ID during deployment
 let dragState     = null;  // { opId, startX, startY, maxMove, svg, moveOverlay, arrowOverlay }
-let shootWeapon   = null;  // null | 'picking' | weapon object — during shoot action
+let shootWeapon   = null;  // null | weapon object — during shoot action
 let shootState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } — during drag
-let fightWeapon   = null;  // null | 'picking' | weapon object — during fight action
+let fightWeapon   = null;  // null | weapon object — during fight action
 let fightState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } — during fight drag
 let radialSlot    = null;  // playerSlot whose radial is currently showing
+// KT-3 item 2: { kind: 'shoot'|'fight', playerSlot, weapons } while the
+// radial's weapon submenu is showing (multi-weapon operatives only —
+// single-weapon ones skip straight through, unchanged). Replaces the old
+// shootWeapon/fightWeapon === 'picking' sentinel and its phase-bar list;
+// the picker now lives on the radial ring itself, reachable from both the
+// Shoot/Fight radial buttons and drag-to-shoot's multi-weapon case.
+let radialWeaponPick = null;
 let expandedOps   = new Set(); // op IDs whose sidebar cards are expanded
 let splatData     = []; // { x, y, pathIdx, rotation, scale, color, bornAt } — permanent death stains
 let diceAnimState = null; // { atkRolls, defRolls, atkStopAt, defStopAt, t0, totalDur, displayAtk, displayDef, _timer }
 let fightDiceAnimState = null; // KT-2 Part 2 — same shape as diceAnimState, Fight's own tumble
 let diceReadoutExpanded = {}; // BON-2b: { shot: bool, fight: bool } — collapsed-by-default readout toggle (always expanded in ?dev=true)
+let actionLogExpanded = false; // KT-3 item 4: collapsed-by-default action log strip
 
 // ═══════════════════════════════════════════════════════════
 //  BOOTSTRAP
@@ -1135,6 +1178,21 @@ function render() {
     return;
   }
 
+  // KT-3 item 5: a wiped-out side ends the game (checkForWipeout, wired
+  // into confirmShotDamage/confirmFightDamage). Reused warhammer40k's own
+  // `gameOver: { winner, reason }` field/convention (games-kt's schema
+  // already had a dormant `gameOver: null` scaffolded for exactly this) —
+  // checked directly rather than via a new meta/status enum value, same
+  // as 40k's own render() dispatch. TP4 end stays on the existing
+  // (currently unhandled) 'ended' status per the brief — scoring is
+  // future work, this only covers the wipe-out case that actually
+  // happened at the table.
+  if (gameData.gameOver) {
+    showScreen('gameover');
+    renderGameOver(myPlayer);
+    return;
+  }
+
   showScreen('game');
   renderGame(myPlayer);
   refreshRadialIfActive();
@@ -1148,6 +1206,12 @@ function renderDev() {
 function renderDevCol(colId, playerSlot) {
   const body = document.getElementById(`dev-body-${colId}`);
   if (!body) return;
+
+  if (gameData?.gameOver) {
+    body.innerHTML = '';
+    renderGameOver(playerSlot, body);
+    return;
+  }
 
   const old = body.querySelector('.game-wrap-dev');
   const wrap = document.createElement('div');
@@ -1305,6 +1369,44 @@ function renderWaiting() {
   `;
 }
 
+// KT-3 item 5: gameOver.winner set by checkForWipeout() (see
+// confirmShotDamage/confirmFightDamage) — same `{ winner, reason }`
+// shape warhammer40k's own gameOver field uses, killteam's schema already
+// had the field name reserved (`gameOver: null` at game creation). Unlike
+// 40k's single shared message, this brief explicitly asks for a
+// PERSONALIZED VICTORY/DEFEAT per client, so this reads `playerSlot`
+// (the viewer) rather than always describing the winner in third person.
+// winner === null means a simultaneous double wipe-out (Fight resolves
+// both sides' damage in one shot, so this is reachable) — shown as a
+// draw rather than silently deadlocking with no game-over screen at all,
+// an edge case 40k's own single-team-game shooting flow doesn't hit.
+function renderGameOver(playerSlot, devContainer) {
+  const container = devContainer || document.getElementById('screen-gameover');
+  if (!devContainer) showScreen('gameover');
+
+  const winner     = gameData.gameOver?.winner || null;
+  const isDraw     = !winner;
+  const won        = winner === playerSlot;
+  const p1info     = gameData.players?.player1 || {};
+  const p2info     = gameData.players?.player2 || {};
+  const winnerInfo = winner === 'player1' ? p1info : winner === 'player2' ? p2info : null;
+
+  const title = isDraw ? 'DRAW' : won ? 'VICTORY' : 'DEFEAT';
+  const cls   = isDraw ? 'draw' : won ? 'win' : 'lose';
+  const sub   = isDraw
+    ? 'Both kill teams wiped out — no one left standing.'
+    : won
+      ? 'Your kill team stands. The enemy is wiped out.'
+      : `${escHtml(winnerInfo?.factionName || 'The enemy')}'s kill team stands. Yours is wiped out.`;
+
+  container.innerHTML = `
+    <div class="gameover-wrap ${cls}">
+      <h1 class="gameover-title">${title}</h1>
+      <p class="gameover-sub">${sub}</p>
+    </div>
+  `;
+}
+
 function copyLink(btn) {
   // BUG_KT_PLAYTEST_1_1 item 2: the real bug was that the url used to be
   // passed as a JSON.stringify()'d second argument inside the onclick=""
@@ -1329,6 +1431,76 @@ function copyLink(btn) {
     btn.textContent = 'Copied!';
     setTimeout(() => { btn.textContent = 'Copy'; }, 1800);
   }).catch(fallback);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ACTION LOG (KT-3 item 4)
+// ═══════════════════════════════════════════════════════════
+
+// Written against structured records (type + the raw numbers/names), not
+// pre-formatted strings — describeActionLogEntry() is the only place that
+// turns a record into English. Per the brief, this is deliberately the
+// seed of KT-7's catch-up feature: growing the record shape later (e.g.
+// adding a 'incapacitated' type) won't require touching every call site
+// that writes one, just this one render function.
+function logAction(record) {
+  if (!gameId) return;
+  db.ref(`games-kt/${gameId}/actionLog`).push({ ...record, ts: Date.now() });
+}
+
+function describeActionLogEntry(e) {
+  switch (e.type) {
+    case 'move':
+      return `${e.opName} moves ${e.dist}″`;
+    case 'shoot':
+      return e.hits > 0
+        ? `${e.attackerName} shoots ${e.targetName} — ${e.hits} hit${e.hits !== 1 ? 's' : ''}, ${e.dmg} dmg`
+        : `${e.attackerName} shoots ${e.targetName} — no hits`;
+    case 'fight': {
+      const parts = [];
+      if (e.dmgToDefender > 0) parts.push(`${e.dmgToDefender} to ${e.defenderName}`);
+      if (e.dmgToAttacker > 0) parts.push(`${e.dmgToAttacker} to ${e.attackerName}`);
+      return parts.length
+        ? `${e.attackerName} fights ${e.defenderName} — ${parts.join(', ')}`
+        : `${e.attackerName} fights ${e.defenderName} — no damage`;
+    }
+    default:
+      return null;
+  }
+}
+
+function toggleActionLog() {
+  actionLogExpanded = !actionLogExpanded;
+  reRender();
+}
+
+function renderActionLog() {
+  const entries = Object.values(gameData.actionLog || {})
+    .sort((a, b) => (a.ts || 0) - (b.ts || 0))
+    .map(describeActionLogEntry)
+    .filter(Boolean);
+  if (!entries.length) return '';
+
+  const count = entries.length;
+
+  if (!actionLogExpanded) {
+    return `
+      <div class="action-log-strip" onclick="toggleActionLog()">
+        <span class="action-log-latest">${escHtml(entries[count - 1])}</span>
+        <span class="action-log-toggle">${count} action${count !== 1 ? 's' : ''} ▾</span>
+      </div>`;
+  }
+
+  const shown = entries.slice(-20).reverse();
+  return `
+    <div class="action-log-strip expanded">
+      <div class="action-log-header" onclick="toggleActionLog()">
+        <span>Action Log (${count})</span><span class="action-log-toggle">▴</span>
+      </div>
+      <div class="action-log-list">
+        ${shown.map(l => `<div class="action-log-line">${escHtml(l)}</div>`).join('')}
+      </div>
+    </div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1381,6 +1553,8 @@ function renderGame(playerSlot, devContainer) {
         ${p2dead.length ? `<div style="padding:6px 10px;font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;">Incapacitated</div>` + p2dead.map(o => renderOpRow(o, 'player2', playerSlot, status, phase, turn, true)).join('') : ''}
       </div>
     </div>
+
+    ${renderActionLog()}
 
     <div class="phase-bar" id="phase-bar-${playerSlot}">
       ${renderPhaseBar(status, phase, playerSlot, turn)}
@@ -1718,23 +1892,18 @@ function renderActivationBar(playerSlot, turn) {
   if (!op) return '';
   const ap = activation.apRemaining;
 
-  // Weapon picker mode
-  if (shootWeapon === 'picking') {
-    const ranged = getRangedWeapons(op);
+  // KT-3 item 2: weapon choice for multi-weapon operatives now happens on
+  // the radial ring itself (renderRadialWeaponPicker), for both the
+  // Shoot-button/radial-click path and drag-to-shoot — this just tells
+  // the player where to look instead of showing a blank/stale action row
+  // while the radial's weapon submenu is up. Single-weapon operatives
+  // still skip straight through (startShoot/startFight/ktDragShootMove).
+  if (radialWeaponPick && radialWeaponPick.playerSlot === playerSlot) {
     return `
       <span class="phase-bar-label">Choose Weapon</span>
       <div class="phase-bar-body">
-        <div class="shoot-panel">
-          <strong style="font-size:12px;">${escHtml(op.name)} — select ranged weapon:</strong>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${ranged.map((w, i) => `
-              <button class="action-btn" onclick="pickWeaponForShoot('${playerSlot}',${i})" style="display:flex;flex-direction:column;align-items:flex-start;padding:6px 10px;">
-                <span>${escHtml(w.name)}</span>
-                <span style="font-size:10px;color:var(--text-dim);">ATK ${w.profiles.ATK} / ${w.profiles.HIT} / RNG ${weaponRange(w) === null ? '∞' : w.profiles.RNG} / DMG ${w.profiles.DMG}</span>
-              </button>`).join('')}
-          </div>
-          <button class="btn" onclick="cancelShoot()">Cancel</button>
-        </div>
+        <span style="font-size:12px;">${escHtml(op.name)} — pick a weapon on the radial menu.</span>
+        <button class="btn" onclick="cancelRadialWeaponPick()">Cancel</button>
       </div>`;
   }
 
@@ -1754,25 +1923,6 @@ function renderActivationBar(playerSlot, turn) {
   const dragActive    = !!shootState || !!fightState || !!dragState;
   const moveDisabled  = ap < 1 || dragActive || hasMoved;
   const dashDisabled  = ap < 1 || dragActive || hasDashed;
-
-  // Weapon picker for fight
-  if (fightWeapon === 'picking') {
-    return `
-      <span class="phase-bar-label">Choose Weapon</span>
-      <div class="phase-bar-body">
-        <div class="shoot-panel">
-          <strong style="font-size:12px;">${escHtml(op.name)} — select melee weapon:</strong>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${melee.map((w, i) => `
-              <button class="action-btn" onclick="pickWeaponForFight('${playerSlot}',${i})" style="display:flex;flex-direction:column;align-items:flex-start;padding:6px 10px;">
-                <span>${escHtml(w.name)}</span>
-                <span style="font-size:10px;color:var(--text-dim);">ATK ${w.profiles.ATK} / ${w.profiles.HIT} / DMG ${w.profiles.DMG}</span>
-              </button>`).join('')}
-          </div>
-          <button class="btn" onclick="cancelFight()">Cancel</button>
-        </div>
-      </div>`;
-  }
 
   return `
     <div class="activation-wrap">
@@ -1909,6 +2059,14 @@ function drawOperativeToken(parent, op, viewerSlot, status, phase) {
 
   const g = svgEl('g', { 'data-op-id': op.id, class: 'op-token' });
 
+  // KT-3 item 3: native SVG <title> — a real hover tooltip for free, no JS
+  // needed to show/hide it, and (usefully) browsers don't fire it on tap,
+  // so touch tap-select is untouched by construction rather than needing
+  // an explicit touch-detection branch.
+  const tokenTip = svgEl('title', {});
+  tokenTip.textContent = `${op.name || 'Operative'} — ${Math.max(op.wounds, 0)}/${op.maxWounds}W`;
+  g.appendChild(tokenTip);
+
   // ── Dead / incapacitated token ──
   if (isDead) {
     g.style.opacity = '0.65';
@@ -1922,6 +2080,17 @@ function drawOperativeToken(parent, op, viewerSlot, status, phase) {
   }
 
   if (isExpended) g.style.opacity = '0.45';
+
+  // KT-3 item 3: pointer cursor over tokens a click would actually do
+  // something to — same condition renderOpRow already uses for the
+  // sidebar cards' 'clickable' class, mirrored here so tokens and cards
+  // agree on what's selectable at a glance.
+  const isMe        = op.player === viewerSlot;
+  const myTurn      = gameData.turn?.activatingPlayer === viewerSlot;
+  const isActiveOp  = activation?.opId === op.id;
+  const canActTok   = isMe && op.ready && myTurn && phase === 'firefight' && status === 'active' && !activation;
+  const canDeselTok = isActiveOp && activation && !activation.apSpent;
+  if (canActTok || canDeselTok) g.classList.add('token-selectable');
 
   // Token body
   g.appendChild(svgEl('circle', { cx: op.x, cy: op.y, r: TOKEN_R, fill: baseColor + '60', stroke: rimColor, 'stroke-width': isActive ? 0.18 : 0.12 }));
@@ -2240,6 +2409,21 @@ function activateOperative(opId, playerSlot) {
 
 function cancelActivation() {
   if (!activation || activation.apSpent) return;
+  // KT-3 item 6: this used to only null `activation`, leaving any
+  // in-progress Shoot/Fight drag (shootState/fightState, their attached
+  // svg mousemove/mouseup listeners, and the crosshair cursor) orphaned —
+  // the drag's own mouseup would still fire later, hit
+  // confirmShootTarget()/confirmFightTarget()'s `if (!activation) return`
+  // early-out, and leave shootWeapon/fightWeapon stuck non-null with no
+  // re-render to clear the stale UI. Matches the playtest's "fight
+  // uncanceled attacker" report closely enough to fix outright rather than
+  // leave purely as a placeholder — amend if Nox's clarification points
+  // at something else.
+  if (shootState) { clearEl(shootState.overlay); shootState.svg.style.cursor = ''; shootState = null; }
+  if (fightState) { clearEl(fightState.overlay); fightState.svg.style.cursor = ''; fightState = null; }
+  shootWeapon = null;
+  fightWeapon = null;
+  radialWeaponPick = null; // KT-3 item 2: same reasoning — don't leave the radial's weapon submenu orphaned
   activation = null;
   hideRadialMenu();
   reRenderPhaseBar();
@@ -2444,8 +2628,14 @@ function updateDragOverlay(tx, ty) {
 async function commitMove(tx, ty, apCost, playerSlot) {
   if (!activation) return;
   const opId = activation.opId;
+  const op   = (gameData.operatives || {})[opId];
 
   await db.ref(`games-kt/${gameId}/operatives/${opId}`).update({ x: tx, y: ty });
+
+  if (op) {
+    const dist = Math.hypot(tx - op.x, ty - op.y);
+    logAction({ type: 'move', opName: op.name, dist: Math.round(dist * 10) / 10 });
+  }
 
   activation.apSpent = true;
   activation.apRemaining -= apCost;
@@ -2463,7 +2653,16 @@ function setupDragMove(svg, playerSlot, unitG, overlay) {
   });
 
   svg.addEventListener('click', e => {
-    if (dragState || shootState) return;
+    // KT-3 item 2 (found while testing drag-to-shoot's multi-weapon case):
+    // fightState and radialWeaponPick were both missing from this guard.
+    // A drag's own mouseup (drag-to-shoot arming, or a fight-drag release)
+    // can be immediately followed by a native 'click' on this same svg —
+    // without the guard, that stray click falls through to the
+    // already-selected-operative branch below and calls
+    // cancelActivation(), silently wiping whatever the drag just set up
+    // (the radial weapon picker; or, for Fight, this is a plausible real
+    // mechanism behind the playtest's "fight uncanceled attacker" report).
+    if (dragState || shootState || fightState || radialWeaponPick) return;
     // Walk up from event target to find an op-token group.
     let node = e.target;
     while (node && node !== svg) {
@@ -2516,7 +2715,7 @@ function setupDragMove(svg, playerSlot, unitG, overlay) {
 if (!window._ktDragShootBound) {
   window._ktDragShootBound = true;
   const THRESHOLD = 8;   // px, screen space — real drag vs a plain click
-  const ARM_RADIUS = 28; // px, screen space — token radius + the radial menu's End button + slack
+  const ARM_RADIUS = 28; // px, screen space — token radius + slack
   let candidate = null;
 
   function ktDragShootArm(e) {
@@ -2547,16 +2746,17 @@ if (!window._ktDragShootBound) {
 
     const { ranged, playerSlot } = candidate;
     candidate = null;
-    hideRadialMenu();
     if (ranged.length === 1) {
+      hideRadialMenu();
       beginShootDrag(playerSlot, ranged[0]);
     } else {
-      // Multiple ranged weapons: picker appears, same as the button path
-      // ("as today" per the brief) — the one-motion drag ends here, the
-      // player picks a weapon via the existing picker UI, which itself
-      // starts the normal beginShootDrag aim step from there.
-      shootWeapon = 'picking';
-      reRenderPhaseBar();
+      // KT-3 item 2: multiple ranged weapons — the one-motion drag ends
+      // here, the picker now appears on the radial ring itself (same
+      // radialWeaponPick mechanism the click path uses via startShoot),
+      // not the old phase-bar list, so drag-to-shoot and the radial
+      // button agree on where weapon choice happens.
+      radialWeaponPick = { kind: 'shoot', playerSlot, weapons: ranged };
+      refreshRadialIfActive();
     }
   }
 
@@ -2584,6 +2784,16 @@ function showRadialMenu(opId, playerSlot) {
   const menu = document.getElementById('radial-menu');
   if (!menu) return;
 
+  // KT-3 item 2: weapon choice for multi-weapon operatives takes over the
+  // ring entirely instead of the normal 6-action layout.
+  if (radialWeaponPick && radialWeaponPick.playerSlot === playerSlot) {
+    menu.innerHTML = renderRadialWeaponPicker(radialWeaponPick);
+    menu.style.left = screen.x + 'px';
+    menu.style.top  = screen.y + 'px';
+    menu.classList.add('visible');
+    return;
+  }
+
   const ap        = activation?.apRemaining ?? 0;
   const ranged    = getRangedWeapons(op);
   const melee     = getMeleeWeapons(op);
@@ -2606,8 +2816,6 @@ function showRadialMenu(opId, playerSlot) {
   const R    = 72;
   const bSz  = 50;
   const bOff = -Math.round(bSz / 2);
-  const eSz  = 44;
-  const eOff = -Math.round(eSz / 2);
 
   const orderLabel = op.order === 'engage' ? 'Conceal' : 'Engage';
   const orderCls   = op.order === 'engage' ? 'r-conceal' : 'r-engage';
@@ -2646,10 +2854,12 @@ function showRadialMenu(opId, playerSlot) {
     </button>`;
   }).join('');
 
-  menu.innerHTML = `
-    <button class="radial-end" style="left:${eOff}px;top:${eOff}px;width:${eSz}px;height:${eSz}px;" onclick="endActivation('${playerSlot}')">End</button>
-    ${items}
-  `;
+  // KT-3 item 1: the End button used to sit directly over the operative's
+  // own token — a 44px hit target layered right on top of the thing the
+  // player is trying to click, the exact hazard class that ate mousedowns
+  // during KT-2 Part 2's drag-to-shoot work. Removed; End Activation
+  // lives only in the bottom bar now (renderActivationBar).
+  menu.innerHTML = items;
 
   // Hover restriction display: show red X badge on buttons that would be locked
   menu.querySelectorAll('.radial-item[data-locks]').forEach(btn => {
@@ -2675,6 +2885,48 @@ function hideRadialMenu() {
   if (!menu) return;
   menu.classList.remove('visible');
   menu.innerHTML = '';
+}
+
+// KT-3 item 2: same ring layout math showRadialMenu uses for its 6 fixed
+// actions, but spread evenly around a variable-length weapon list instead
+// — works for any weapon count without per-count layout cases.
+function renderRadialWeaponPicker(pick) {
+  const { kind, weapons } = pick;
+  const R = 72, bSz = 54, bOff = -Math.round(bSz / 2);
+  const backSz = 40, backOff = -Math.round(backSz / 2);
+  const n = weapons.length;
+
+  const items = weapons.map((w, i) => {
+    const angle = (-90 + (360 / n) * i) * Math.PI / 180;
+    const ix = Math.round(R * Math.cos(angle)) + bOff;
+    const iy = Math.round(R * Math.sin(angle)) + bOff;
+    const badge = kind === 'shoot' ? (weaponRange(w) === null ? '∞' : `${w.profiles.RNG}″`) : 'Melee';
+    const label = w.name.length > 12 ? w.name.slice(0, 11) + '…' : w.name;
+    return `<button class="radial-item r-weapon" style="left:${ix}px;top:${iy}px;width:${bSz}px;height:${bSz}px;" onclick="pickRadialWeapon(${i})" title="${escHtml(w.name)}">
+      <span class="ri-label">${escHtml(label)}</span><span class="ri-ap">${badge}</span>
+    </button>`;
+  }).join('');
+
+  return `
+    <button class="radial-item r-back" style="left:${backOff}px;top:${backOff}px;width:${backSz}px;height:${backSz}px;" onclick="cancelRadialWeaponPick()">Back</button>
+    ${items}
+  `;
+}
+
+function pickRadialWeapon(idx) {
+  if (!radialWeaponPick) return;
+  const { kind, playerSlot, weapons } = radialWeaponPick;
+  const w = weapons[idx];
+  radialWeaponPick = null;
+  hideRadialMenu();
+  if (!w) return;
+  if (kind === 'shoot') beginShootDrag(playerSlot, w);
+  else beginFightDrag(playerSlot, w);
+}
+
+function cancelRadialWeaponPick() {
+  radialWeaponPick = null;
+  refreshRadialIfActive();
 }
 
 function refreshRadialIfActive() {
@@ -3105,21 +3357,15 @@ function startShoot(playerSlot) {
   if (!op || op.x < 0) return;
   const ranged = getRangedWeapons(op);
   if (!ranged.length) return;
-  hideRadialMenu();
-  if (ranged.length === 1) { beginShootDrag(playerSlot, ranged[0]); return; }
-  shootWeapon = 'picking';
-  reRenderPhaseBar();
-}
-
-function pickWeaponForShoot(playerSlot, idx) {
-  if (!activation) return;
-  const op = (gameData.operatives || {})[activation.opId];
-  const w  = getRangedWeapons(op)[idx];
-  if (w) beginShootDrag(playerSlot, w);
+  if (ranged.length === 1) { hideRadialMenu(); beginShootDrag(playerSlot, ranged[0]); return; }
+  // KT-3 item 2: multi-weapon picker moved onto the radial ring itself.
+  radialWeaponPick = { kind: 'shoot', playerSlot, weapons: ranged };
+  refreshRadialIfActive();
 }
 
 function cancelShoot() {
   shootWeapon = null;
+  radialWeaponPick = null;
   if (shootState) {
     clearEl(shootState.overlay);
     shootState.svg.style.cursor = '';
@@ -3366,17 +3612,52 @@ async function rollShot(playerSlot) {
   });
 }
 
+// KT-3 item 5: wipe-out check runs right after a damage write, using the
+// just-written wound values directly (passed in `overrides`) rather than
+// waiting for gameData to catch up via the Firebase snapshot listener —
+// avoids a race where the caller's own next step (endActivation) could
+// run against stale wounds. Returns true if the game ended, so callers
+// can skip their own post-damage activation bookkeeping.
+async function checkForWipeout(overrides) {
+  const ops = gameData.operatives || {};
+  const woundsOf = o => overrides[o.id] !== undefined ? overrides[o.id] : (o.wounds || 0);
+  const p1Alive = Object.values(ops).some(o => o.player === 'player1' && woundsOf(o) > 0);
+  const p2Alive = Object.values(ops).some(o => o.player === 'player2' && woundsOf(o) > 0);
+  if (p1Alive && p2Alive) return false;
+
+  // Fight resolves both sides' damage in one shot, so a simultaneous
+  // double wipe-out is reachable — no winner, not silently unhandled.
+  const winner = p1Alive ? 'player1' : p2Alive ? 'player2' : null;
+  await db.ref(`games-kt/${gameId}`).update({
+    gameOver: { winner, reason: 'wipeout' },
+    pendingShot: null,
+    pendingFight: null,
+  });
+  return true;
+}
+
 async function confirmShotDamage(playerSlot) {
   const p = gameData.pendingShot;
   if (!p || p.phase !== 'rolled') return;
   const target = (gameData.operatives || {})[p.targetOpId];
   if (!target) return;
+  const attacker = (gameData.operatives || {})[p.attackerOpId];
 
   const newWounds = Math.max(0, (target.wounds || 0) - (p.totalDamage || 0));
   await db.ref(`games-kt/${gameId}`).update({
     [`operatives/${target.id}/wounds`]: newWounds,
     pendingShot: null,
   });
+
+  logAction({
+    type: 'shoot',
+    attackerName: attacker?.name || 'Operative',
+    targetName: target.name,
+    hits: (p.remainingCritHits || 0) + (p.remainingNormalHits || 0),
+    dmg: p.totalDamage || 0,
+  });
+
+  if (await checkForWipeout({ [target.id]: newWounds })) return;
 
   if (activation && activation.apRemaining <= 0) {
     await endActivation(playerSlot);
@@ -3559,21 +3840,15 @@ function startFight(playerSlot) {
   if (!op || op.x < 0) return;
   const melee = getMeleeWeapons(op);
   if (!melee.length) return;
-  hideRadialMenu();
-  if (melee.length === 1) { beginFightDrag(playerSlot, melee[0]); return; }
-  fightWeapon = 'picking';
-  reRenderPhaseBar();
-}
-
-function pickWeaponForFight(playerSlot, idx) {
-  if (!activation) return;
-  const op = (gameData.operatives || {})[activation.opId];
-  const w  = getMeleeWeapons(op)[idx];
-  if (w) beginFightDrag(playerSlot, w);
+  if (melee.length === 1) { hideRadialMenu(); beginFightDrag(playerSlot, melee[0]); return; }
+  // KT-3 item 2: multi-weapon picker moved onto the radial ring itself.
+  radialWeaponPick = { kind: 'fight', playerSlot, weapons: melee };
+  refreshRadialIfActive();
 }
 
 function cancelFight() {
   fightWeapon = null;
+  radialWeaponPick = null;
   if (fightState) {
     clearEl(fightState.overlay);
     fightState.svg.style.cursor = '';
@@ -3802,6 +4077,16 @@ async function confirmFightDamage(playerSlot) {
     [`operatives/${defender.id}/wounds`]: newDefWounds,
     pendingFight: null,
   });
+
+  logAction({
+    type: 'fight',
+    attackerName: attacker.name,
+    defenderName: defender.name,
+    dmgToDefender: p.dmgToDefender || 0,
+    dmgToAttacker: p.dmgToAttacker || 0,
+  });
+
+  if (await checkForWipeout({ [attacker.id]: newAtkWounds, [defender.id]: newDefWounds })) return;
 
   if (activation && activation.apRemaining <= 0) {
     await endActivation(playerSlot);
@@ -4507,6 +4792,7 @@ async function devNewGame() {
   shootState    = null;
   fightWeapon   = null;
   fightState    = null;
+  radialWeaponPick = null;
   terrainActive = false;
   expandedOps   = new Set();
   splatData     = [];
