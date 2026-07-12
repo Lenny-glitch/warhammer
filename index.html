@@ -7,4 +7,17 @@ a{color:#111;background:#c9a94e;padding:1rem 3rem;text-decoration:none;font-size
 <a href="/killteam/">KILL TEAM</a>
 <a href="/warhammer40k/">WARHAMMER 40K</a>
 <a href="/warhammer-fantasy/">WARHAMMER FANTASY</a>
+<button id="scary" style="margin-top:3rem;background:#400;color:#c9a94e;border:1px solid #c9a94e;padding:.8rem 2rem;font-family:monospace;font-size:1rem;cursor:pointer">SUPER SCARY — DO NOT CLICK</button>
+<div id="doom" style="display:none;position:fixed;inset:0;background:#000;z-index:99;display:none;align-items:center;justify-content:center;flex-direction:column">
+<div style="font-size:14rem">💀</div>
+<iframe id="goat" width="1" height="1" frameborder="0" allow="autoplay"></iframe>
+</div>
+<script>
+const stages=["ARE YOU SURE?","IT WILL BLOW YOUR MIND","LAST WARNING. WE MEAN IT.","YOUR FUNERAL →"];let s=0;
+document.getElementById('scary').onclick=function(){
+  if(s<stages.length){this.textContent=stages[s++];return;}
+  const d=document.getElementById('doom');d.style.display='flex';
+  document.getElementById('goat').src='https://www.youtube.com/watch?v=SjHUb7NSrNk';
+};
+</script>
 </body></html>
