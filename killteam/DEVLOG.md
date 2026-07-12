@@ -1807,3 +1807,133 @@ stash` to confirm it catches a real regression, not a tautological test.
 touch the same handful of functions closely enough that splitting them
 would have meant re-testing the same scenarios repeatedly; item 5 is
 verification-only, no code change).
+
+---
+
+## 2026-07-12 — KT-3: game flow & table feel (playtest-3 papercuts)
+
+Brief: `briefs/KT3_GAMEFLOW_BRIEF.md`. All prior bug-fix briefs verified
+holding in a third live brother game; this one is flow/feel papercuts,
+not bugs, except item 6 which turned into a real bug fix.
+
+**Item 1 — killed the radial End button.** It sat as a 44px hit target
+directly over the operative's own token — the exact overlay-eats-
+mousedowns hazard class KT-2 Part 2 found for drag-to-shoot, just for a
+different button. Removed entirely (`.radial-end` CSS and the button
+markup both gone); End Activation lives only in the bottom bar now,
+which was already always present.
+
+**Item 2 — weapon choice moved onto the radial itself.** Multi-weapon
+Shoot/Fight used to hand off to a text list in the phase bar
+(`shootWeapon`/`fightWeapon === 'picking'`). Replaced with
+`renderRadialWeaponPicker()`: the ring itself repurposes into one button
+per eligible weapon (evenly spread via the same angle math the normal
+6-action ring uses, generalized to any count) plus a Back button, backed
+by a single `radialWeaponPick = { kind, playerSlot, weapons }` state.
+Wired into all three entry points that used to set the old 'picking'
+sentinel — `startShoot`, `startFight`, and drag-to-shoot's
+`ktDragShootMove` multi-weapon case — so the click path and the one-motion
+drag path agree on where weapon choice happens, per the brief's explicit
+"must work with drag-to-shoot's flow too." The old phase-bar picker
+blocks and `pickWeaponForShoot`/`pickWeaponForFight` were dead after this
+and got deleted rather than left around.
+
+While testing drag-to-shoot's multi-weapon case specifically, found a
+real bug: `setupDragMove`'s SVG click handler only guarded against
+`dragState || shootState`, never `fightState` or the new
+`radialWeaponPick`. A drag's own `mouseup` can be immediately followed by
+a native `click` event on the same element, which — without the guard —
+fell through to the already-selected-operative branch and called
+`cancelActivation()`, silently wiping whatever the drag had just set up.
+First symptom: the radial weapon picker would open then vanish within
+the same gesture. Fixed by adding both to the guard. This is a plausible
+concrete mechanism behind item 6's "fight uncanceled attacker" report,
+independent of item 6's own fix below — a fight-drag's release is exactly
+this kind of mouseup-then-click sequence.
+
+**Item 3 — token hover.** Two additions to `drawOperativeToken()`: a
+native SVG `<title>` element (free hover tooltip, zero JS show/hide
+logic, and — usefully — browsers don't fire `<title>` on tap, so touch
+tap-select needed no explicit detection branch to stay untouched) with
+`"{name} — {wounds}/{maxWounds}W"`, and a `.token-selectable` class
+applied under the same condition `renderOpRow` already uses for the
+sidebar cards' `clickable` class, paired with `cursor: pointer` gated
+behind `@media (hover: hover)` so touch devices never get a stuck pointer
+cursor either.
+
+**Item 4 — minimal action log.** `logAction()` writes structured records
+(`{ type, ...fields, ts }`) to `games-kt/{id}/actionLog`, pushed from
+`commitMove` (with net distance), `confirmShotDamage` (hits + damage),
+and `confirmFightDamage` (both sides' damage). `describeActionLogEntry()`
+is the only place that turns a record into an English line — per the
+brief, written this way specifically so it can grow into KT-7's catch-up
+feature without touching every write site. Rendered as a collapsed strip
+(latest line + count) between `.game-main` and `.phase-bar`, click to
+expand into the last 20 entries, scrollable.
+
+**Item 5 — win/lose sequence.** `checkForWipeout()` runs right after
+every damage-confirming write (`confirmShotDamage`/`confirmFightDamage`),
+using the just-written wound values directly rather than waiting for the
+Firebase snapshot to round-trip back (avoids a race with the caller's own
+next step). Went looking for existing convention before inventing one:
+`warhammer40k/js/state.js` already writes `gameOver: { winner, reason }`
+on annihilation, and `killteam`'s own schema had a dormant `gameOver:
+null` at game creation clearly scaffolded for the same field — reused
+directly rather than adding a competing `meta/status` enum value. One
+deliberate divergence from 40k's version: this brief explicitly asks for
+a *personalized* VICTORY/DEFEAT per client, not 40k's single shared
+"X wins" message, so `renderGameOver(playerSlot)` reads the viewer's own
+slot. Also handles a case 40k's shooting-only flow doesn't reach: Fight
+resolves both combatants' damage in one write, so a simultaneous double
+wipe-out is real — `winner: null` renders as DRAW instead of leaving the
+game in a dead end with no screen at all (note: Firebase strips
+null-valued keys even inside nested objects on write, so this lands as
+`gameOver: { reason: 'wipeout' }` with no `winner` key rather than a
+literal stored null — `renderGameOver`'s `gameData.gameOver?.winner ||
+null` already treats missing and null the same way, so this needed no
+extra handling once found; it only cost a test-assertion fix once the
+literal-null check didn't match what actually got stored).
+
+**Item 6 — no longer just a placeholder.** The brief flagged this as
+pending Nox's clarification with a placeholder verification task. Investigating
+turned up a concrete, real bug closely matching "fight uncanceled
+attacker": `cancelActivation()` (bound to Escape) only ever nulled
+`activation`, leaving any in-progress Shoot/Fight drag — `shootState`/
+`fightState`, their attached SVG `mousemove`/`mouseup` listeners, the
+crosshair cursor — completely orphaned. The drag's own eventual `mouseup`
+would still fire, hit `confirmShootTarget`/`confirmFightTarget`'s
+`if (!activation) return` early bail, and leave `shootWeapon`/
+`fightWeapon` stuck non-null with nothing re-rendering to clear the
+stale UI. Fixed by having `cancelActivation()` clean up
+`shootState`/`fightState`/`shootWeapon`/`fightWeapon`/`radialWeaponPick`
+together before nulling `activation`. Combined with item 2's click-guard
+fix above, there are now two independent fixes covering two different
+paths to the same class of symptom. Per the brief's own framing and this
+session's now-established caution about claiming a table-reported bug is
+fully fixed without the actual retest: **Nox's next brother game is the
+real acceptance check for this one**, not this session's testing.
+
+**Testing:** one throwaway Playwright script (not committed, established
+pattern), real headless Chromium via `.playwright-libs`, disposable
+`games-kt/` fixtures via direct Firebase REST. 29/29 checks: no End
+button + bottom-bar End still works (2); radial weapon picker for both
+Shoot and Fight, single-weapon skip-through, drag-to-shoot's multi-weapon
+case, and the dead-code-removed check (9, one fixed mid-session as noted
+above — the click-guard bug); hover tooltip + selectable-cursor class (3);
+action log recording and expand/collapse (3); win/lose with two real
+browser contexts confirming the SAME `gameOver` write renders VICTORY on
+one client and DEFEAT on the other, plus the double-wipe-out draw case
+(6); Fight-cancel leaving no orphaned state and allowing immediate
+re-selection (6). Also ran a `?dev=true` boot smoke test (0 console/page
+errors) since item 5 touched `renderDevCol`'s dispatch.
+
+**Not done / deferred:** Turning Point 4's end stays on the existing
+(already-unhandled-before-this-brief) `'ended'` status, per the brief —
+scoring is future work. The "also queued, not this brief" items (rolling
+action-log-as-catch-up, composition validation, 40k lobby roster picker)
+are untouched, as instructed.
+
+**Commit:** `0bf46fa` (all six items in one commit — items 1 through 6
+share enough surface area, mostly in `showRadialMenu`/`renderActivationBar`/
+`cancelActivation`/`setupDragMove`, that splitting them would have meant
+re-verifying overlapping scenarios repeatedly across commits).
