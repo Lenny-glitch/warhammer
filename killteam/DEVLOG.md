@@ -1577,3 +1577,118 @@ roster changes.
 **Commits:** `b5452c3` (item 1), `258c85b` (item 4), `9a534da` (items
 2+3), `1a79a7b` (item 1 fix — the radial-menu overlay bug real-browser
 testing caught).
+
+---
+
+## 2026-07-11 — BUG_KT_PLAYTEST_1_1: first real two-window playtest findings
+
+Brief: `briefs/BUG_KT_PLAYTEST_1_1.md`. Nox and his brother ran the first
+live two-window game (same PC, live Firebase) right after KT-2 Part 2
+shipped and hit three bugs. Brief's own suspect for item 1 was KT-2 Part
+2's new document-level drag-shoot listener — told explicitly to verify
+against the pre-P2 commit, not assume.
+
+**Item 1 — player 2 selection broken (blocker, NOT conclusively fixed
+here).** Reproduced with two real Playwright browser *contexts* (separate
+localStorage/cookie jars, matching two separate windows exactly — a
+single-page devMode view or two tabs sharing storage would not have caught
+a per-client bug like this). First test run reproduced player2's
+activation "failing" — but investigation showed the fixture was wrong, not
+the app: both activation attempts fired while `turn.activatingPlayer` was
+still `'player1'`, so player2 correctly got rejected. Rewrote the fixture
+to call `endActivation('player1')` first, genuinely advancing the turn via
+the app's own `advanceActivatingPlayer()` path. With that fix, token-click
+selection, AP-spend availability, and the full turn handoff all worked
+correctly for player2 — in isolation, at a generous viewport.
+
+Then tested the *document-level listener* hypothesis directly: ran the
+identical two-context script against both current `index.html` and the
+pre-KT-2-P2 commit (`83ad935`). Same fixture bug, same behavior on both —
+meaning the document-level proximity listener from KT-2 Part 2 is **not**
+the regression. It was already ruled out by construction too: the listener
+only arms on a press-and-drag near the *active* operative's own token; a
+plain click on any other token, or a sidebar card, was never intended to
+route through it and doesn't in the code.
+
+Went looking for what else could explain the symptom and found item 3 (see
+below) — a genuine, confirmed CSS bug that shrinks available page height
+specifically for the tallest/bottom-most UI (phase-bar action buttons,
+where activation happens). Two windows tiled side-by-side on one screen
+have much less vertical room than a full test viewport, which is exactly
+the condition under which this would bite hardest. This is a strong
+plausible explanation but **not proven** to be the exact mechanism my
+tests reproduced item 1's failure under — Playwright's own `.click()`
+auto-scrolls elements into view, so an automated click can't reproduce
+"the button is there but unreachable" the way a human click can. Per the
+brief's own "Done when," **Nox's two-window re-test is the actual
+acceptance check for item 1**, not this session's testing. If it
+reproduces again after this commit, the CSS fix wasn't the (whole) cause
+and this needs another pass with the real repro conditions (narrow tiled
+windows, not full-width contexts).
+
+**Item 2 — lobby Copy button did nothing.** Brief's hypothesis was
+`navigator.clipboard` failing silently (Brave shields / permissions).
+That's real and worth guarding, but investigating the actual DOM turned up
+the real root cause: `renderWaiting()` built the button as
+`onclick="copyLink(this, ${JSON.stringify(gameUrl)})"` —
+`JSON.stringify()`'s own wrapping `"` characters terminated the `onclick`
+attribute early, so the browser parsed garbage past that point and
+`copyLink()` never ran at all, for *any* url, unconditionally, in every
+browser. Confirmed by dumping the rendered `outerHTML` and watching the
+attribute get chopped mid-string. This means the button has silently never
+worked since it was written, independent of clipboard permissions. Fixed
+by dropping the url from the inline attribute entirely — `copyLink(this)`
+now reads the value straight off the adjacent `.link-input` element. Kept
+(and this is still worth having) a real fallback for genuine
+`navigator.clipboard` failures: selects the input's text and shows "Select
+& Ctrl+C" instead of a false "Copied!".
+
+**Item 3 — page taller than viewport, needed scrolling.** `#screen-game`
+used `min-height: 100vh` — a floor, not a ceiling. `.game-main`'s
+`flex:1`/`min-height:0`/`overflow:hidden` further down only actually
+contains anything if its ancestor is capped at the viewport; with a floor
+instead of a ceiling, KT-2 Part 2's taller `.phase-bar` (dice pools,
+floaters, skip-hints) just grew the whole page past 100vh instead of being
+absorbed by the flex siblings. Changed to `height: 100vh` (a real
+ceiling). That alone wasn't sufficient — a DOM diagnostic
+(`getBoundingClientRect()` on `html`/`body`/`#screen-game`/`.game-topbar`/
+`.game-main`/`.phase-bar`) showed `#screen-game` correctly capped at 800px
+but its parent `#app` still measuring 864px, because `#app`'s own generic
+`padding: 2rem` + `min-height: 100vh` (styled for the small centered
+screens — home, library, faction pick) was stacking on top. Added
+`#app.app-fullbleed { min-height: 0; padding: 0; align-items: stretch; }`,
+toggled by `showScreen()` only when entering the game screen. Verified via
+a real-browser test measuring `scrollHeight` vs `innerHeight` at a
+1280×800 viewport across board-loaded, operative-activated,
+shoot-armed-with-target, dice-tumbling, and full-resolution-with-dice-pools
+states (the tallest UI KT-2 Part 2 added) — `scrollHeight == innerHeight`
+(800 == 800) at every state, down from 1235–1254px before the fix.
+
+**"Also" (polish item, done — trivial in scope).** Flag-type bonus lines
+read circularly ("Psychic: flags psychic", the raw machine name echoed
+back). Added `FLAG_LABELS`, a player-contract phrase per flag (e.g. Blast
+→ "can hit multiple targets near the aim point (applied by agreement for
+now)"), wired into `describeBonus()`. Deliberately left out `shock` and
+`brutal` — `compile-keywords.js` ships both as bare pass-through flags
+with no rules comment anywhere in the pipeline, and there's no
+source-verified mechanical text for either in this codebase; guessing
+would risk shipping confidently-wrong rules text, worse than the old
+generic "flags X" fallback it would have replaced. Unmapped flags still
+fall back to that generic phrasing rather than erroring or going blank.
+
+**Testing:** real headless Chromium via the `.playwright-libs` workaround
+(same technique as KT-2 Part 2/BON-2b), disposable `games-kt/` fixtures
+via direct Firebase REST, deleted after each run. 17/17 checks across
+three scripts (none committed — one-off, matching this project's existing
+pattern): two-context selection/turn-advance/AP-spend (item 1
+investigation, 4/4), viewport scroll at five UI states (item 3, 5/5), and
+clipboard success/failure/fallback plus flag-wording (item 2 + polish,
+8/8).
+
+**Not done:** item 1 is not conclusively fixed — see above. No changes
+made to the drag-to-shoot listener itself; nothing here should regress it,
+but that's asserted from the two-context test passing (4/4), not proven
+against the actual tiled-window repro conditions.
+
+**Commit:** `a1b00c5` (items 2, 3, polish — combined, since none of the
+three touch overlapping code and all were verified together).
