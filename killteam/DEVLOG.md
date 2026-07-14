@@ -1937,3 +1937,180 @@ are untouched, as instructed.
 share enough surface area, mostly in `showRadialMenu`/`renderActivationBar`/
 `cancelActivation`/`setupDragMove`, that splitting them would have meant
 re-verifying overlapping scenarios repeatedly across commits).
+
+## 2026-07-14 — KT-4: combat legibility + action-state rules
+
+Brief: `briefs/KT4_COMBAT_LEGIBILITY.md`. Four numbered items plus a
+Conceal-targeting verification called out in the RULINGS section.
+
+**Item 1 — show the combat.** Shoot's damage line reformatted to the
+brief's exact ask ("N CRIT × dmg + N HIT × dmg = total wounds") via a new
+shared `formatDamageBreakdown()` — used by both Shoot and Fight so the
+phrasing can't drift between the two.
+
+Fight side turned up a real, pre-existing bug while building the
+breakdown: `resolveFightOutcome()`'s block-then-strike annotation
+(`crit-block`/`hit-block`/`crit-strike`/`hit-strike`) only ever applied to
+the DEFENDER's dice. The attacker's own dice had no "blocked" state at
+all — every rolled crit/hit displayed as CRIT STRIKE/STRIKE even when the
+defender's blocks had absorbed some of them, so the per-die display could
+show e.g. 4 crit strikes while the damage total (correctly) only reflected
+2 getting through. This is plausibly part of "reads as a bug" from the
+brief's own framing, independent of the labeling-only complaint. Mirrored
+the exact same block-counting logic onto the attacker's side (same
+priority order the existing damage math already consumes blocks in), and
+exposed `atkStrikeCrits`/`atkStrikeHits`/`defStrikeCrits`/`defStrikeHits`
+through `pendingFight` so the resolution bar can show the same "N CRIT ×
+dmg = total" breakdown per pool, not just a bare "Deals: N wounds". The
+defender's pool is now explicitly labeled "Retaliates:" rather than
+"Deals:", and the top summary line is phrased relative to the viewer
+("You deal 10 to Fight Target" / "Fight Target deals 10 to you") — the
+brief's own suggested wording, so retaliation never reads as an unlabeled
+number attacker damage happens to share a format with.
+
+**Item 2 — enforce Heavy.** `getHeavyRequirement()`/
+`getWeaponHeavyBlockReason()` parse the Heavy keyword's own qualifier
+text. **Diverges from the brief's own RULINGS text** — verify-first
+turned up that this pipeline's own `rules-glossary-kt.json` (extracted
+from BSData, canonical) says: "An operative cannot use this weapon in an
+activation... in which it moved... If the rule is Heavy (x only)... only
+that move is allowed." Plain "Heavy" therefore blocks Dash too, not just
+Reposition/Fall Back as the brief's RULINGS section states — the brief's
+text describes what's actually only true of the "(Dash only)" variant.
+Implemented per the glossary (the more precise, source-derived text) and
+flagged here rather than silently picking one — this also naturally
+covers the "(Reposition only)" variant (Dash-blocks-it, Move-doesn't),
+which the brief doesn't mention but which real catalogue data has
+(Hunter Clade's Galvanic rifle, Nemesis Claw's Heavy Gunner, etc.) and
+which needed handling regardless.
+
+Enforcement is per-weapon, not a blanket Shoot-button lock — a multi-
+weapon operative can carry one Heavy option and one non-Heavy sidearm
+(confirmed in real catalogue data: Skitarii Vanguard Gunner's
+Transuranic arquebus has separate "(mobile)"/Dash-only and
+"(stationary)"/plain-Heavy profiles). `startShoot()`'s single-weapon
+skip-through and the radial weapon picker both grey out only the blocked
+weapon(s), with a reason in the title; the whole Shoot button is only
+disabled once every ranged weapon is ineligible. Wired identically into
+both `renderActivationBar` (bottom bar) and `showRadialMenu` (radial
+ring) — these are two independent renders of the same button state and
+must agree, so the shared helpers take a plain `{hasMoved,hasDashed,
+hasFallenBack}`-shaped object rather than each site re-deriving its own
+logic.
+
+**Item 3 — shoot-while-engaged + Fall Back.** `isEngaged()` is exactly
+`hasFightTarget()`'s existing 1" check (same condition already used for
+Fight eligibility — an operative can Fight whatever it's engaged with,
+and can't Shoot while engaged with anything, so no new geometry needed).
+`getShootActionBlockReason()` blocks Shoot while engaged or after Fall
+Back. Fall Back didn't exist at all before this brief (only Move/Dash) —
+built new rather than "confirmed" per the brief's "confirm it works"
+framing, since verify-first found there was nothing to confirm.
+`startMove(playerSlot, mode)` now takes a string ('move'/'dash'/
+'fallback') instead of a boolean `isDash`, all four existing call sites
+updated; Fall Back reuses the exact same drag mechanics as Move (this
+engine doesn't separately enforce "must end outside control range" beyond
+that — narrower than full RAW, matches the brief's own narrower ask) and
+shares Move's action slot (`hasMoved`) so the two are mutually exclusive
+per activation, same as real KT's "one of Reposition/Fall Back/Charge."
+A second flag, `hasFallenBack`, blocks Shoot for the rest of the
+activation regardless of weapon or position, per the brief's explicit
+"ends shooting eligibility this activation" — this is why Fall Back
+matters even though nothing currently stops a plain Move from leaving
+engagement in this simplified engine (not touched — not asked for, and
+real RAW nuance beyond the brief's stated scope).
+
+Fall Back only added to the bottom activation bar, not the radial ring
+— the radial is a fixed 6-slot hexagon (order/move/dash/shoot/fight/
+charge at fixed 60° angles) and the bottom bar is always present
+regardless (per KT-3 item 1), so a 7th conditional slot wasn't worth the
+geometry rework. The radial's own `shootDisabled`/Heavy logic is still
+kept in sync with the bottom bar's (same helpers, same activation-shaped
+object) so a stale radial button can't let a blocked shot through.
+
+**Item 4 — cancel-recovery.** Two real bugs, both in the same "orphaned
+mid-action state" family KT-3 item 6 partially closed:
+
+- `cancelShoot()`: `confirmShootTarget()` spends the AP and sets
+  `hasShot` the moment a target is confirmed — before cover choice or
+  dice are even rolled. "Cancel Shot" is reachable any time before phase
+  `'rolled'`, but the old `cancelShoot()` never refunded
+  `apRemaining`/`hasShot` — it only ended the activation outright once
+  AP ran out, which made a permanently-burned AP look like an intentional
+  consequence instead of the bug it was. This is almost certainly (part
+  of) the "brother bug" the brief names directly. Fixed to restore
+  exactly what `confirmShootTarget` committed; `apSpent` only reverts to
+  false if nothing else (Move/Dash/Fall Back/Fight) committed this
+  activation either.
+- `cancelActivation()` (KT-3 item 6) cleaned up `shootState`/`fightState`/
+  `radialWeaponPick` on Escape, but missed the 4th mid-action state:
+  `dragState` (a Move/Dash/Fall Back drag in progress). Escape mid-drag
+  left its svg `mousemove`/`mouseup` listeners and crosshair cursor
+  orphaned exactly like the other three did before KT-3. Fixed the same
+  way — `onMouseMove`/`onMouseUp` already guard on `if (!dragState)
+  return`, so nulling it is sufficient, no listener-reference bookkeeping
+  needed.
+
+**Conceal verification (RULINGS, not a numbered item).** The brief's
+ruling: "Concealed-in-cover = not a valid SHOOT target; always
+Fightable." `getShootValidity()` was blocking ANY concealed target
+unconditionally, regardless of cover — a Concealed operative standing in
+the open should still be shootable. Fixed: the conceal check now only
+fires when `rayResult()` also reports `'cover'` for this specific
+shooter's line. Fight targeting was already correct (never checks
+`order` at all) — no change needed there.
+
+**Testing:** real headless Chromium via `.playwright-libs` (established
+pattern), disposable `games-kt/kt4-verify-test` fixture via direct
+Firebase REST (7 test operatives: a Heavy-weapon gunner, an engaged
+pair, a shoot-then-cancel pair, a fight pair), non-dev single-player view
+(`?game=...`, `localStorage kt_player_<id>=player1` set via
+`page.addInitScript` — dev mode's `bootDev()` ignores the `?game=` param
+and always creates its own fresh scratch game, discovered the hard way).
+One real setup gotcha worth recording: serving `killteam/` as the HTTP
+root 404s `../shared/bonus-resolver.js` (the app's own relative path
+assumes a sibling `shared/` next to `killteam/`) — `BonusResolver is not
+defined` then silently aborts Fight resolution with no visible error in
+the UI. Serving from the monorepo root instead (`killteam/index.html` as
+a subpath) fixes it. Also: board coordinates are bounded to `BOARD_W=22,
+BOARD_H=30` (inches) — fixture operatives placed outside that range still
+exist in `gameData` and pass every JS-level check, they just never
+render inside the SVG's viewBox, so token clicks/drags silently find
+nothing.
+
+18 checks across 6 scenarios, all passing, zero console errors: Heavy
+blocked after Move/Dash for plain "Heavy" (glossary reading), non-Heavy
+sidearm still shootable on the same operative, Heavy usable when fully
+stationary; Shoot disabled + Fall Back button appears while engaged,
+Shoot still blocked after Fall Back even once out of control range;
+Cancel Shot restores AP and `hasShot` exactly, Shoot re-selectable after;
+`cancelActivation` nulls `dragState` mid-drag; Fight's pool breakdown
+text and viewer-relative summary render correctly (screenshot: "1 CRIT ×
+6 + 1 HIT × 4 = 10 wounds" / "No retaliation" / "You deal 10 to Fight
+Target", attacker's own BLOCKED dice visible in orange); Shoot's
+all-saved case reads "All hits saved — 0 damage"; concealed-in-the-open
+target valid, concealed-in-cover target blocked with the new reason
+string. Fixture deleted after the run.
+
+**Not done / deferred, per the brief's own "Out of scope":**
+ghost/animation drama (KT-5), chess timer, Seek/other keyword
+enforcement beyond Heavy (BON-3 era), catalogue weapon data (that's
+CAT-AUDIT, already shipped separately). Also not touched: whether a
+plain Move (not Fall Back) should be blocked while engaged — real RAW
+likely does restrict this, but the brief's explicit acceptance criteria
+only cover Shoot-while-engaged and Fall Back existing/working, so this
+stays unenforced rather than guessing past the brief's stated scope.
+
+Files: `killteam/index.html` only (`resolveFightOutcome`,
+`confirmFightTarget`, `renderFightResolutionBar`, `renderShotResolutionBar`,
+`formatDamageBreakdown` (new), `getHeavyRequirement`/
+`getWeaponHeavyBlockReason`/`isEngaged`/`getShootActionBlockReason` (new),
+`startMove`, `startShoot`, `renderRadialWeaponPicker`, `pickRadialWeapon`,
+`renderActivationBar`, `showRadialMenu`, `cancelShoot`, `cancelActivation`,
+`getShootValidity`, `activateOperative`).
+
+**Not done — queued for Nox:** brother's next game is the real acceptance
+test, per the brief's own "Done when." In particular the Heavy-vs-brief
+divergence (plain Heavy also blocking Dash, not just Reposition/Fall
+Back) is worth a deliberate look at the table — it's the one place this
+session's fix and the brief's own stated ruling disagree.

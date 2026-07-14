@@ -1914,15 +1914,35 @@ function renderActivationBar(playerSlot, turn) {
   const hasDashed     = activation.hasDashed;
   const hasShot       = activation.hasShot;
   const hasFought     = activation.hasFought;
+  const engaged       = isEngaged(op);
+  // KT-4 item 3: operative-level Shoot block (engaged, or already Fell
+  // Back this activation) — applies regardless of which weapon.
+  const shootBlockReason = getShootActionBlockReason(op, activation);
+  // KT-4 item 2: per-weapon Heavy eligibility given this activation's
+  // movement so far — Shoot as a whole is only unavailable if EVERY ranged
+  // weapon is blocked; a multi-weapon operative with one Heavy gun and one
+  // non-Heavy sidearm can still shoot the sidearm.
+  const eligibleRanged = ranged.filter(w => !getWeaponHeavyBlockReason(w, activation));
   // BUG_KT_PLAYTEST_2 item 2: fightDisabled already gated on hasFought;
   // shootDisabled never gated on hasShot even though activation.hasShot
   // is tracked and set — the same operative could Shoot repeatedly in one
   // activation. RAW: Move/Dash repeat, Shoot/Fight don't.
-  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal || hasShot;
+  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal || hasShot || !!shootBlockReason || eligibleRanged.length === 0;
   const fightDisabled = ap < 1 || !melee.length  || !hasFightTarget(op) || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
   const dragActive    = !!shootState || !!fightState || !!dragState;
   const moveDisabled  = ap < 1 || dragActive || hasMoved;
   const dashDisabled  = ap < 1 || dragActive || hasDashed;
+  // KT-4 item 3: Fall Back only makes sense (and only shows) while
+  // engaged — it shares the Move/Reposition action slot (hasMoved), so
+  // doing one rules out the other, same as real RAW's "one of Reposition/
+  // Fall Back/Charge per activation."
+  const fallBackDisabled = ap < 1 || dragActive || hasMoved;
+
+  const shootTitle = hasShot ? 'Already shot this activation'
+    : conceal ? 'Locked: Conceal order'
+    : shootBlockReason ? shootBlockReason
+    : (ranged.length && eligibleRanged.length === 0) ? getWeaponHeavyBlockReason(ranged[0], activation)
+    : '';
 
   return `
     <div class="activation-wrap">
@@ -1932,9 +1952,10 @@ function renderActivationBar(playerSlot, turn) {
         ${op.order === 'engage' ? 'Engage' : 'Conceal'}
       </button>
       <div class="activation-actions">
-        <button class="action-btn" onclick="startMove('${playerSlot}',false)" ${moveDisabled ? 'disabled' : ''} title="${hasMoved ? 'Already moved this activation' : ''}">Move (1AP)</button>
-        <button class="action-btn" onclick="startMove('${playerSlot}',true)"  ${dashDisabled ? 'disabled' : ''} title="${hasDashed ? 'Already dashed' : '3&quot; — combine with Move for max distance'}">Dash (1AP)</button>
-        <button class="action-btn" onclick="startShoot('${playerSlot}')" ${shootDisabled ? 'disabled' : ''} title="${hasShot ? 'Already shot this activation' : conceal ? 'Locked: Conceal order' : ''}">Shoot (1AP)</button>
+        <button class="action-btn" onclick="startMove('${playerSlot}','move')" ${moveDisabled ? 'disabled' : ''} title="${hasMoved ? 'Already moved this activation' : ''}">Move (1AP)</button>
+        <button class="action-btn" onclick="startMove('${playerSlot}','dash')"  ${dashDisabled ? 'disabled' : ''} title="${hasDashed ? 'Already dashed' : '3&quot; — combine with Move for max distance'}">Dash (1AP)</button>
+        ${engaged ? `<button class="action-btn" onclick="startMove('${playerSlot}','fallback')" ${fallBackDisabled ? 'disabled' : ''} title="${hasMoved ? 'Already moved this activation' : 'Leave control range — ends Shoot eligibility this activation'}">Fall Back (1AP)</button>` : ''}
+        <button class="action-btn" onclick="startShoot('${playerSlot}')" ${shootDisabled ? 'disabled' : ''} title="${escHtml(shootTitle)}">Shoot (1AP)</button>
         <button class="action-btn" onclick="startFight('${playerSlot}')" ${fightDisabled ? 'disabled' : ''} title="${hasFought ? 'Already fought this activation' : !hasFightTarget(op) ? 'No enemies in control range (1&quot;)' : !melee.length ? 'No melee weapons' : ''}">Fight (1AP)</button>
         <button class="action-btn stub" ${conceal ? 'title="Locked: Conceal order"' : 'title="Coming in KT-3"'} disabled>Charge (1AP)</button>
       </div>
@@ -2402,7 +2423,7 @@ async function endStrategyPhase(playerSlot) {
 function activateOperative(opId, playerSlot) {
   const op = (gameData.operatives || {})[opId];
   if (!op || !op.ready || op.wounds <= 0) return;
-  activation = { opId, apRemaining: op.apl, playerSlot, apSpent: false, hasMoved: false, hasDashed: false, hasShot: false, hasFought: false };
+  activation = { opId, apRemaining: op.apl, playerSlot, apSpent: false, hasMoved: false, hasDashed: false, hasShot: false, hasFought: false, hasFallenBack: false };
   reRenderPhaseBar();
   reRender();
 }
@@ -2421,6 +2442,14 @@ function cancelActivation() {
   // at something else.
   if (shootState) { clearEl(shootState.overlay); shootState.svg.style.cursor = ''; shootState = null; }
   if (fightState) { clearEl(fightState.overlay); fightState.svg.style.cursor = ''; fightState = null; }
+  // KT-4 item 4: KT-3 item 6 covered shootState/fightState/radialWeaponPick
+  // but missed the 4th mid-action state — a Move/Dash drag in progress
+  // (dragState). Escape mid-drag left its svg mousemove/mouseup listeners
+  // and crosshair cursor orphaned exactly like the other three did before
+  // that fix. onMouseMove/onMouseUp both already guard on `if (!dragState)
+  // return`, so nulling it here is sufficient — no need to also track and
+  // remove the specific listener closures.
+  if (dragState) { clearEl(dragState.overlay); dragState.svg.style.cursor = ''; dragState = null; }
   shootWeapon = null;
   fightWeapon = null;
   radialWeaponPick = null; // KT-3 item 2: same reasoning — don't leave the radial's weapon submenu orphaned
@@ -2491,13 +2520,20 @@ async function endTurningPoint() {
 //  DRAG TO MOVE
 // ═══════════════════════════════════════════════════════════
 
-function startMove(playerSlot, isDash) {
+// KT-4 item 3: mode is 'move' | 'dash' | 'fallback' — Fall Back reuses the
+// exact same drag mechanics as Move (same distance, same collision rules;
+// real KT lets an operative leave control range this way, this engine
+// doesn't separately enforce "must end outside control range" beyond
+// that, per the brief's own narrower ask). What differs is only which
+// activation flags get set on commit, below.
+function startMove(playerSlot, mode) {
   if (!activation) return;
   if (shootState || gameData.pendingShot) return;
   hideRadialMenu();
   const op     = (gameData.operatives || {})[activation.opId];
   if (!op || op.x < 0) return;
 
+  const isDash  = mode === 'dash';
   const maxMove = isDash ? 3 : op.move;
   const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
   const svg = boardWrap?.querySelector('svg.board-svg');
@@ -2554,8 +2590,14 @@ function startMove(playerSlot, isDash) {
     const resolved = resolveMoveDestination(dragState.startX, dragState.startY, snapped.x, snapped.y, dragState.opId);
 
     if (activation) {
-      if (isDash) activation.hasDashed = true;
-      else        activation.hasMoved  = true;
+      if (isDash) {
+        activation.hasDashed = true;
+      } else {
+        activation.hasMoved = true;
+        // KT-4 item 3: Fall Back ends Shoot eligibility outright this
+        // activation, on top of sharing the Reposition move-slot.
+        if (mode === 'fallback') activation.hasFallenBack = true;
+      }
     }
     commitMove(resolved.x, resolved.y, 1, playerSlot);
     dragState = null;
@@ -2798,20 +2840,32 @@ function showRadialMenu(opId, playerSlot) {
   const ranged    = getRangedWeapons(op);
   const melee     = getMeleeWeapons(op);
   const conceal   = op.order === 'conceal';
-  const hasMoved  = activation?.hasMoved  || false;
-  const hasDashed = activation?.hasDashed || false;
-  const hasShot   = activation?.hasShot   || false;
-  const hasFought = activation?.hasFought || false;
+  const hasMoved      = activation?.hasMoved      || false;
+  const hasDashed     = activation?.hasDashed     || false;
+  const hasShot       = activation?.hasShot       || false;
+  const hasFought     = activation?.hasFought     || false;
+  const hasFallenBack = activation?.hasFallenBack || false;
+  // KT-4 items 2+3: same helpers/logic as renderActivationBar — this ring
+  // is a second render of the same button state, must agree with it.
+  const activationLike = { hasMoved, hasDashed, hasFallenBack };
+  const shootBlockReason = getShootActionBlockReason(op, activationLike);
+  const eligibleRanged   = ranged.filter(w => !getWeaponHeavyBlockReason(w, activationLike));
 
   // BUG_KT_PLAYTEST_2 item 2: fightDisabled already gated on hasFought;
   // shootDisabled never gated on hasShot even though activation.hasShot
   // is tracked and set — the same operative could Shoot repeatedly in one
   // activation. RAW: Move/Dash repeat, Shoot/Fight don't.
-  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal || hasShot;
+  const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal || hasShot || !!shootBlockReason || eligibleRanged.length === 0;
   const fightDisabled = ap < 1 || !melee.length  || !hasFightTarget(op) || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
   const moveDisabled  = ap < 1 || hasMoved;
   const dashDisabled  = ap < 1 || hasDashed;
   const orderDisabled = hasShot;
+
+  const shootTitle = hasShot ? 'Already shot this activation'
+    : conceal ? 'Locked: Conceal order'
+    : shootBlockReason ? shootBlockReason
+    : (ranged.length && eligibleRanged.length === 0) ? getWeaponHeavyBlockReason(ranged[0], activationLike)
+    : '';
 
   const R    = 72;
   const bSz  = 50;
@@ -2827,14 +2881,14 @@ function showRadialMenu(opId, playerSlot) {
       disabled: orderDisabled, locks: '',
       title: orderDisabled ? 'Cannot switch to Conceal after shooting' : '' },
     { id: 'move',   label: 'Move', ap: 1, angle: -30, cls: '',
-      fn: `startMove('${playerSlot}',false)`, disabled: moveDisabled, locks: '',
+      fn: `startMove('${playerSlot}','move')`, disabled: moveDisabled, locks: '',
       title: hasMoved ? 'Already moved this activation' : '' },
     { id: 'dash',   label: 'Dash', ap: 1, angle: 30, cls: '',
-      fn: `startMove('${playerSlot}',true)`, disabled: dashDisabled, locks: 'charge',
+      fn: `startMove('${playerSlot}','dash')`, disabled: dashDisabled, locks: 'charge',
       title: hasDashed ? 'Already dashed' : '3″ — combine with Move for max distance' },
     { id: 'shoot',  label: 'Shoot', ap: 1, angle: 90, cls: 'r-shoot',
       fn: `startShoot('${playerSlot}')`, disabled: shootDisabled, locks: 'order',
-      title: hasShot ? 'Already shot this activation' : conceal ? 'Locked: Conceal order' : '' },
+      title: shootTitle },
     { id: 'fight',  label: 'Fight',  ap: 1, angle: 150, cls: 'r-fight',
       fn: `startFight('${playerSlot}')`, disabled: fightDisabled, locks: '',
       title: hasFought ? 'Already fought this activation' : !hasFightTarget(op) ? 'No enemies in control range (1")' : !melee.length ? 'No melee weapons' : '' },
@@ -2900,10 +2954,16 @@ function renderRadialWeaponPicker(pick) {
     const angle = (-90 + (360 / n) * i) * Math.PI / 180;
     const ix = Math.round(R * Math.cos(angle)) + bOff;
     const iy = Math.round(R * Math.sin(angle)) + bOff;
+    // KT-4 item 2: a multi-weapon operative can carry one Heavy option and
+    // one non-Heavy option (e.g. a dual-profile mobile/stationary gun) —
+    // show every weapon so the player sees why one's greyed, but only the
+    // eligible ones are clickable.
+    const blockReason = kind === 'shoot' ? getWeaponHeavyBlockReason(w, activation) : null;
     const badge = kind === 'shoot' ? (weaponRange(w) === null ? '∞' : `${w.profiles.RNG}″`) : 'Melee';
     const label = w.name.length > 12 ? w.name.slice(0, 11) + '…' : w.name;
-    return `<button class="radial-item r-weapon" style="left:${ix}px;top:${iy}px;width:${bSz}px;height:${bSz}px;" onclick="pickRadialWeapon(${i})" title="${escHtml(w.name)}">
-      <span class="ri-label">${escHtml(label)}</span><span class="ri-ap">${badge}</span>
+    const titleTxt = blockReason ? `${w.name} — ${blockReason}` : w.name;
+    return `<button class="radial-item r-weapon" style="left:${ix}px;top:${iy}px;width:${bSz}px;height:${bSz}px;" ${blockReason ? 'disabled' : `onclick="pickRadialWeapon(${i})"`} title="${escHtml(titleTxt)}">
+      <span class="ri-label">${escHtml(label)}</span><span class="ri-ap">${blockReason ? '⊘' : badge}</span>
     </button>`;
   }).join('');
 
@@ -2917,9 +2977,13 @@ function pickRadialWeapon(idx) {
   if (!radialWeaponPick) return;
   const { kind, playerSlot, weapons } = radialWeaponPick;
   const w = weapons[idx];
+  if (!w) return;
+  // KT-4 item 2: defensive re-check — the button should already be
+  // disabled, but activation state could in principle have moved on
+  // (e.g. a Firebase update) between render and click.
+  if (kind === 'shoot' && getWeaponHeavyBlockReason(w, activation)) return;
   radialWeaponPick = null;
   hideRadialMenu();
-  if (!w) return;
   if (kind === 'shoot') beginShootDrag(playerSlot, w);
   else beginFightDrag(playerSlot, w);
 }
@@ -3248,15 +3312,15 @@ function resolveFightOutcome(atkProfile, defProfile, atkRolls, defRolls) {
     if (d !== 1 && d >= profile.hit) return 'hit';
     return 'miss';
   };
-  const atkAnnotated = atkRolls.map(d => classify(d, atkProfile));
-  const defRaw        = defRolls.map(d => classify(d, defProfile));
+  const atkRaw = atkRolls.map(d => classify(d, atkProfile));
+  const defRaw = defRolls.map(d => classify(d, defProfile));
 
   // retainCrit/retainNormal (BON-2b): guaranteed extra hits from a bonus,
   // not tied to a die — folded into the totals the blocking simulation and
   // damage math both run against. Defaults to 0 (no bonuses) reproduces 2a
   // exactly, since the totals then equal the dice-only counts below.
-  const totalAtkCrits = atkAnnotated.filter(c => c === 'crit').length + (atkProfile.retainCrit || 0);
-  const totalAtkHits  = atkAnnotated.filter(c => c === 'hit').length  + (atkProfile.retainNormal || 0);
+  const totalAtkCrits = atkRaw.filter(c => c === 'crit').length + (atkProfile.retainCrit || 0);
+  const totalAtkHits  = atkRaw.filter(c => c === 'hit').length  + (atkProfile.retainNormal || 0);
   const totalDefCrits = defRaw.filter(c => c === 'crit').length + (defProfile.retainCrit || 0);
   const totalDefHits  = defRaw.filter(c => c === 'hit').length  + (defProfile.retainNormal || 0);
 
@@ -3269,12 +3333,34 @@ function resolveFightOutcome(atkProfile, defProfile, atkRolls, defRolls) {
   const dHitBlockH = Math.min(rDefHits, rAtkHits);
   rDefHits -= dHitBlockH; rAtkHits -= dHitBlockH;
 
+  // What's left after blocking is what actually deals damage.
+  const atkStrikeCrits = rAtkCrits;
+  const atkStrikeHits  = rAtkHits;
   const defStrikeCrits = rDefCrits;
   const defStrikeHits  = rDefHits;
 
-  const dmgToDefender = (totalAtkCrits - dCritBlockC) * atkProfile.dmgCrit +
-                        (totalAtkHits  - dCritBlockH - dHitBlockH) * atkProfile.dmgNormal;
+  const dmgToDefender = atkStrikeCrits * atkProfile.dmgCrit + atkStrikeHits * atkProfile.dmgNormal;
   const dmgToAttacker = defStrikeCrits * defProfile.dmgCrit + defStrikeHits * defProfile.dmgNormal;
+
+  // KT-4 item 1: the attacker's own dice previously never showed a
+  // "blocked" state at all (only the defender's dice pool did) — every
+  // rolled crit/hit on the ATTACKER's side displayed as "CRIT STRIKE"/
+  // "STRIKE" even when the defender's blocks had absorbed some of them,
+  // so the per-die display could show e.g. 4 crit strikes while the
+  // damage total only reflected 2 getting through. Mirrors the exact same
+  // block-then-strike annotation pattern defAnnotated already used, just
+  // applied to the attacker's blocked-count too (dCritBlockC + dCritBlockH
+  // attacker crits/hits got blocked, in that priority order — same order
+  // the damage math above already consumes them in).
+  let atkCritBlockLeft = dCritBlockC;
+  let atkHitBlockLeft  = dCritBlockH + dHitBlockH;
+  const atkAnnotated = atkRaw.map(c => {
+    if (c === 'crit' && atkCritBlockLeft > 0) { atkCritBlockLeft--; return 'crit-blocked'; }
+    if (c === 'hit'  && atkHitBlockLeft  > 0) { atkHitBlockLeft--;  return 'hit-blocked'; }
+    if (c === 'crit') return 'crit-strike';
+    if (c === 'hit')  return 'hit-strike';
+    return 'miss';
+  });
 
   let defCritBlockLeft = dCritBlockC + dCritBlockH;
   let defHitBlockLeft  = dHitBlockH;
@@ -3286,7 +3372,10 @@ function resolveFightOutcome(atkProfile, defProfile, atkRolls, defRolls) {
     return 'miss';
   });
 
-  return { atkAnnotated, defAnnotated, dmgToDefender, dmgToAttacker };
+  return {
+    atkAnnotated, defAnnotated, dmgToDefender, dmgToAttacker,
+    atkStrikeCrits, atkStrikeHits, defStrikeCrits, defStrikeHits,
+  };
 }
 function getRangedWeapons(op) {
   // BUG_KT_UNLIMITED_RANGE: was `parseRng(...) > 0`, using range as a
@@ -3324,6 +3413,58 @@ function hasFightTarget(op) {
   );
 }
 
+// KT-4 item 3: "engaged" (an enemy within 1" control range) is the exact
+// same 1" check hasFightTarget already runs — an operative can Fight
+// whatever it's engaged with, and can't Shoot while engaged with anything.
+// Same condition, two different legal consequences; not duplicated logic.
+function isEngaged(op) {
+  return hasFightTarget(op);
+}
+
+// KT-4 item 2: parses the Heavy keyword's own qualifier text.  Returns:
+//   null     — not a Heavy weapon, no restriction
+//   'none'   — plain "Heavy": no movement of any kind this activation
+//   'dash'   — "Heavy (Dash only)": Dash is the one movement type allowed
+//   'move'   — "Heavy (Reposition only)": Reposition is the one allowed
+// Per rules-glossary-kt.json's own extracted text (verified against this
+// pipeline's canonical source, not memory): "An operative cannot use this
+// weapon in an activation... in which it moved. If the rule is Heavy (x
+// only)... only that move is allowed." This is why plain Heavy blocks
+// Dash too, not just Reposition/Fall Back — see KT4 DEVLOG entry for the
+// divergence from this brief's own RULINGS text, which describes plain
+// Heavy as if it only blocked Reposition/Fall Back.
+function getHeavyRequirement(weapon) {
+  const kw = (weapon.keywords || []).find(k => k.id === 'heavy');
+  if (!kw) return null;
+  const raw = (kw.raw || '').toLowerCase();
+  if (raw.includes('dash'))       return 'dash';
+  if (raw.includes('reposition')) return 'move';
+  return 'none';
+}
+
+// Returns null if this weapon can be selected for Shoot given what this
+// activation has already done, else a short player-facing reason.
+function getWeaponHeavyBlockReason(weapon, activationLike) {
+  const req = getHeavyRequirement(weapon);
+  if (!req) return null;
+  const repositioned = !!(activationLike.hasMoved || activationLike.hasFallenBack);
+  const dashed        = !!activationLike.hasDashed;
+  if (req === 'none' && (repositioned || dashed)) return 'Heavy — moved this activation';
+  if (req === 'dash' && repositioned)             return 'Heavy (Dash only) — blocked by Reposition/Fall Back';
+  if (req === 'move' && dashed)                   return 'Heavy (Reposition only) — blocked by Dash';
+  return null;
+}
+
+// KT-4 item 3: operative-level Shoot block (applies to every weapon,
+// unlike Heavy which is per-weapon) — engaged, or already used Fall Back
+// this activation (Fall Back ends Shoot eligibility outright, regardless
+// of whether it actually left control range).
+function getShootActionBlockReason(op, activationLike) {
+  if (activationLike.hasFallenBack) return 'Fell Back — no Shoot this activation';
+  if (isEngaged(op))                return 'Engaged — Fall Back to Shoot';
+  return null;
+}
+
 // Returns { valid, reason, inCover }
 function getShootValidity(attacker, target, weapon) {
   const terrain = gameData.terrain || {};
@@ -3331,15 +3472,24 @@ function getShootValidity(attacker, target, weapon) {
   const dist    = Math.hypot(target.x - attacker.x, target.y - attacker.y);
 
   if (target.wounds <= 0)                    return { valid: false, reason: 'Incapacitated', inCover: false };
-  if (target.order === 'conceal')            return { valid: false, reason: 'CONCEALED',     inCover: false };
+
+  const los = rayResult(attacker.x, attacker.y, target.x, target.y, terrain);
+  if (los === 'blocked')          return { valid: false, reason: 'LOS blocked',   inCover: false };
+
+  // KT-4: Conceal only makes a target un-shootable while it's ALSO in cover
+  // (from this specific shooter's angle) — a Concealed operative standing
+  // in the open is still a valid Shoot target. Previously blocked ANY
+  // concealed target unconditionally, regardless of cover. Fight targeting
+  // never checks order at all (see beginFightDrag) — Conceal never blocks
+  // Fight, only this Shoot check, per the brief's ruling.
+  if (target.order === 'conceal' && los === 'cover') {
+    return { valid: false, reason: 'Concealed (in cover)', inCover: false };
+  }
   // BUG_KT_UNLIMITED_RANGE: range === null means unlimited — any target
   // in LOS is in range, per the brief. Previously `range` fell back to 0
   // for an absent RNG, so `dist > range` was true for any positive
   // distance and every unlimited-range shot read as "Out of range".
   if (range !== null && dist > range)        return { valid: false, reason: 'Out of range',  inCover: false };
-
-  const los = rayResult(attacker.x, attacker.y, target.x, target.y, terrain);
-  if (los === 'blocked')          return { valid: false, reason: 'LOS blocked',   inCover: false };
 
   // Don't shoot into melee: attacker has a friendly within 1" of target
   const friendlyInMelee = Object.values(gameData.operatives || {}).some(o =>
@@ -3355,9 +3505,18 @@ function startShoot(playerSlot) {
   if (!activation) return;
   const op = (gameData.operatives || {})[activation.opId];
   if (!op || op.x < 0) return;
+  // KT-4 item 3: defensive re-check — the button should already be
+  // disabled while engaged/fallen-back.
+  if (getShootActionBlockReason(op, activation)) return;
   const ranged = getRangedWeapons(op);
   if (!ranged.length) return;
-  if (ranged.length === 1) { hideRadialMenu(); beginShootDrag(playerSlot, ranged[0]); return; }
+  // KT-4 item 2: defensive re-check for the single-weapon skip-through —
+  // the button should already be disabled if this one weapon is Heavy-
+  // blocked, but don't auto-fire into a blocked weapon regardless.
+  if (ranged.length === 1) {
+    if (getWeaponHeavyBlockReason(ranged[0], activation)) return;
+    hideRadialMenu(); beginShootDrag(playerSlot, ranged[0]); return;
+  }
   // KT-3 item 2: multi-weapon picker moved onto the radial ring itself.
   radialWeaponPick = { kind: 'shoot', playerSlot, weapons: ranged };
   refreshRadialIfActive();
@@ -3371,15 +3530,26 @@ function cancelShoot() {
     shootState.svg.style.cursor = '';
     shootState = null;
   }
-  const ps = activation?.playerSlot;
   if (gameId) db.ref(`games-kt/${gameId}/pendingShot`).remove();
-  // AP already spent on target confirmation — if exhausted, end activation
-  if (activation && activation.apSpent && activation.apRemaining <= 0) {
-    endActivation(ps);
-  } else {
-    reRenderPhaseBar();
-    reRender();
+  // KT-4 item 4: confirmShootTarget() spends the AP and sets hasShot the
+  // moment a target is confirmed — BEFORE cover choice or dice are rolled.
+  // Cancel Shot is reachable any time before phase 'rolled', so this used
+  // to permanently burn 1 AP and the operative's Shoot action for nothing:
+  // the old code never refunded apRemaining/hasShot, it only ended the
+  // activation outright once AP ran out (making the loss look intentional
+  // instead of a bug). Restore exactly what confirmShootTarget committed.
+  // apSpent only reverts to false if NOTHING ELSE committed this
+  // activation (no Move/Dash/Fall Back/Fight) — those still hold even
+  // after this shot attempt unwinds.
+  if (activation) {
+    activation.hasShot = false;
+    activation.apRemaining += 1;
+    if (!activation.hasMoved && !activation.hasDashed && !activation.hasFought && !activation.hasFallenBack) {
+      activation.apSpent = false;
+    }
   }
+  reRenderPhaseBar();
+  reRender();
 }
 
 function beginShootDrag(playerSlot, weapon) {
@@ -3743,6 +3913,19 @@ function renderDicePool(rolls, isAtk, hitStat, saveStat, critThreshold) {
   }).join('');
 }
 
+// KT-4 item 1: "24 wounds" has no felt link to the dice that produced it —
+// break each retained die-type's contribution out explicitly ("4 CRIT × 6 +
+// 2 HIT × 3 = 30 wounds") instead of just the total. Shared by Shoot and
+// Fight (both resolve to the same crit-count/hit-count/per-die-damage
+// shape), so the phrasing can't drift between the two.
+function formatDamageBreakdown(critN, critDmg, hitN, hitDmg, total) {
+  const parts = [];
+  if (critN > 0) parts.push(`${critN} CRIT × ${critDmg}`);
+  if (hitN  > 0) parts.push(`${hitN} HIT × ${hitDmg}`);
+  if (!parts.length) return 'All hits saved — 0 damage';
+  return parts.join(' + ') + ` = ${total} wound${total !== 1 ? 's' : ''}`;
+}
+
 function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp) {
   const w        = pending.weapon || {};
   const attName  = attOp?.name || '?';
@@ -3792,10 +3975,11 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
       </div>`;
 
     if (!animating) {
-      const parts = [];
-      if (pending.remainingCritHits > 0)   parts.push(`${pending.remainingCritHits}× crit (${pending.critDmg} dmg)`);
-      if (pending.remainingNormalHits > 0) parts.push(`${pending.remainingNormalHits}× hit (${pending.normalDmg} dmg)`);
-      const dmgStr = parts.length ? parts.join(' + ') + ` = ${pending.totalDamage} wound${pending.totalDamage !== 1 ? 's' : ''}` : 'All hits saved — 0 damage';
+      const dmgStr = formatDamageBreakdown(
+        pending.remainingCritHits || 0, pending.critDmg,
+        pending.remainingNormalHits || 0, pending.normalDmg,
+        pending.totalDamage
+      );
       resultHtml = `<div class="shoot-result">${dmgStr}</div>`;
       resultHtml += iAmAttacker
         ? `<button class="btn btn-primary" onclick="confirmShotDamage('${playerSlot}')">Apply ${pending.totalDamage} Damage to ${escHtml(tgtName)}</button>`
@@ -4053,6 +4237,12 @@ async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
     defAnnotated: outcome.defAnnotated,
     dmgToDefender: outcome.dmgToDefender,
     dmgToAttacker: outcome.dmgToAttacker,
+    // KT-4 item 1: strike counts (post-block) so the resolution bar can
+    // show "N CRIT × dmg = total" per side instead of just the total.
+    atkStrikeCrits: outcome.atkStrikeCrits,
+    atkStrikeHits:  outcome.atkStrikeHits,
+    defStrikeCrits: outcome.defStrikeCrits,
+    defStrikeHits:  outcome.defStrikeHits,
     appliedBonuses, flags, conditions,
   });
 
@@ -4111,10 +4301,17 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
   const attName = escHtml(attOp?.name || '?');
   const defName = escHtml(defOp?.name || '?');
 
+  // KT-4 item 1: attacker dice now carry the same block/strike distinction
+  // the defender's already did (resolveFightOutcome) — a crit/hit that got
+  // absorbed by the defender's block reads as BLOCKED, not STRIKE, so the
+  // per-die display agrees with the block-adjusted damage total instead of
+  // showing more "hits" than actually got through.
   const ATK_STYLE = {
-    crit:  { label: 'CRIT STRIKE', color: '#e74c3c' },
-    hit:   { label: 'STRIKE',      color: '#27ae60' },
-    miss:  { label: 'MISS',        color: 'var(--text-dim)' },
+    'crit-strike':  { label: 'CRIT STRIKE', color: '#e74c3c' },
+    'hit-strike':   { label: 'STRIKE',      color: '#27ae60' },
+    'crit-blocked': { label: 'BLOCKED',     color: '#e67e22' },
+    'hit-blocked':  { label: 'BLOCKED',     color: '#e67e22' },
+    'miss':         { label: 'MISS',        color: 'var(--text-dim)' },
   };
   const DEF_STYLE = {
     'crit-block':   { label: 'CRIT BLOCK ✓',  color: '#27ae60' },
@@ -4141,11 +4338,18 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
   const dmgAtk = p.dmgToDefender || 0;
   const dmgDef = p.dmgToAttacker || 0;
 
+  // KT-4 item 1: retaliation damage reads as a bug at the table if it just
+  // says "24 wounds" the same way the attacker's own damage does — label
+  // it explicitly as retaliation, and phrase it relative to the viewer
+  // ("You deal" / "they retaliate") so it's unmistakably the normal,
+  // expected other-half of a Fight, not an error.
   let confirmHtml = '';
   if (!animating) {
+    const dealText = iAmAttacker ? 'You deal' : `${attName} deals`;
+    const retalText = iAmAttacker ? `${defName} retaliates` : 'You retaliate';
     const summaryParts = [
-      dmgAtk > 0 ? `${attName} deals <strong>${dmgAtk}</strong> wounds to ${defName}` : null,
-      dmgDef > 0 ? `${defName} deals <strong>${dmgDef}</strong> wounds to ${attName}` : null,
+      dmgAtk > 0 ? `${dealText} <strong>${dmgAtk}</strong> to ${iAmAttacker ? defName : 'you'}` : null,
+      dmgDef > 0 ? `${retalText} <strong>${dmgDef}</strong> to ${iAmAttacker ? 'you' : attName}` : null,
       dmgAtk === 0 && dmgDef === 0 ? 'No damage dealt.' : null,
     ].filter(Boolean);
 
@@ -4162,6 +4366,13 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
   const label  = iAmAttacker ? 'Close Combat' : 'Incoming Fight!';
   const skipHint = animating ? '<div class="dice-skip-hint">(click to skip)</div>' : '';
 
+  // KT-4 item 1: each pool's total is now the same "N CRIT × dmg = total"
+  // breakdown Shoot already shows, not just the bare wound count — and the
+  // defender pool is explicitly labeled "Retaliates" so return damage never
+  // reads as an unexplained number.
+  const atkTotalTxt = dmgAtk > 0 ? `Deals: ${formatDamageBreakdown(p.atkStrikeCrits || 0, p.atkCDmg, p.atkStrikeHits || 0, p.atkNDmg, dmgAtk)}` : 'No damage';
+  const defTotalTxt = dmgDef > 0 ? `Retaliates: ${formatDamageBreakdown(p.defStrikeCrits || 0, p.defCDmg, p.defStrikeHits || 0, p.defNDmg, dmgDef)}` : 'No retaliation';
+
   return `
     <span class="phase-bar-label">${label}</span>
     <div class="phase-bar-body">
@@ -4175,12 +4386,12 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
           <div class="fight-pool fight-pool-atk">
             <div class="fight-pool-label">${attName} — ${atkWpn} (ATK ${p.atkWeapon?.profiles?.ATK||'?'}, hit on ${p.atkHitStat}+)</div>
             <div class="fight-dice">${atkDice}</div>
-            <div class="fight-pool-total" style="color:${dmgAtk>0?'var(--red)':'var(--text-dim)'}">${animating ? '&nbsp;' : `Deals: ${dmgAtk} wounds`}</div>
+            <div class="fight-pool-total" style="color:${dmgAtk>0?'var(--red)':'var(--text-dim)'}">${animating ? '&nbsp;' : atkTotalTxt}</div>
           </div>
           <div class="fight-pool fight-pool-def">
             <div class="fight-pool-label">${defName} — ${defWpn} (ATK ${p.defWeapon?.profiles?.ATK||'?'}, hit on ${p.defHitStat}+)</div>
             <div class="fight-dice">${defDice}</div>
-            <div class="fight-pool-total" style="color:${dmgDef>0?'var(--red)':'var(--text-dim)'}">${animating ? '&nbsp;' : `Deals: ${dmgDef} wounds`}</div>
+            <div class="fight-pool-total" style="color:${dmgDef>0?'var(--red)':'var(--text-dim)'}">${animating ? '&nbsp;' : defTotalTxt}</div>
           </div>
         </div>
         ${skipHint}
