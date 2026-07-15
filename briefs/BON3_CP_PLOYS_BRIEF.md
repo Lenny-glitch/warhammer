@@ -1,5 +1,7 @@
 # BON-3 — CP Economy, Ploys, and Condition Tokens
 
+CLAIMED: 2026-07-15
+
 ## Orientation
 Monorepo, killteam/ (+ shared/ resolver if needed, + data-
 pipeline/ only for catalog authoring). Claim first. This is the
