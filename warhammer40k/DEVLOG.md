@@ -370,7 +370,7 @@ needs to handle, which should generalize to Banshees' Mirrorswords choice
 whichever pattern it turns out to use. Test scripts not committed
 (one-off, same jsdom pattern WHF's sessions use for this project).
 
-**Commits:** (cite hash after commit below.)
+**Commits:** `3fba1a0`.
 
 ---
 
