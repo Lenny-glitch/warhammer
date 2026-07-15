@@ -217,32 +217,19 @@ Five bugs fixed based on real cross-machine playtest findings:
 
 ---
 
-## Known Limitations (Phase 17 work)
+## Known Limitations — RETIRED (40K-P3, see Phase 18 below)
 
-### KL-1: Melee weapon assignment uses fighter index, not model role
+### KL-1: Melee weapon assignment uses fighter index, not model role — RETIRED
 
-**Symptom:** In a 10-model Cadian Shock Troops squad, the first model in the Firebase array gets the chainsword (A3) and the rest get close-combat-weapon (A1). This approximates the correct sergeant/trooper split but is fragile — it depends on array order, not actual model role.
+**Original symptom:** In a 10-model Cadian Shock Troops squad, the first model in the Firebase array got the chainsword (A3) and the rest got close-combat-weapon (A1). Approximated the sergeant/trooper split but depended on array order, not actual model role.
 
-**Root cause:** The scraper produces one unit definition per unit type. It does not capture squad composition (how many models of each role, which weapons each role carries). All 10 model instances are created with the same `unitId: 'cadian-shock-troops'`; there is no `role: 'sergeant'` field.
+**Retired, not fixed as originally planned.** The `composition`/`role` field this note proposed never landed — the roster export format that shipped instead (`chosenLoadout`, per-unit embedded weapon profiles) still has no per-MODEL role data, only per-squad. `getMeleeWeaponForFighter` (the index hack) is deleted outright; `getMeleeWeapon(unit)` now returns the resolved unit's best-Strength melee profile (ties broken by better AP) when more than one exists — no fight-time weapon-choice UI exists to defer to instead. See Phase 18 / `js/shooting.js`.
 
-**Correct fix (Phase 17):** Add a `composition` field to gameData unit definitions, scraped from the Wahapedia unit composition section:
-```json
-"composition": [
-  { "count": 1, "role": "sergeant", "weapons": ["chainsword", "bolt-pistol"] },
-  { "count": 9, "role": "trooper",  "weapons": ["lasgun", "close-combat-weapon"] }
-]
-```
-`buildUnitsFromRoster` would then create model instances with a `role` field. `getMeleeWeaponForFighter` would look up `role` instead of using array index.
+### KL-2: Multi-weapon units fire every weapon on the datasheet, not their equipped loadout — RETIRED
 
-### KL-2: Multi-weapon units fire every weapon on the datasheet, not their equipped loadout
+**Original symptom:** A Leman Russ fired all 10 ranged weapons simultaneously. In reality a specific Leman Russ has ONE turret weapon and one or two sponson/hull choices.
 
-**Symptom:** A Leman Russ fires all 10 ranged weapons simultaneously (battle cannon, heavy bolter, heavy flamer, lascannon, multi-melta, plasma cannon ×2, storm bolter, etc.). In reality a specific Leman Russ has ONE turret weapon and one or two sponson/hull choices — the others were never equipped.
-
-**Root cause:** The gameData unit definition lists all weapons available to that unit type across all valid loadout configurations. The roster currently stores only `{ instanceId, unitId, unitName, modelCount }` — there is no `weaponLoadout` field recording which options the player actually chose.
-
-**Correct fix (Phase 17):** Add weapon loadout selection to the roster builder. When adding a vehicle or multi-option unit, the player picks which weapons to equip. Stored as `weaponLoadout: ['leman-russ-battle-cannon', 'heavy-bolter']` on the roster unit entry. `buildUnitsFromRoster` reads this and sets `equippedWeapons` on each model instance. `getAllRangedWeapons` filters by equipped weapons when present.
-
-**Note:** "Fire all equipped weapons" is RAW-correct for 10th edition — every model fires all its weapons at the chosen target. The issue is solely that we don't yet know which weapons are equipped.
+**Retired.** `chosenLoadout` (written by roster's publish flow, read from `exports/warhammer-40k/{id}` — not the old draft `rosters/{id}` this repo used to read) now drives what a unit actually fires. Full writeup, including a real severity finding beyond this note's own framing (the bug compounds per-model on multi-model squads, not just per-vehicle) and a wargear-pattern distinction found via live data (single-special-model slots vs. uniform squad-wide swaps) — see Phase 18.
 
 ---
 
@@ -260,16 +247,147 @@ The 40k sim (this repo) is **blocked on roster Phase 3b** — Part 3 of that bri
 
 ---
 
-## Current Status (as of Phase 16)
+### Phase 18 — 40K-P3: Roster Picker + Sim Reads chosenLoadout (2026-07-14)
+
+**Brief:** `briefs/W40K_PART3_BRIEF.md` (supersedes the old, pre-monorepo
+`ROSTER_3B_PART3_BRIEF.md`). **Files:** `js/lobby.js`, `js/roster.js`,
+`js/shooting.js`, `css/styles.css`.
+
+Two interlocking changes: a real roster picker in the lobby (retiring the
+free-text Roster ID fields that produced "child failed: path argument was
+an invalid path" on a pasted URL), and the sim actually reading
+`chosenLoadout` instead of firing a unit's entire datasheet — closing
+KL-1 and KL-2 above.
+
+**Verify-first found the picker and the chosenLoadout fix are the SAME
+underlying change, not two separate ones.** `roster.js`'s `fetchRoster()`
+read the OLD draft `rosters/{id}` collection — `{ meta, units: [{
+instanceId, unitId, unitName, modelCount }] }`, no weapon data at all,
+requiring a separate gameData lookup per unit. Only PUBLISHED exports at
+`exports/warhammer-40k/{id}` carry `chosenLoadout` plus each unit's own
+resolved stats/weapons embedded inline (self-contained, no gameData lookup
+needed for the common case). So picking rosters from `exports/` (item 1)
+and reading `chosenLoadout` (item 2) both require the same source switch.
+**Fallout, expected not fixed:** this repo's own two hardcoded "Test
+Roster IDs" (`-OvwjCrKkEQjW-hYsIFa` / `-OvwjCsdqkL4JEk3UdrT`) are drafts,
+not exports — confirmed live (`exports/warhammer-40k/-OvwjCrKkEQjW-hYsIFa`
+returns null; `rosters/` has it) — they no longer resolve through the
+lobby. Same tradeoff killteam's KT-RS made switching to `exports/kill-team`.
+
+**Lobby picker** (`js/lobby.js`): ported KT-RS's `fetchRosterList`/
+`renderRosterPickerList`/`selectLobbyRoster` pattern, generalized to
+THREE simultaneous picker instances this app needs that Kill Team's
+single-roster flow didn't (create-form's own roster, the dev-mode
+opponent roster, the join-form's roster) — each filtered to the relevant
+faction (`meta.factionId`), reloading when the faction-card selection
+changes. Deleted the old debounced single-ID `triggerRosterPreview`/
+`rosterPreviewHTML` (redundant once the picker shows everything up
+front — same call KT-RS made). Kept a pasted ID/URL field as a fallback
+per the brief ("if trivial"): `extractRosterIdFallback()` just takes the
+last non-empty `/`-separated segment, since Firebase push keys never
+contain a slash either way.
+
+**chosenLoadout resolution** (`js/roster.js`) — the actual KL-1/KL-2
+retirement. A roster unit's exported `weapons` array is the FULL
+datasheet catalog (every alternative across every valid configuration —
+this IS KL-2's root cause); `chosenLoadout` narrows exactly the optional
+slots resolved at publish time, keyed by roster's own self-describing
+slot name (`Replace X` / `Optional: X` / `Optional (up to N)` — see
+`roster/index.html`'s `_parseWargear`). `resolveLoadout()` reads ONLY
+those key strings plus a small, targeted read of gameData's
+`wargearOptions` prose (already fetched for squadSize fallback, see
+below) — NOT a re-implementation of `_parseWargear` itself, just its
+"replace X with one/N of the following" pattern family, needed for a
+reason verify-first surfaced only by testing against Nox's real
+Craftworlds Eldar export, not the brief's own description:
+
+1. **A "Replace X" slot name only identifies the ONE default weapon being
+   swapped out — not the other un-chosen alternatives for that same
+   slot.** Guardian Defenders' Heavy Weapon Platform slot has FOUR
+   alternatives (missile launcher / bright lance / scatter laser /
+   starcannon); chosenLoadout only names whichever one was picked.
+   Excluding just the named default left the other three still firing —
+   a smaller, but still real, residual KL-2. Fixed by parsing gameData's
+   `wargearOptions` text (already loaded) for the same "one of the
+   following: A B C D" list roster's own picker built from, and excluding
+   every alternative by normalized-prefix match (handles "missile
+   launcher" prose matching both its "– starshot"/"– sunburst" profiles).
+2. **Not every "Replace X" slot means "one special model has this."**
+   Guardian Defenders' HWP slot does (ONE Heavy Weapon Platform model in
+   an 11-model squad) — that weapon should fire once for the whole squad,
+   not once per model. But Wraithguard's own wargear text reads "**All**
+   of the models in this unit can **each** have their wraithcannon
+   replaced with 1 D-scythe" — every model shares the SAME choice
+   uniformly. Conflating these would have made a real 5-model Wraithguard
+   squad fire its Wraithcannon once total instead of five times.
+   Distinguished by testing the literal "each"/"all ... models" phrasing
+   in the wargear sentence itself (`isUniform()`) — the only signal the
+   data offers; `resolveLoadout()` returns `chosenPerModel` and
+   `chosenOnce` separately, `perModel` tagged accordingly.
+3. **`modelCount` is `null` (dropped by Firebase) for every FIXED-size
+   unit** — roster only writes a real value for variable-size squads (see
+   `roster/index.html`'s `_addOperative`). `buildUnitsFromRoster` now
+   falls back to gameData's `squadSize.min` when absent, then 1. Verified
+   live: Guardian Defenders (squadSize 11/11) and Wraithguard (5/5) both
+   built the correct headcount — the OLD code's flat `modelCount || 1`
+   fallback would have built just 1 model for either.
+
+**`js/shooting.js`:** `getAllRangedWeapons`/`getAllMeleeWeapons` read
+`unit.equippedRanged`/`equippedMelee` (attached once per squad at
+`buildUnitsFromRoster` time) when present, falling back to their existing
+gameData/UNIT_STATS path otherwise — old exports without `chosenLoadout`,
+and dev presets, "behave as today" unchanged (both paths tag their
+weapons `perModel:true` to match). `getMeleeWeaponForFighter`'s index
+hack is deleted; `getMeleeWeapon(unit)` returns the resolved set's
+highest-Strength profile (AP as tiebreaker) when more than one exists —
+no fight-time weapon-choice UI exists to defer to instead, matching the
+brief's own stated fallback. **The real fix for KL-2's severity**:
+`firingInstances()` in `resolveAttacks`/`estimateAttacks` — a `perModel`
+weapon fires once per alive model that can reach/see the target
+(unchanged); a once-per-squad weapon fires from exactly ONE eligible
+model, regardless of squad size. Verified live: an 11-model Guardian
+Defenders squad's Shuriken Catapult correctly fires 22 attacks (11 × 2),
+its chosen Missile Launcher fires exactly 1 (not 11) — the actual bug
+this brief exists to close, confirmed against real published data, not a
+synthetic fixture.
+
+**Testing:** jsdom (real, `runScripts: 'dangerously'`) against LIVE
+Firebase reads — no synthetic-only shortcuts for the acceptance case.
+Confirmed: the lobby picker renders real rows for Eldar (13 units, 1950pts,
+correct name/faction/points/date) and correctly shows the empty state for
+Astra Militarum (no AM exports published yet, not a crash); Guardian
+Defenders' HWP slot resolves to exactly 2 ranged weapons (Shuriken
+Catapult + chosen Missile Launcher, all 4 alternatives and the replaced
+default excluded) firing 22 + 1 attacks respectively; Wraithguard's
+uniform swap resolves to Wraithcannon only (D-scythe excluded), firing
+per-model (5 attacks from 5 models, not 1); Fuegan/Solitaire (no
+chosenLoadout at all) resolve their real weapons unchanged, confirming
+"no chosenLoadout behaves as today." No live Howling Banshees export
+exists yet to test the brief's own named example directly — the
+Guardian-Defenders/Wraithguard pair exercises both wargear patterns
+(single-special-model and uniform squad-wide swap) the general mechanism
+needs to handle, which should generalize to Banshees' Mirrorswords choice
+whichever pattern it turns out to use. Test scripts not committed
+(one-off, same jsdom pattern WHF's sessions use for this project).
+
+**Commits:** (cite hash after commit below.)
+
+---
+
+## Current Status (as of Phase 18)
 
 The game is playable end-to-end with real roster data:
-1. Creator pastes AM roster ID → creates game → shares link
-2. Joiner pastes Eldar roster ID → joins → game goes active
+1. Creator picks a published roster from the lobby (`exports/warhammer-40k`)
+   → creates game → shares link; pasted ID/URL still works as a fallback
+2. Joiner picks their own roster the same way → joins → game goes active
 3. Terrain placement → Deployment → Initiative roll → 5-turn game loop
 4. Unit cards show all weapon profiles from Wahapedia-scraped data
 5. Attack pipeline rolls against real T/SV/W/M values from gameData
-6. Multi-model squads maintain coherency rules; single models exempt
-7. Dice log scrolls without affecting board layout; per-weapon breakdown shown for vehicles
+6. A unit fires EXACTLY its published chosenLoadout — fixed troop weapons
+   scale with headcount, a chosen special/replaced weapon fires once for
+   the squad or per-model depending on the wargear pattern (Phase 18)
+7. Multi-model squads maintain coherency rules; single models exempt
+8. Dice log scrolls without affecting board layout; per-weapon breakdown shown for vehicles
 
 **What still uses hardcoded data:** Dev presets (Jump to T1/T2/T3 states) use legacy `guard_0`/`eldar_0` unit IDs from `buildInitialUnits()`. These exist for testing only and are independent of the roster flow.
 
@@ -295,6 +413,8 @@ When merged, the lobby will offer game mode selection (40K / Kill Team), and the
 - **No TypeScript, no bundler, no linting config.** Keep it that way unless the user explicitly asks.
 - **Phase numbers** are informal labels from planning docs, not reflected in code. Don't add phase comments to source files.
 - **The board is in inches**, not pixels. The canvas renderer scales inches to pixels internally.
+- **`roster.js` reads `exports/warhammer-40k/{id}`, not `rosters/{id}`** (40K-P3). Only published exports carry `chosenLoadout` + embedded weapon profiles. The lobby picker sources from the same collection — don't reintroduce a `rosters/`-reading code path without re-deciding this.
+- **`perModel` on a weapon object (40K-P3) means "fires once per alive model"; `false` means "fires once for the whole squad."** Set at `buildUnitsFromRoster` time from `roster.js`'s `resolveLoadout()` — fixed troop equipment and UNIFORM wargear swaps (e.g. Wraithguard's wraithcannon-or-D-scythe, "all models can each...") are `true`; a single-special-model slot (e.g. Guardian Defenders' one Heavy Weapon Platform) is `false`. Read `resolveLoadout()`'s own comments before changing this — the distinction was found by testing live data, not assumed.
 
 ---
 

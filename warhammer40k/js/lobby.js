@@ -1,7 +1,12 @@
 window.Lobby = (() => {
   let selectedFaction = 'guard';
   let unsubscribe     = null;
-  let previewDebounce = null;
+
+  // 40K-P3: roster IDs selected via the picker (replaces the old free-text
+  // Roster ID inputs). Reset whenever the relevant form re-renders.
+  let createRosterId = null;
+  let devRosterId    = null;
+  let joinRosterId   = null;
 
   function init(gameIdParam) {
     const params    = new URLSearchParams(location.search);
@@ -13,29 +18,94 @@ window.Lobby = (() => {
     }
   }
 
-  // ---- Create flow ----
+  // ---- Roster picker (40K-P3, ported from killteam's KT-RS pattern) ----
+  // Reads exports/warhammer-40k, NOT the old draft rosters/ collection —
+  // only published exports carry chosenLoadout + resolved weapon profiles,
+  // which the sim now reads (see roster.js). No lightweight index exists
+  // (unit count isn't in `meta` — adding one would be a roster/ change,
+  // out of this brief's scope), so this fetches the whole tree once; fine
+  // at today's scale, same tradeoff KT-RS accepted for exports/kill-team.
 
-  function rosterPreviewHTML(roster, faction) {
-    if (!roster) return '';
-    const FACTION_MAP = window.RosterLoader.FACTION_MAP;
-    const mismatch    = FACTION_MAP[faction] && roster.meta.factionId !== FACTION_MAP[faction];
-    if (mismatch) {
-      return `<div class="notice notice-error" style="margin-top:0.5rem;font-size:0.78rem;">
-        Roster is <strong>${escHtml(roster.meta.factionName)}</strong> — select matching faction above.
-      </div>`;
-    }
-    const units = (roster.units || []).map(u =>
-      `<div style="font-size:0.77rem;color:var(--text-dim);padding:0.1rem 0;">
-        · ${escHtml(u.unitName)}${u.modelCount > 1 ? ` ×${u.modelCount}` : ''}</div>`
-    ).join('');
-    return `<div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.6rem;margin-top:0.5rem;">
-      <div style="font-size:0.82rem;color:var(--text);font-weight:600;margin-bottom:0.2rem;">${escHtml(roster.meta.name)}</div>
-      <div style="font-size:0.72rem;color:var(--gold-dim);margin-bottom:0.35rem;">${escHtml(roster.meta.factionName)} · ${roster.meta.pointsTotal}pts</div>
-      ${units}
-    </div>`;
+  async function fetchRosterList(factionId) {
+    const snap = await window.db.ref('exports/warhammer-40k').once('value');
+    const data = snap.val() || {};
+    return Object.keys(data)
+      .map(key => {
+        const entry = data[key] || {};
+        const meta  = entry.meta || {};
+        const units = entry.units;
+        const unitCount = Array.isArray(units) ? units.length : Object.keys(units || {}).length;
+        return {
+          // Firebase key, NOT meta.rosterId — KT-RS hit at least one export
+          // with no rosterId in its meta at all; keying off the tree's own
+          // key is always correct regardless.
+          rosterId:    key,
+          name:        meta.name || '(untitled roster)',
+          factionId:   meta.factionId || '',
+          factionName: meta.factionName || meta.factionId || 'Unknown faction',
+          pointsTotal: meta.pointsTotal,
+          unitCount,
+          publishedAt: meta.publishedAt || 0,
+        };
+      })
+      .filter(r => !factionId || r.factionId === factionId)
+      .sort((a, b) => b.publishedAt - a.publishedAt);
   }
 
+  async function loadRosterPicker(pickerElId, factionId, onSelect) {
+    const el = document.getElementById(pickerElId);
+    if (!el) return;
+    el.innerHTML = '<div class="roster-pick-sub" style="padding:8px 12px;">Loading rosters…</div>';
+    try {
+      const rosters = await fetchRosterList(factionId);
+      if (!document.getElementById(pickerElId)) return; // navigated away while loading
+      renderRosterPickerList(pickerElId, rosters, onSelect);
+    } catch (e) {
+      if (document.getElementById(pickerElId)) {
+        document.getElementById(pickerElId).innerHTML =
+          `<div class="notice notice-error" style="padding:8px 12px;">Could not load rosters: ${escHtml(e.message)}</div>`;
+      }
+    }
+  }
+
+  function renderRosterPickerList(pickerElId, rosters, onSelect) {
+    const el = document.getElementById(pickerElId);
+    if (!el) return;
+    if (!rosters.length) {
+      el.innerHTML = '<div class="roster-pick-sub" style="padding:8px 12px;">No published rosters found for this faction.</div>';
+      return;
+    }
+    el.innerHTML = rosters.map(r => `
+      <div class="roster-pick-row" data-roster-id="${escHtml(r.rosterId)}">
+        <div class="roster-pick-main"><span class="roster-pick-name">${escHtml(r.name)}</span></div>
+        <div class="roster-pick-sub">${escHtml(r.factionName)}${r.pointsTotal != null ? ' · ' + r.pointsTotal + 'pts' : ''} · ${r.unitCount} unit${r.unitCount === 1 ? '' : 's'}${r.publishedAt ? ' · ' + new Date(r.publishedAt).toLocaleDateString() : ''}</div>
+      </div>
+    `).join('');
+    el.querySelectorAll('.roster-pick-row').forEach(row => {
+      row.addEventListener('click', () => {
+        el.querySelectorAll('.roster-pick-row').forEach(r2 => r2.classList.remove('selected'));
+        row.classList.add('selected');
+        onSelect(row.dataset.rosterId);
+      });
+    });
+  }
+
+  // Trivial fallback: accepts either a bare Firebase push-key ID or a
+  // pasted roster URL and returns the trailing ID (brief: "if trivial").
+  // Firebase push keys never contain '/', so the last non-empty path
+  // segment (after stripping query/hash) is the ID either way.
+  function extractRosterIdFallback(raw) {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) return '';
+    const parts = trimmed.split('#')[0].split('?')[0].split('/').filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : trimmed;
+  }
+
+  // ---- Create flow ----
+
   function renderCreateForm(prefillRosterId) {
+    createRosterId = null;
+    devRosterId    = null;
     setContent(`
       <div class="form-group">
         <label class="form-label" for="player-name">Your Name</label>
@@ -61,17 +131,28 @@ window.Lobby = (() => {
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="roster-id">Roster ID</label>
-        <input class="form-input" id="roster-id" type="text" placeholder="Paste your Firebase roster ID..."
-          value="${escHtml(prefillRosterId || '')}" autocomplete="off" spellcheck="false" style="font-family:monospace;">
-        <div id="roster-preview"></div>
+        <label class="form-label">Roster</label>
+        <div id="roster-picker-create" class="roster-picker">
+          <div class="roster-pick-sub" style="padding:8px 12px;">Loading rosters…</div>
+        </div>
+        <div class="roster-picker-fallback">
+          Or paste a roster ID/URL directly:
+          <input class="form-input" id="roster-id-fallback-create" type="text"
+            placeholder="Roster ID or share URL..." value="${escHtml(prefillRosterId || '')}"
+            autocomplete="off" spellcheck="false" style="font-family:monospace;">
+        </div>
       </div>
 
       <div id="dev-roster-group" class="form-group" style="display:none;">
-        <label class="form-label" for="roster-id-dev">Opponent Roster ID (Dev)</label>
-        <input class="form-input" id="roster-id-dev" type="text" placeholder="Opponent faction roster ID..."
-          autocomplete="off" spellcheck="false" style="font-family:monospace;">
-        <div id="roster-preview-dev"></div>
+        <label class="form-label">Opponent Roster (Dev)</label>
+        <div id="roster-picker-dev" class="roster-picker">
+          <div class="roster-pick-sub" style="padding:8px 12px;">Loading rosters…</div>
+        </div>
+        <div class="roster-picker-fallback">
+          Or paste a roster ID/URL directly:
+          <input class="form-input" id="roster-id-fallback-dev" type="text"
+            placeholder="Opponent roster ID or share URL..." autocomplete="off" spellcheck="false" style="font-family:monospace;">
+        </div>
       </div>
 
       <div class="form-group">
@@ -97,8 +178,13 @@ window.Lobby = (() => {
         document.querySelectorAll('.faction-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         selectedFaction = card.dataset.faction;
-        // Re-validate roster preview on faction change
-        triggerRosterPreview('roster-id', 'roster-preview', () => selectedFaction);
+        createRosterId = null;
+        loadRosterPicker('roster-picker-create', window.RosterLoader.FACTION_MAP[selectedFaction], id => { createRosterId = id; });
+        if (document.getElementById('dev-mode-check')?.checked) {
+          devRosterId = null;
+          const otherFaction = selectedFaction === 'guard' ? 'eldar' : 'guard';
+          loadRosterPicker('roster-picker-dev', window.RosterLoader.FACTION_MAP[otherFaction], id => { devRosterId = id; });
+        }
       });
       card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') card.click(); });
     });
@@ -106,21 +192,16 @@ window.Lobby = (() => {
     document.getElementById('btn-create').addEventListener('click', handleCreate);
     document.getElementById('player-name').addEventListener('keydown', e => { if (e.key === 'Enter') handleCreate(); });
 
-    // Roster ID live preview
-    const rosterInput = document.getElementById('roster-id');
-    rosterInput.addEventListener('input', () =>
-      triggerRosterPreview('roster-id', 'roster-preview', () => selectedFaction)
-    );
-    if (rosterInput.value) triggerRosterPreview('roster-id', 'roster-preview', () => selectedFaction);
+    loadRosterPicker('roster-picker-create', window.RosterLoader.FACTION_MAP[selectedFaction], id => { createRosterId = id; });
 
     const devCheck = document.getElementById('dev-mode-check');
     devCheck.addEventListener('change', () => {
       const devGroup = document.getElementById('dev-roster-group');
       if (devGroup) devGroup.style.display = devCheck.checked ? '' : 'none';
-    });
-    document.getElementById('roster-id-dev').addEventListener('input', () => {
-      const otherFaction = selectedFaction === 'guard' ? 'eldar' : 'guard';
-      triggerRosterPreview('roster-id-dev', 'roster-preview-dev', () => otherFaction);
+      if (devCheck.checked && !devRosterId) {
+        const otherFaction = selectedFaction === 'guard' ? 'eldar' : 'guard';
+        loadRosterPicker('roster-picker-dev', window.RosterLoader.FACTION_MAP[otherFaction], id => { devRosterId = id; });
+      }
     });
 
     const SIZE_KEYS = ['combat-patrol', 'incursion', 'strike-force'];
@@ -139,14 +220,18 @@ window.Lobby = (() => {
   }
 
   async function handleCreate() {
-    const name     = document.getElementById('player-name').value.trim();
-    const rosterId = document.getElementById('roster-id').value.trim();
+    const name = document.getElementById('player-name').value.trim();
+    // Fallback paste input wins if filled (brief: pasted ID/URL stays a
+    // trivial fallback), otherwise use whatever the picker has selected.
+    const fallback = extractRosterIdFallback(document.getElementById('roster-id-fallback-create')?.value);
+    const rosterId = fallback || createRosterId;
     if (!name)     { document.getElementById('player-name').focus(); return; }
-    if (!rosterId) { showError('Paste your Roster ID to continue.'); return; }
+    if (!rosterId) { showError('Pick a roster to continue.'); return; }
 
-    const devMode    = document.getElementById('dev-mode-check').checked;
-    const devRosterId = devMode ? (document.getElementById('roster-id-dev').value.trim()) : null;
-    if (devMode && !devRosterId) { showError('Dev Mode requires an Opponent Roster ID.'); return; }
+    const devMode = document.getElementById('dev-mode-check').checked;
+    const devFallback = extractRosterIdFallback(document.getElementById('roster-id-fallback-dev')?.value);
+    const resolvedDevRosterId = devMode ? (devFallback || devRosterId) : null;
+    if (devMode && !resolvedDevRosterId) { showError('Dev Mode requires picking an Opponent Roster.'); return; }
 
     const SIZE_KEYS = ['combat-patrol', 'incursion', 'strike-force'];
     const gameSize  = SIZE_KEYS[+(document.getElementById('game-size').value)] || 'combat-patrol';
@@ -155,7 +240,7 @@ window.Lobby = (() => {
     btn.innerHTML = '<span class="spinner"></span> Creating...';
 
     try {
-      const { gameId, faction } = await window.GameState.createGame(name, selectedFaction, devMode, gameSize, rosterId, devRosterId);
+      const { gameId, faction } = await window.GameState.createGame(name, selectedFaction, devMode, gameSize, rosterId, resolvedDevRosterId);
       history.pushState(null, '', '?game=' + gameId);
 
       if (devMode) {
@@ -318,27 +403,32 @@ window.Lobby = (() => {
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="roster-id-join">Your Roster ID</label>
-        <input class="form-input" id="roster-id-join" type="text" placeholder="Paste your Firebase roster ID..."
-          autocomplete="off" spellcheck="false" style="font-family:monospace;">
-        <div id="roster-preview-join"></div>
+        <label class="form-label">Your Roster</label>
+        <div id="roster-picker-join" class="roster-picker">
+          <div class="roster-pick-sub" style="padding:8px 12px;">Loading rosters…</div>
+        </div>
+        <div class="roster-picker-fallback">
+          Or paste a roster ID/URL directly:
+          <input class="form-input" id="roster-id-fallback-join" type="text"
+            placeholder="Roster ID or share URL..." autocomplete="off" spellcheck="false" style="font-family:monospace;">
+        </div>
       </div>
 
       <button class="btn btn-primary btn-full" id="btn-join">Join Game</button>
     `);
 
-    document.getElementById('roster-id-join').addEventListener('input', () =>
-      triggerRosterPreview('roster-id-join', 'roster-preview-join', () => openFaction)
-    );
+    joinRosterId = null;
+    loadRosterPicker('roster-picker-join', window.RosterLoader.FACTION_MAP[openFaction], id => { joinRosterId = id; });
     document.getElementById('btn-join').addEventListener('click', () => handleJoin(gameId));
     document.getElementById('player-name').addEventListener('keydown', e => { if (e.key === 'Enter') handleJoin(gameId); });
   }
 
   async function handleJoin(gameId) {
     const name     = document.getElementById('player-name').value.trim();
-    const rosterId = document.getElementById('roster-id-join').value.trim();
+    const fallback = extractRosterIdFallback(document.getElementById('roster-id-fallback-join')?.value);
+    const rosterId = fallback || joinRosterId;
     if (!name)     { document.getElementById('player-name').focus(); return; }
-    if (!rosterId) { showError('Paste your Roster ID to continue.'); return; }
+    if (!rosterId) { showError('Pick a roster to continue.'); return; }
 
     const btn = document.getElementById('btn-join');
     btn.disabled = true;
@@ -355,30 +445,6 @@ window.Lobby = (() => {
   }
 
   // ---- Helpers ----
-
-  function triggerRosterPreview(inputId, previewId, getFaction) {
-    clearTimeout(previewDebounce);
-    const val = (document.getElementById(inputId) || {}).value || '';
-    const previewEl = document.getElementById(previewId);
-    if (!previewEl) return;
-    if (!val.trim()) { previewEl.innerHTML = ''; return; }
-    previewEl.innerHTML = '<div style="font-size:0.75rem;color:var(--text-dim);padding:0.3rem 0;">Loading roster…</div>';
-    previewDebounce = setTimeout(async () => {
-      const id = (document.getElementById(inputId) || {}).value.trim();
-      if (!id) { previewEl.innerHTML = ''; return; }
-      try {
-        const roster = await window.RosterLoader.fetchRoster(id);
-        if (document.getElementById(previewId)) {
-          document.getElementById(previewId).innerHTML = rosterPreviewHTML(roster, getFaction());
-        }
-      } catch (err) {
-        if (document.getElementById(previewId)) {
-          document.getElementById(previewId).innerHTML =
-            `<div class="notice notice-error" style="margin-top:0.5rem;font-size:0.78rem;">${escHtml(err.message)}</div>`;
-        }
-      }
-    }, 500);
-  }
 
   function setContent(html) {
     document.getElementById('lobby-content').innerHTML = html;

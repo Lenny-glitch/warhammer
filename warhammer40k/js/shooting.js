@@ -137,45 +137,61 @@ window.Shooting = (() => {
     return parseFloat(s) || 1;
   }
 
-  // All ranged weapons for a unit from gameData, or a single-item array from UNIT_STATS.
+  // All ranged weapons for a unit: resolved equipped loadout (40K-P3 —
+  // roster.js's chosenLoadout resolution, attached at buildUnitsFromRoster
+  // time) if present, else gameData's full datasheet (old exports without
+  // chosenLoadout — "behaves as today"), else UNIT_STATS (dev presets).
+  // `perModel` on each entry (true = fires per alive model, false = fires
+  // once for the whole squad) drives resolveAttacks/estimateAttacks' firing
+  // loop below — gameData/UNIT_STATS entries are tagged perModel:true to
+  // preserve their exact pre-40K-P3 behavior.
   function getAllRangedWeapons(unit) {
+    if (unit.equippedRanged) return unit.equippedRanged;
     const def = (unit.factionId && window.getRosterUnitDef)
       ? window.getRosterUnitDef(unit.factionId, unit.unitId) : null;
     if (def && def.weapons) {
       const ws = Object.values(def.weapons).filter(w => w.type === 'ranged');
-      if (ws.length) return ws.map(w => ({ name: w.name, range: w.range, attacks: w.attacks, bs: w.skill, strength: w.S, ap: w.AP, damage: w.D }));
+      if (ws.length) return ws.map(w => ({ name: w.name, range: w.range, attacks: w.attacks, bs: w.skill, strength: w.S, ap: w.AP, damage: w.D, perModel: true }));
     }
     const leg = ((window.UNIT_STATS || {})[unit.type] || {}).weapon;
-    return leg ? [leg] : [];
+    return leg ? [{ ...leg, perModel: true }] : [];
   }
 
-  // All melee weapons for a unit from gameData, or a single-item array from UNIT_STATS.
+  // All melee weapons for a unit — same source order as ranged, above.
   function getAllMeleeWeapons(unit) {
+    if (unit.equippedMelee) return unit.equippedMelee;
     const def = (unit.factionId && window.getRosterUnitDef)
       ? window.getRosterUnitDef(unit.factionId, unit.unitId) : null;
     if (def && def.weapons) {
       const ws = Object.values(def.weapons).filter(w => w.type === 'melee');
-      if (ws.length) return ws.map(w => ({ name: w.name, range: 0, attacks: w.attacks, ws: w.skill, strength: w.S, ap: w.AP, damage: w.D }));
+      if (ws.length) return ws.map(w => ({ name: w.name, range: 0, attacks: w.attacks, ws: w.skill, strength: w.S, ap: w.AP, damage: w.D, perModel: true }));
     }
     const leg = ((window.UNIT_STATS || {})[unit.type] || {}).meleeWeapon;
-    return leg ? [leg] : [{}];
+    return leg ? [{ ...leg, perModel: true }] : [{}];
   }
 
-  // First ranged weapon — used for LOS/range preview and legacy callers.
-  function getRangedWeapon(unit) {
-    return getAllRangedWeapons(unit)[0] || {};
+  // KL-1 retired: there's no per-model role data anywhere in the export
+  // (chosenLoadout is squad-level — nothing distinguishes "this specific
+  // model is the sergeant" from "this one's a trooper", see roster.js's
+  // resolveLoadout() comment), so the old fighter-index hack (index 0 =
+  // sergeant weapon, rest = basic weapon) is retired outright rather than
+  // replaced with a different guess. When a unit's resolved melee set has
+  // more than one weapon, every fighter uses whichever profile has the
+  // best Strength (ties broken by better AP) — there's no fight-time
+  // weapon-choice UI to defer to instead (brief's own allowed fallback).
+  function bestMeleeProfile(weapons) {
+    return weapons.reduce((best, w) => {
+      if (!best) return w;
+      if (w.strength !== best.strength) return w.strength > best.strength ? w : best;
+      return w.ap < best.ap ? w : best; // more negative AP wins
+    }, null);
   }
 
-  // Melee weapon for a specific fighter index.
-  // Fighter 0 (sergeant) gets the first weapon; all others get the last (basic) weapon.
-  function getMeleeWeaponForFighter(unit, fighterIndex) {
+  function getMeleeWeapon(unit) {
     const ws = getAllMeleeWeapons(unit);
     if (ws.length === 0) return {};
-    return fighterIndex === 0 ? ws[0] : ws[ws.length - 1];
+    return ws.length === 1 ? ws[0] : bestMeleeProfile(ws);
   }
-
-  // Legacy single-weapon accessor kept for callers that don't have a fighter index.
-  function getMeleeWeapon(unit) { return getMeleeWeaponForFighter(unit, 0); }
 
   // Target toughness, save, baseRadius — from gameData or UNIT_STATS fallback
   function getTargetProfile(unit) {
@@ -213,6 +229,27 @@ window.Shooting = (() => {
     return best;
   }
 
+  // 40K-P3 / KL-2 severity fix: which shooter models actually fire `w` this
+  // resolution. Fixed weapons (w.perModel !== false — "every X is equipped
+  // with...", or any pre-40K-P3 gameData/UNIT_STATS weapon) fire once per
+  // alive model that can reach/see the target, same as always. Chosen/
+  // replaced-slot weapons (w.perModel === false — e.g. the ONE Heavy
+  // Weapon Platform's gun in an 11-model Guardian Defenders squad) fire
+  // EXACTLY ONCE for the whole group, from whichever alive model can
+  // reach/see the target first — chosenLoadout is squad-level, so there's
+  // no way to know exactly which model carries it; this is the documented
+  // simplification, not a silent guess (see roster.js's tagWeapons()
+  // comment). Without this split, a squad-wide special weapon fired once
+  // PER MODEL instead of once per squad — the real severity of KL-2 for
+  // multi-model units, worse than the single-vehicle framing in the old
+  // Known Limitations note.
+  function firingInstances(w, shooterModels, targetModels, terrain) {
+    const weaponRange = w.range || 0;
+    const eligible = shooterModels.filter(sm => modelCanContribute(sm, targetModels, weaponRange, terrain) !== 'blocked');
+    if (w.perModel === false) return eligible.length ? [eligible[0]] : [];
+    return eligible;
+  }
+
   // Statistical estimate — no dice rolled. Used for display before Confirm.
   // Returns { attacks, hits, wounds, unsaved, models, hasCover }
   function estimateAttacks(shooterGroup, allUnits, targetGroupId, hasCover, terrain) {
@@ -228,32 +265,34 @@ window.Shooting = (() => {
 
     let totalAttacks = 0, expHits = 0, expWounds = 0, expUnsaved = 0, expModels = 0;
 
-    shooterModels.forEach(sm => {
-      getAllRangedWeapons(sm).forEach(w => {
-        const weaponRange = w.range    || 0;
-        if (modelCanContribute(sm, targetModels, weaponRange, terrain) === 'blocked') return;
-        const attacks  = avgCount(w.attacks  || 1);
-        const bs       = w.bs       || 4;
-        const strength = w.strength || 3;
-        const ap       = w.ap       || 0;
-        const damage   = avgCount(w.damage   || 1);
-        const wndThr   = woundThreshold(strength, toughness);
-        const modSave  = Math.max(2, Math.min(7, baseSave - ap - (hasCover ? 1 : 0)));
+    // Resolved per SQUAD (identical for every alive model in this
+    // unitGroup — see roster.js), so this only needs computing once.
+    const weapons = getAllRangedWeapons(shooterModels[0]);
 
-        const pHit      = Math.max(0, Math.min(1, (7 - bs)     / 6));
-        const pWound    = Math.max(0, Math.min(1, (7 - wndThr)  / 6));
-        const pFailSave = Math.min(1, (modSave - 1) / 6);
+    weapons.forEach(w => {
+      const firers = firingInstances(w, shooterModels, targetModels, terrain);
+      if (!firers.length) return;
+      const attacks  = avgCount(w.attacks  || 1) * firers.length;
+      const bs       = w.bs       || 4;
+      const strength = w.strength || 3;
+      const ap       = w.ap       || 0;
+      const damage   = avgCount(w.damage   || 1);
+      const wndThr   = woundThreshold(strength, toughness);
+      const modSave  = Math.max(2, Math.min(7, baseSave - ap - (hasCover ? 1 : 0)));
 
-        const hits    = attacks * pHit;
-        const wounds  = hits    * pWound;
-        const unsaved = wounds  * pFailSave;
+      const pHit      = Math.max(0, Math.min(1, (7 - bs)     / 6));
+      const pWound    = Math.max(0, Math.min(1, (7 - wndThr)  / 6));
+      const pFailSave = Math.min(1, (modSave - 1) / 6);
 
-        totalAttacks += attacks;
-        expHits      += hits;
-        expWounds    += wounds;
-        expUnsaved   += unsaved;
-        expModels    += unsaved / damage;
-      });
+      const hits    = attacks * pHit;
+      const wounds  = hits    * pWound;
+      const unsaved = wounds  * pFailSave;
+
+      totalAttacks += attacks;
+      expHits      += hits;
+      expWounds    += wounds;
+      expUnsaved   += unsaved;
+      expModels    += unsaved / damage;
     });
 
     return { attacks: totalAttacks, hits: expHits, wounds: expWounds, unsaved: expUnsaved, models: expModels, hasCover };
@@ -283,21 +322,25 @@ window.Shooting = (() => {
     const weaponTotals   = {};  // name → { name, attacks, hits, wounds, unsaved }
     let tIdx = 0;
 
-    shooterModels.forEach(sm => {
-      getAllRangedWeapons(sm).forEach(w => {
-        const weaponRange = w.range || 0;
-        if (modelCanContribute(sm, targetModels, weaponRange, terrain) === 'blocked') return;
-        const attacks  = resolveCount(w.attacks  || 1);
-        const bs       = w.bs       || 4;
-        const strength = w.strength || 3;
-        const ap       = w.ap       || 0;
-        const wndThr   = woundThreshold(strength, toughness);
-        const modSave  = Math.max(2, Math.min(7, baseSave - ap - (hasCover ? 1 : 0)));
+    // Resolved per SQUAD (identical for every alive model in this
+    // unitGroup — see roster.js), so this only needs computing once.
+    const weapons = getAllRangedWeapons(shooterModels[0]);
 
-        const wKey = w.name || 'Unknown';
-        if (!weaponTotals[wKey]) weaponTotals[wKey] = { name: wKey, attacks: 0, hits: 0, wounds: 0, unsaved: 0 };
+    weapons.forEach(w => {
+      const firers = firingInstances(w, shooterModels, targetModels, terrain);
+      if (!firers.length) return;
+      const bs       = w.bs       || 4;
+      const strength = w.strength || 3;
+      const ap       = w.ap       || 0;
+      const wndThr   = woundThreshold(strength, toughness);
+      const modSave  = Math.max(2, Math.min(7, baseSave - ap - (hasCover ? 1 : 0)));
+
+      const wKey = w.name || 'Unknown';
+      if (!weaponTotals[wKey]) weaponTotals[wKey] = { name: wKey, attacks: 0, hits: 0, wounds: 0, unsaved: 0 };
+
+      firers.forEach(sm => {
+        const attacks = resolveCount(w.attacks || 1);
         weaponTotals[wKey].attacks += attacks;
-
         totalAttacks += attacks;
         for (let a = 0; a < attacks; a++) {
           const roll = { modelId: sm.id, bs, wndThr, modSave };
@@ -382,8 +425,8 @@ window.Shooting = (() => {
     const baseSave   = tgtProfile.save;
 
     let totalAttacks=0, expHits=0, expWounds=0, expUnsaved=0, expModels=0;
-    fighters.forEach((f, fIdx) => {
-      const mw       = getMeleeWeaponForFighter(f, fIdx);
+    fighters.forEach(f => {
+      const mw       = getMeleeWeapon(f);
       const attacks  = avgCount(mw.attacks  || 1);
       const ws       = mw.ws       || 4;
       const strength = mw.strength || 3;
@@ -426,8 +469,8 @@ window.Shooting = (() => {
     const rolls      = [];
     let tIdx = 0;
 
-    fighters.forEach((f, fIdx) => {
-      const mw       = getMeleeWeaponForFighter(f, fIdx);
+    fighters.forEach(f => {
+      const mw       = getMeleeWeapon(f);
       const attacks  = resolveCount(mw.attacks  || 1);
       const ws       = mw.ws       || 4;
       const strength = mw.strength || 3;

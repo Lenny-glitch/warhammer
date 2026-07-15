@@ -96,6 +96,28 @@ body {
 }
 .form-input:focus { border-color: var(--gold-dim); }
 
+/* ---- Roster picker (40K-P3, ported from killteam's KT-RS pattern) ---- */
+.roster-picker {
+  max-height: 280px; overflow-y: auto; border: 1px solid var(--border);
+  border-radius: 3px; background: var(--bg-card);
+}
+.roster-pick-row {
+  padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+}
+.roster-pick-row:last-child { border-bottom: none; }
+.roster-pick-row:hover { background: var(--bg-card-hover); }
+.roster-pick-row.selected { background: rgba(201,168,76,0.12); border-left-color: var(--gold); }
+.roster-pick-main { display: flex; align-items: center; gap: 6px; }
+.roster-pick-name { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+.roster-pick-sub { font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
+.roster-picker-fallback {
+  margin-top: 0.5rem; font-size: 0.72rem; color: var(--text-dim);
+}
+.roster-picker-fallback input {
+  margin-top: 0.3rem;
+}
+
 /* ---- Faction cards ---- */
 .faction-select-label {
   display: block;
