@@ -1067,3 +1067,170 @@ cross-table lookup machinery that would actually close them.
 nobody until it's actually live — Nox pushes and **redeploys Firebase
 Hosting** (manual, not automatic on push).
 
+## ROSTER-VAL — live composition validation + faction data audit (2026-07-14)
+
+Brief: `briefs/ROSTER_VALIDATION_BRIEF.md`. Verify-first turned up that
+most of what the brief asks to build already exists — the actual gap was
+narrower and further upstream than the brief assumed.
+
+### Phase 0 — what's actually there
+
+**Item 1: `_checkLegality`'s shape.** Already fully built, not a
+placeholder — `RosterBuilder._checkLegality()`/`_checkMaxed()` consume
+`{ totalOperatives: {min,max}, rules: [{type:'required'|'max'|'unique',
+unitRole, count, description, excludeRoles}] }` and were already wired
+into save (`meta.isLegal`), publish-blocking, and a live status banner
+(`_updateLegalityBanner` → `#rb-legality`, LEGAL green / red bulleted
+violation list / gray "Not validated" — **exactly item 2's ask, already
+shipped**, presumably from the LEGAL-badge fix the brief itself
+references). `_checkMaxed` even pre-emptively disables a unit's +Add
+button once a rule would be violated by adding it, rather than only
+flagging after the fact. None of this needed building — verified by
+reading the code, then confirmed live (see Testing below).
+
+The brief's own proposed rules vocabulary (`{maxOps, leader:{required,
+names}, limits:[{name/match,max}]}`) does **not** match what's already
+implemented (`unitRole`-keyed `rules[]`, above) — implemented against the
+real, already-wired shape rather than redesigning working machinery to
+match a brief written before this session confirmed what existed.
+
+**Item 2: AM mystery.** Already resolved and reported in CAT-AUDIT's
+session (same day): `gameData/kill-team/factions/astra-militarum` is
+leftover manual/test data (wrong schema — no weapons array, `MOVE`/`SAVE`
+keys instead of `Move`/`Save`, a Firebase push-id typical of hand-entry),
+not a parsed catalogue. Reused that finding here rather than
+re-investigating. Real remedy applied this session (see "FactionPicker
+filter" below) — the underlying stray Firebase node itself is left
+alone, a live delete is Nox's call.
+
+### What was actually missing: composition data never reached the app, three bugs deep
+
+Rules-*checking* existed and worked; rules-*data* never once reached it.
+Traced the whole pipeline→Firebase→roster chain for `compositionRules`
+and found three independent, compounding bugs, each masking the next:
+
+1. **`extractComposition()`'s per-model-limit role names were never
+   role-stripped.** `parse-kt.js` used the selectionEntry's raw BSData
+   name ("Shas'Ui Pathfinder") instead of running it through the same
+   `deriveRole()` every operative's own `.role` field already goes
+   through ("Shas'Ui") — so even if this data had reached the app, every
+   single per-role max rule would have silently matched zero operatives
+   forever (`op.role === r.unitRole` never true). Also only scanned
+   `catalogue.selectionEntries`, missing `sharedSelectionEntries` — the
+   exact selectionEntries-vs-shared split CAT-AUDIT's session found for
+   weapon extraction, same fix applied here.
+2. **`upload.js` read a field that has never existed.** `data
+   .compositionRules` — the parser's faction object calls this field
+   `composition` (see `parseCat`'s return), not `compositionRules`. This
+   line has silently evaluated to `null` since the day it was written,
+   for every faction, regardless of what the parser actually derived.
+3. **Even fixed, it would have written to the wrong path.** `upload.js`
+   wrote to a `composition` key sibling to `info`; `RosterBuilder._load()`
+   reads `info.compositionRules` (nested inside `info`). Two independent,
+   unrelated bugs stacked on the same feature — neither alone would have
+   been enough to fix it.
+
+Fixed all three. Also added: BSData's own "Leader" categoryLink is
+filtered out of `keywords` by `SKIP_KEYWORDS` (correctly — it's
+structural, not a game rule keyword) but was never captured anywhere
+else either, so no automatic "requires a leader" rule could exist.
+`parseCat`'s main loop now separately tracks which derived role(s) carry
+it (`leaderRoles`), and `extractComposition` turns that into a
+`{type:'required', unitRoles:[...], count:1}` rule — `unitRoles` (plural,
+array) is new, since real teams sometimes have more than one Leader-
+eligible role (Legionaries: Aspiring Champion OR Chosen) and the existing
+`unitRole` (singular) rule-matching had no OR-semantics.
+`_checkLegality`'s required-rule check extended to accept either
+(`unitRole` still works unchanged for the common single-role case).
+
+### Author starter rules — mechanically derived, not hand-authored
+
+**Diverges from the brief's explicit "through the [Maintenance-gated]
+tooling (not hand-JSON in Firebase)" instruction — flagging deliberately,
+not skipping it.** Once the three bugs above were fixed, `totalOperatives`
+and per-role max limits turned out to be **fully, mechanically derivable
+from BSData** for real KT teams — nothing needed hand-typing or guessing
+against a physical card. Building a new roster-side rules-editing UI
+would mean a second way to write into `gameData/kill-team/factions/*/
+info` that bypasses the pipeline — directly against this repo's own
+standing rule ("No hand-edits to `gameData/` in Firebase, ever.
+Corrections go in `data-pipeline/parsers/patches.json`, applied at parse
+time"). Authored through the pipeline instead — the sanctioned mechanism
+for exactly this — and re-ran `upload.js --only=<the 5 slugs>` (scoped
+deliberately; the other 42 factions could get the same derived data for
+free, but the brief asks for the 5 Nox actually plays this pass, so the
+rest stay `null`/gray, unchanged, until a future session/decision).
+**Nothing here was guessed** — every number is read straight from
+BSData's own force-composition constraints, verified against known real
+2024 team sizes while checking the output (Legionaries 5, Kommandos 9,
+Kasrkin 9, Pathfinders 11, Vespid Stingwings 10 — all correct). If Nox
+wants a future roster-side override UI for faction-specific quirks the
+mechanical derivation can't capture, that's a reasonable follow-up, but
+it's a new brief, not silently smuggled into this one.
+
+Derived rules for the 5 factions, live in Firebase
+(`gameData/kill-team/factions/{slug}/info.compositionRules`):
+- **Legionaries**: 5 operatives exactly; leader = Aspiring Champion OR
+  Chosen; no per-role max limits in source.
+- **Kommandos**: 9 operatives exactly; leader = Boss Nob; no per-role max.
+- **Kasrkin**: 9 operatives exactly; leader = Sergeant; 11 named
+  specialist roles each capped at 1.
+- **Pathfinders**: 11 operatives exactly; leader = Shas'Ui; 14 roles
+  capped (13 at 1, Weapons Expert at 2 — a real, correct asymmetry, not a
+  typo).
+- **Vespid Stingwings**: 10 operatives exactly; leader = Vespid Strain
+  Leader; no per-role max.
+
+### FactionPicker filter (AM remedy, applied)
+
+`FactionPicker.render`'s faction list was `.filter(f => f.count > 0)` —
+`astra-militarum`'s one stray unit passed that trivially, exactly
+matching Nox's playtest-3 report. CAT-AUDIT's full 47-faction sweep
+already confirmed zero genuine parsed factions fall below 4 units, so
+`.filter(f => f.count >= 4)` hides only the identified stray entry, not
+any real sub-team. Reversible, UI-only — the underlying Firebase node is
+untouched, so this isn't a substitute for Nox deciding whether to
+actually delete it.
+
+### Testing
+
+Real headless Chromium via `roster/.playwright-libs` (same pattern
+established elsewhere in this monorepo), served from the monorepo root
+(`/roster/index.html`) against **live Firebase data**, no fixture needed
+(read-heavy + the one save/publish path was exercised without actually
+publishing). 14 checks, 0 console errors:
+
+- Empty Kommandos roster: red banner reads "Need 9 operatives — have 0" +
+  "Requires a Leader", Publish disabled.
+- 3 non-leader operatives added: still red, still both violations named
+  (with the live count updating: "have 3").
+- Filled to exactly 9 including Boss Nob: banner flips to green "Roster
+  is legal", Publish enables.
+- A 10th unit's +Add button is pre-disabled ("Only 0 slots remaining")
+  once at the max — `_checkMaxed` prevents going over, not just flags it
+  after — confirmed directly rather than assumed from reading the code.
+- Chaos Cult (no compositionRules uploaded this pass, deliberately):
+  gray "Not validated — no composition rules for this faction yet",
+  Publish NOT blocked (null ≠ false, per the existing AMENDMENT 1
+  behavior this session didn't touch).
+- FactionPicker faction list confirmed NOT to include "Astra Militarum"
+  post-fix, all real factions still present.
+
+This is the brief's own "Done when" acceptance test, run for real: a
+deliberately illegal Kommandos roster names every problem, gets fixed,
+strip goes green.
+
+### Not done this pass
+
+40k compositionRules — brief explicitly says none this pass ("gray 'not
+validated' is correct there until Part 3-era work defines what legal
+even means for it"), untouched. The other 42 KT factions' compositionRules
+— mechanically derivable via the same pipeline path, deliberately not
+uploaded yet (see "Author starter rules" above). A roster-side
+compositionRules review/override UI, if wanted later.
+
+Files: `data-pipeline/parsers/parse-kt.js` (`parseCat`'s main loop,
+`extractComposition`), `data-pipeline/parsers/upload.js`
+(`uploadKtFaction`), `roster/index.html` (`_checkLegality`,
+`FactionPicker.render`).
+

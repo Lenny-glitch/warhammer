@@ -494,7 +494,7 @@ function extractKeywords(modelEntry) {
 
 // ── Composition rules ──────────────────────────────────────────────────────────
 
-function extractComposition(catalogue) {
+function extractComposition(catalogue, catName, leaderRoles) {
   const force = asArray(catalogue.forceEntries?.forceEntry)[0];
   if (!force) return null;
 
@@ -513,20 +513,50 @@ function extractComposition(catalogue) {
   const forceId = attrStr(force, '@_id');
   const perModel = [];
 
-  for (const entry of asArray(catalogue.selectionEntries?.selectionEntry)) {
-    if (attrStr(entry, '@_type') !== 'model') continue;
+  // ROSTER-VAL: was `catalogue.selectionEntries` only — the same
+  // selectionEntries-vs-sharedSelectionEntries split CAT-AUDIT found for
+  // weapon extraction applies here too, so this now walks the identical
+  // set the main operative loop does (allModelEntries).
+  const modelEntries = [
+    ...asArray(catalogue.selectionEntries?.selectionEntry),
+    ...asArray(catalogue.sharedSelectionEntries?.selectionEntry),
+  ].filter(e => attrStr(e, '@_type') === 'model');
+
+  for (const entry of modelEntries) {
     for (const c of asArray(entry.constraints?.constraint)) {
       if (attrStr(c, '@_scope') !== forceId) continue;
       const val = Number(attrStr(c, '@_value'));
       if (attrStr(c, '@_type') === 'max') {
-        perModel.push({ role: attrStr(entry, '@_name'), max: val });
+        // ROSTER-VAL: was the raw un-stripped selectionEntry name (e.g.
+        // "Shas'Ui Pathfinder") — every operative's own `role` field is
+        // the deriveRole()-stripped form ("Shas'Ui"), so this never
+        // matched anything once it reached _checkLegality's `op.role ===
+        // r.unitRole` check. Same transform, same call, as the main loop.
+        perModel.push({ role: deriveRole(attrStr(entry, '@_name'), catName), max: val });
       }
     }
+  }
+
+  // ROSTER-VAL: roster's _checkLegality() consumes {totalOperatives,
+  // rules:[{type,unitRole|unitRoles,count,description}]} — built here so
+  // upload.js can write compositionRules straight through with no
+  // reshaping. perModelLimits stays alongside for inspection/debugging;
+  // `rules` is the one actually meant for roster to read.
+  const rules = perModel.map(p => ({
+    type: 'max', unitRole: p.role, count: p.max,
+    description: `Max ${p.max} ${p.role}`,
+  }));
+  if (leaderRoles && leaderRoles.length) {
+    rules.push({
+      type: 'required', unitRoles: [...new Set(leaderRoles)], count: 1,
+      description: 'Requires a Leader',
+    });
   }
 
   return {
     totalOperatives: { min: totalMin, max: totalMax },
     perModelLimits:  perModel,
+    rules,
   };
 }
 
@@ -547,6 +577,11 @@ function parseCat(cat, glossary, crossGlossary, globalById) {
   const { sharedProfiles } = buildSharedMaps(cat);
   const operatives = [];
   const warnings  = [];
+  // ROSTER-VAL: which derived roles carry BSData's own "Leader" categoryLink
+  // — collected here (where `role` is already computed) rather than
+  // re-deriving it inside extractComposition, so there's exactly one
+  // source of truth for "operative name -> role" in this file.
+  const leaderRoles = [];
 
   // Operatives may be in selectionEntries OR sharedSelectionEntries depending on faction
   const allModelEntries = [
@@ -568,6 +603,15 @@ function parseCat(cat, glossary, crossGlossary, globalById) {
 
     const role = deriveRole(name, catName);
 
+    // ROSTER-VAL: "Leader" is filtered out of `keywords` by SKIP_KEYWORDS
+    // (it's a structural BSData category, not a game keyword) — this
+    // reads the same categoryLinks in parallel to keep that filter
+    // untouched while still surfacing which role(s) can lead, for
+    // composition-rule derivation below.
+    const isLeader = asArray(entry.categoryLinks?.categoryLink)
+      .some(cl => attrStr(cl, '@_name') === 'Leader');
+    if (isLeader) leaderRoles.push(role);
+
     operatives.push({
       id:        slugify(role),
       name,
@@ -579,7 +623,7 @@ function parseCat(cat, glossary, crossGlossary, globalById) {
     });
   }
 
-  const composition = extractComposition(cat);
+  const composition = extractComposition(cat, catName, leaderRoles);
 
   if (warnings.length) {
     console.log(`  warnings: ${warnings.join('; ')}`);

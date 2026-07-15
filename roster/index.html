@@ -2508,7 +2508,22 @@
             name:  faction.info?.name || fid,
             count: Object.keys(faction.units || {}).length,
           }))
-          .filter(f => f.count > 0)
+          // ROSTER-VAL: was `f.count > 0` — the "AM mystery" from playtest 3
+          // (a faction showing exactly ONE unit). CAT-AUDIT traced it:
+          // `astra-militarum` isn't a slug the KT pipeline has ever
+          // produced (not in parse-kt.js's FACTION_SLUG, no matching
+          // catalogue) and its one unit's shape doesn't match the
+          // pipeline's schema at all (no weapons array, wrong stat-key
+          // casing, a Firebase push-id typical of hand-entry) — leftover
+          // manual/test data, not a broken real catalogue. Real Astra
+          // Militarum content already exists correctly split across
+          // Kasrkin/Death Korps/Tempestus Aquilons/Ratlings/Inquisitorial
+          // Agents (all present, all >= 4 units). CAT-AUDIT's full 47-
+          // faction sweep confirmed zero genuine parsed factions fall
+          // below 4 units, so this threshold hides only the stray entry —
+          // not a real sub-team. The underlying Firebase node is left
+          // alone (a live delete is Nox's call, not made here).
+          .filter(f => f.count >= 4)
           .sort((a, b) => a.name.localeCompare(b.name));
 
         if (!factions.length) {
@@ -3455,10 +3470,16 @@
       }
 
       // 2. Required roles present
+      // ROSTER-VAL: `unitRoles` (array) is an OR-match, for a rule
+      // satisfied by any one of several roles — real teams sometimes
+      // have more than one Leader-eligible operative (e.g. Legionaries:
+      // Aspiring Champion OR Chosen). `unitRole` (single string) still
+      // works unchanged for the common single-role case.
       (rules.rules || []).filter(r => r.type === 'required').forEach(r => {
-        const count = ops.filter(op => op.role === r.unitRole).length;
+        const roleSet = r.unitRoles || (r.unitRole ? [r.unitRole] : []);
+        const count = ops.filter(op => roleSet.includes(op.role)).length;
         if (count < r.count) {
-          violations.push(r.description || `Requires ${r.count} ${r.unitRole}`);
+          violations.push(r.description || `Requires ${r.count} ${roleSet.join(' or ')}`);
         }
       });
 

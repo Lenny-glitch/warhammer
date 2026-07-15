@@ -131,9 +131,18 @@ async function uploadKtFaction(dbUrl, file) {
   }
 
   // Build the full faction payload
+  // ROSTER-VAL: this read `data.compositionRules` — a field that has
+  // never existed on the parser's faction object (it's called
+  // `composition`, see parse-kt.js's parseCat return) — so composition
+  // data has never once reached Firebase, always writing `composition:
+  // null` regardless of what the parser derived. Second bug in the same
+  // chain: roster/index.html's RosterBuilder._load() reads
+  // `info.compositionRules` (nested inside `info`), not a sibling
+  // `composition` key — writing to the sibling key alone would still
+  // never have been seen by the app that consumes it. Fixed both: read
+  // the right field, write it where roster actually looks.
   const payload = {
-    info: { id: slug, name: data.name, system: 'kill-team' },
-    composition: data.compositionRules || null,
+    info: { id: slug, name: data.name, system: 'kill-team', compositionRules: data.composition || null },
     units: {},
   };
   for (const op of (data.operatives || [])) {
