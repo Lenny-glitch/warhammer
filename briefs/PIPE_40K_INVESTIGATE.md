@@ -1,4 +1,5 @@
 # PIPE-INV — 40k Faction Expansion + Psychic Content Audit
+# CLAIMED: 2026-07-14
 
 ## Orientation
 Monorepo, data-pipeline/. Claim first. INVESTIGATION ONLY —
