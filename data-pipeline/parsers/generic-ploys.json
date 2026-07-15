@@ -1,0 +1,122 @@
+[
+  {
+    "id": "ploy-steady-aim",
+    "name": "Steady Aim",
+    "description": "Spend 1CP: +1 to hit for this activation's attacks.",
+    "system": "kill-team",
+    "faction": null,
+    "source": "ploy",
+    "activation": "active",
+    "cost": { "type": "cp", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "onAttack",
+    "duration": "untilEndOfActivation",
+    "scope": { "target": "self", "range": null, "filter": [] },
+    "effects": [
+      { "type": "mod", "stat": "hit", "op": "improve", "value": 1 }
+    ]
+  },
+  {
+    "id": "ploy-second-chance",
+    "name": "Second Chance",
+    "description": "Spend 1CP: reroll one failed attack die this activation.",
+    "system": "kill-team",
+    "faction": null,
+    "source": "ploy",
+    "activation": "active",
+    "cost": { "type": "cp", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "onAttack",
+    "duration": "untilEndOfActivation",
+    "scope": { "target": "self", "range": null, "filter": [] },
+    "effects": [
+      { "type": "mod", "stat": "rerollOne", "op": "add", "value": 1 }
+    ]
+  },
+  {
+    "id": "ploy-adrenaline-surge",
+    "name": "Adrenaline Surge",
+    "description": "Spend 2CP: +1 APL this activation. Once per Turning Point.",
+    "system": "kill-team",
+    "faction": null,
+    "source": "ploy",
+    "activation": "active",
+    "cost": { "type": "cp", "amount": 2 },
+    "usage": "oncePerRound",
+    "trigger": "always",
+    "duration": "untilEndOfActivation",
+    "scope": { "target": "self", "range": null, "filter": [] },
+    "effects": [
+      { "type": "mod", "stat": "apl", "op": "add", "value": 1 }
+    ]
+  },
+  {
+    "id": "ploy-grit-through-it",
+    "name": "Grit Through It",
+    "description": "Spend 1CP: ignore this activation's Injured penalty to hit.",
+    "system": "kill-team",
+    "faction": null,
+    "source": "ploy",
+    "activation": "active",
+    "cost": { "type": "cp", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "always",
+    "duration": "untilEndOfActivation",
+    "scope": { "target": "self", "range": null, "filter": [] },
+    "effects": [
+      { "type": "mod", "stat": "hit", "op": "add", "value": -1 }
+    ]
+  },
+  {
+    "id": "ploy-brutal-efficiency",
+    "name": "Brutal Efficiency",
+    "description": "Spend 2CP: reroll all failed attack dice this activation. Once per Turning Point.",
+    "system": "kill-team",
+    "faction": null,
+    "source": "ploy",
+    "activation": "active",
+    "cost": { "type": "cp", "amount": 2 },
+    "usage": "oncePerRound",
+    "trigger": "onAttack",
+    "duration": "untilEndOfActivation",
+    "scope": { "target": "self", "range": null, "filter": [] },
+    "effects": [
+      { "type": "mod", "stat": "rerollAll", "op": "add", "value": 1 }
+    ]
+  },
+  {
+    "id": "ploy-focused-strike",
+    "name": "Focused Strike",
+    "description": "Spend 2CP: +1 normal damage and +1 crit damage on this activation's attacks.",
+    "system": "kill-team",
+    "faction": null,
+    "source": "ploy",
+    "activation": "active",
+    "cost": { "type": "cp", "amount": 2 },
+    "usage": "unlimited",
+    "trigger": "onAttack",
+    "duration": "untilEndOfActivation",
+    "scope": { "target": "self", "range": null, "filter": [] },
+    "effects": [
+      { "type": "mod", "stat": "dmgNormal", "op": "add", "value": 1 },
+      { "type": "mod", "stat": "dmgCrit", "op": "add", "value": 1 }
+    ]
+  },
+  {
+    "id": "ploy-hold-fast",
+    "name": "Hold Fast",
+    "description": "Spend 1CP: +1 to this defence save.",
+    "system": "kill-team",
+    "faction": null,
+    "source": "ploy",
+    "activation": "active",
+    "cost": { "type": "cp", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "onShoot",
+    "duration": "instant",
+    "scope": { "target": "self", "range": null, "filter": [] },
+    "effects": [
+      { "type": "mod", "stat": "save", "op": "improve", "value": 1 }
+    ]
+  }
+]

@@ -13,10 +13,17 @@
 const fs = require('fs');
 const path = require('path');
 const { loadPatches } = require('./apply-patches');
+const BonusResolver = require('../../shared/bonus-resolver.js');
 
 const OUT_DIR = path.join(__dirname, '../output');
 const UNMAPPED_PATH = path.join(OUT_DIR, '_unmapped_keywords.txt');
 const MAPPING_REVIEW_PATH = path.join(OUT_DIR, 'mapping-review.txt');
+// BON-3: hand-authored, faction-agnostic ploys — not derived from any
+// weapon keyword, so they don't go through processFile()'s per-faction
+// walk. Same review/correct philosophy as the keyword mapping tables:
+// a plain, reviewable data file, not hand-JSON dropped straight into
+// Firebase (pipeline stays the only writer to gameData).
+const GENERIC_PLOYS_PATH = path.join(__dirname, 'generic-ploys.json');
 
 function parseParam(raw) {
   const m = raw.match(/(\d+)/);
@@ -634,6 +641,22 @@ function main() {
     for (const [key, b] of catalog) fullCatalog.set(key, b);
   }
 
+  // BON-3: merge in the generic ploy catalog, validated the same way any
+  // hand-authored bonus should be before it reaches Firebase.
+  let ployCount = 0;
+  if (fs.existsSync(GENERIC_PLOYS_PATH)) {
+    const ploys = JSON.parse(fs.readFileSync(GENERIC_PLOYS_PATH, 'utf8'));
+    for (const ploy of ploys) {
+      const { valid, errors } = BonusResolver.validateBonus(ploy);
+      if (!valid) {
+        console.error(`  INVALID ploy "${ploy.id}": ${errors.join('; ')}`);
+        process.exit(1);
+      }
+      fullCatalog.set(ploy.id, ploy);
+      ployCount++;
+    }
+  }
+
   fs.writeFileSync(path.join(OUT_DIR, 'bonuses-catalog.json'), JSON.stringify([...fullCatalog.values()], null, 2) + '\n');
   writeMappingReview(fullCatalog);
 
@@ -672,6 +695,7 @@ function main() {
   console.log(`Mapped: ${mappedInstances}`);
   console.log(`Unmapped: ${totalUnmappedInstances} (${Object.keys(totals.unmapped).length} distinct rules)`);
   console.log(`Unresolved raw strings: ${totalUnresolved}`);
+  console.log(`Generic ploys merged: ${ployCount} (all validated)`);
   console.log(`Catalog entries (deduped bonus definitions): ${fullCatalog.size}`);
   console.log(`Report written: ${UNMAPPED_PATH}`);
   console.log(`Catalog written: ${path.join(OUT_DIR, 'bonuses-catalog.json')}`);

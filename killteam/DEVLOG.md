@@ -2114,3 +2114,153 @@ test, per the brief's own "Done when." In particular the Heavy-vs-brief
 divergence (plain Heavy also blocking Dash, not just Reposition/Fall
 Back) is worth a deliberate look at the table — it's the one place this
 session's fix and the brief's own stated ruling disagree.
+
+## 2026-07-15 — BON-3: CP economy, generic ploys, condition tokens
+
+Brief: `briefs/BON3_CP_PLOYS_BRIEF.md` — the brother's #1 request. Turns
+on active-bonus machinery that shipped inert since BON-1 (CP/AP cost
+types, usage limits, condition effects — all schema-validated, none
+enforced).
+
+**Item 1 — CP economy + generic ploy catalog.** 7 universal ploys
+authored in `data-pipeline/parsers/generic-ploys.json` (new — reviewable
+data file, same philosophy as the keyword mapping tables, not hand-JSON
+in Firebase): Steady Aim (+1 hit, 1CP), Second Chance (reroll one die,
+1CP), Adrenaline Surge (+1 APL, 2CP, oncePerRound), Grit Through It
+(cancel Injured penalty, 1CP), Brutal Efficiency (reroll all, 2CP,
+oncePerRound), Focused Strike (+1 normal/+1 crit dmg, 2CP), Hold Fast
+(+1 defence save, 1CP, defender-reactive). `compile-keywords.js` merges
+them into the catalog, validated against `BonusResolver.validateBonus`
+before ever reaching `bonuses-catalog.json` (first time this pipeline
+validates hand-authored bonuses programmatically instead of by
+convention). All 6 non-Hold-Fast ploys activate from a new panel on the
+activation bar, before choosing Move/Shoot/Fight — declared ploys join
+`activation.activePloys`, concatenated with the weapon's own bonuses in
+`rollShot`/`confirmFightTarget` right where `getWeaponBonuses` already
+runs, so they flow through the exact same `eligibleBonuses`/
+`resolveStats` pipeline weapon keywords do. Hold Fast is the one
+exception — defender-reactive, offered during Shoot's existing cover-
+choice moment (`pendingShot.defenderPloys`, written by the defender's
+own client, read by the attacker's `rollShot` the same way `useCover`
+already crosses clients).
+
+One real exception, flagged rather than forced into the generic
+pipeline: Adrenaline Surge's +1 APL is a direct engine action
+(`activation.apRemaining += 1`), not a resolved stat — APL isn't part of
+any profile object `resolveStats` touches (weapon attack/defense
+profiles are; the operative's own AP pool isn't), matching the schema
+doc's own note that AP effects are engine-applied, not resolver-applied.
+
+CP spend + usage tracking: `turn/cp/{player}` (existing, KT-1) now
+actually decrements. New `ploysUsedThisGame/{player}` (never resets) and
+`turn/ploysUsedThisRound/{player}` (reset alongside the CP award in
+`startStrategyPhase`, same cadence) feed `BonusResolver.eligibleBonuses`'
+existing oncePerGame/oncePerRound gating — no new gating logic, reused
+the same mechanism weapon bonuses were already tested against.
+
+**Real bug found and fixed while wiring this up:** every ploy failed
+eligibility unconditionally at first — `scope.range: null` in the
+authored JSON becomes `undefined` once round-tripped through Firebase
+(Firebase drops null values on write), and `eligibleBonuses`' range
+check is `if (bonus.scope.range !== null)` — `undefined !== null` is
+true, so it fails closed on missing `context.positions`. This is the
+exact landmine `buildBonusContext`'s own existing comment already warns
+about for weapon bonuses; ploy-eligibility checks didn't supply
+`positions` at all. Fixed by always passing dummy positions in
+`canActivatePloy`'s context, same as `buildBonusContext` already does.
+
+**Second real bug, found via the test harness's own stricter
+`clickToken`:** `activatePloy`/`confirmMarkerlight` are async and spend
+CP via a Firebase round-trip before mutating `activation` — if
+`activation` gets reassigned or nulled while that write is in flight
+(cancelActivation/endActivation firing on a slow connection, or this
+session's own test harness switching scenarios mid-write), the resumed
+function crashed trying to mutate a variable that no longer pointed at
+a live activation. Fixed by capturing the activation object before the
+`await` and re-checking identity (`activation !== startedActivation`)
+after — bails cleanly instead of crashing if it's stale.
+
+**Item 3 — condition tokens.** Generic per-operative state,
+`operatives/{id}/conditions/{name}/stacks`, capped per `CONDITION_CAPS`
+(stunned:1, markerlight:4) and displayed as sidebar badges
+(`renderConditionBadges`, reusing the existing `.op-tag` pattern).
+`conditionUpdatesFor()` turns a resolved `conditions` array (already
+computed by `resolveStats`, previously badge-only per the BON-2b comment
+directly above where it's called) into real state, wired into both
+`confirmShotDamage` and `confirmFightDamage`.
+
+- **Stun**: already correctly compiled since BON-1c
+  (`condition:"stunned", when:"critScored"`) but never applied.
+  Consumption (-1 APL) happens once, at the START of the stunned
+  operative's next activation, then clears (`consumeStunForActivation`,
+  called from `activateOperative`) — matches the real rule's "until this
+  operative is activated" duration, which isn't one of the engine's
+  existing instant/untilEndOfActivation/untilEndOfRound/game buckets
+  (it's recipient-activation-scoped, not a fixed clock), so it's handled
+  explicitly rather than stretching the duration vocabulary for one
+  condition.
+- **Markerlight**: no compiled bonus source exists for this at all —
+  verify-first turned up that "Markerlight" is a shared BSData force-
+  level rule referenced via an `infoLink` the parser's operative-building
+  loop never follows (not a per-operative field like `keywords`), and
+  real RAW restricts WHICH Pathfinder operatives can apply it (only
+  datacard-flagged ones; every Pathfinder can *benefit* from tokens but
+  not every one can *apply* them) — a distinction this pipeline doesn't
+  capture today. Rather than ship the condition-token system with a
+  real-catalogue condition that nothing could ever trigger, added a new
+  Markerlight action (`startMarkerlight`/`confirmMarkerlight`, same
+  click-and-drag-to-target pattern as Fight, no dice, no control-range
+  limit — LOS-only) — deliberately simplified to "any tau-pathfinders
+  operative can use it," flagged clearly as a gap (not a guess: the
+  benefit-vs-apply distinction is real, just not parser-visible yet).
+  Tightening eligibility to the real subset is parser work for a future
+  session, not an engine change.
+
+Also added: `markerlightState` is a 5th mid-action drag state alongside
+`dragState`/`shootState`/`fightState` — added to `cancelActivation`'s
+existing cleanup list from day one (the KT-3/KT-4 "orphaned state" bug
+class this project has hit twice already) rather than shipping it with
+the same gap and finding it in a future session.
+
+**Testing:** real headless Chromium via `.playwright-libs`, disposable
+`games-kt/bon3-verify-test` fixture via direct Firebase REST (9 test
+operatives — a fresh game specifically so it snapshots the just-updated
+bonus catalog, since existing games are frozen at creation per the
+snapshot rule and would never see new ploys). 19 checks, 0 console
+errors: CP decrements on ploy activation and the bonus appears by name
+in the dice readout; can't afford a ploy past 0 CP (reason names the
+shortfall); Adrenaline Surge's +1 APL applies immediately and is
+correctly blocked for a second operative the same Turning Point; a live
+crit with an Arc-pistol-style weapon (`bonuses:["stun"]`) actually
+stunned the target; a pre-stunned fixture operative got exactly apl-1
+AP on activation and the condition cleared; Markerlight stacked 1→2→3
+(exhausting one operative's AP, correctly auto-ending its activation —
+real rule, not a bug, an operative can't reactivate the same Turning
+Point) then 4 with a second operative, and a 5th mark confirmed the cap
+holds at 4. Screenshot: CP topbar at 8 (from 10, after 2× 1CP spends),
+`MARKERLIGHT 4` and `STUNNED` badges visible in the sidebar, ploy panel
+showing Adrenaline Surge correctly greyed post-use.
+
+Two real bugs surfaced specifically BECAUSE the test harness enforced
+strict activation-identity checks (`clickToken` now throws if the
+clicked operative doesn't actually become the active one) rather than
+trusting a value that happened to coincidentally match — worth recording
+as a testing-methodology note: the first two harness runs had tests
+"passing" for the wrong reason (a stale activation left open by a
+previous test happened to have the same `apRemaining` value the next
+test expected), caught only after tightening the harness itself.
+
+**Not done, per the brief's own "Out of scope":** psychic powers,
+faction-specific ploys, 40k/WHF anything, drama/animation. Also not
+done: tightening Markerlight to the real datacard-eligible subset
+(needs parser work — see above); a UI moment for defensive Fight ploys
+(Fight has no pre-roll pause to offer one in, unlike Shoot); enforcing
+"only one of Reposition/Fall Back/Charge OR a ploy that needs a specific
+prior action" interactions beyond what KT-4 already built.
+
+Files: `data-pipeline/parsers/generic-ploys.json` (new),
+`data-pipeline/parsers/compile-keywords.js`, `data-pipeline/parsers/
+upload.js` (`--bonuses-only` flag — needed to push the catalog without
+also re-touching all 47 factions' unit data, which would have silently
+given all of them ROSTER-VAL's compositionRules a session before that
+scope decision), `killteam/index.html`.

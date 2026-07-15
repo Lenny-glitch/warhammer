@@ -241,6 +241,7 @@
     .tag-expended { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); }
     .tag-wounded  { background: rgba(255,140,0,0.12); color: var(--orange); border: 1px solid rgba(255,140,0,0.3); }
     .tag-injured  { background: var(--red-dim); color: var(--red); border: 1px solid rgba(200,60,60,0.3); }
+    .tag-condition { background: rgba(64,200,232,0.12); color: #40c8e8; border: 1px solid rgba(64,200,232,0.35); }
     .tag-deploy   { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border); font-size: 9px; }
     .op-row.deploy-selected { background: rgba(201,168,76,0.12); border-left: 2px solid var(--gold); }
 
@@ -332,6 +333,22 @@
     }
     .action-btn:hover:not(:disabled) { background: #2a2a48; border-color: var(--border-hi); }
     .action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .ploy-panel {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      width: 100%; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border);
+    }
+    .ploy-panel-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-right: 2px; }
+    .ploy-row {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
+      padding: 4px 8px; font-size: 11px; cursor: pointer; transition: background 0.1s;
+    }
+    .ploy-row:hover:not(.ploy-disabled):not(.ploy-active) { background: #2a2a48; border-color: var(--gold); }
+    .ploy-name { font-weight: 600; }
+    .ploy-cost { color: var(--gold); font-size: 10px; font-weight: 700; }
+    .ploy-disabled { opacity: 0.35; cursor: not-allowed; }
+    .ploy-active { border-color: var(--green); color: var(--green); cursor: default; }
+    .ploy-tag { color: var(--green); font-size: 10px; font-weight: 700; text-transform: uppercase; }
     .action-btn.stub { border-style: dashed; color: var(--text-dim); }
     .order-btn {
       padding: 5px 10px; border-radius: 4px; border: 1px solid; font: inherit;
@@ -783,6 +800,7 @@ let shootWeapon   = null;  // null | weapon object — during shoot action
 let shootState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } — during drag
 let fightWeapon   = null;  // null | weapon object — during fight action
 let fightState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } — during fight drag
+let markerlightState = null; // BON-3: null | { opId, svg, overlay, playerSlot } — during Markerlight target drag
 let radialSlot    = null;  // playerSlot whose radial is currently showing
 // KT-3 item 2: { kind: 'shoot'|'fight', playerSlot, weapons } while the
 // radial's weapon submenu is showing (multi-weapon operatives only —
@@ -1464,6 +1482,10 @@ function describeActionLogEntry(e) {
         ? `${e.attackerName} fights ${e.defenderName} — ${parts.join(', ')}`
         : `${e.attackerName} fights ${e.defenderName} — no damage`;
     }
+    case 'ploy':
+      return `${e.opName} uses ${e.ployName} (${e.cp}CP)`;
+    case 'markerlight':
+      return `${e.opName} marks ${e.targetName}`;
     default:
       return null;
   }
@@ -1689,6 +1711,7 @@ function renderOpRow(op, opPlayer, viewerSlot, status, phase, turn, isDead) {
         ${!isDead && !isDeployed               ? `<span class="op-tag tag-deploy">Undeployed</span>` : ''}
         ${!isDead ? `<span class="op-tag ${op.order === 'engage' ? 'tag-engage' : 'tag-conceal'}">${op.order === 'engage' ? 'Engage' : 'Conceal'}</span>` : ''}
         ${isInjured ? `<span class="op-tag tag-injured">Injured</span>` : ''}
+        ${renderConditionBadges(op)}
         ${isSelected ? `<span class="op-tag" style="background:rgba(201,168,76,0.15);color:var(--gold);border:1px solid rgba(201,168,76,0.4);">Selected</span>` : ''}
       </div>
       ${isExpanded ? renderOpExpanded(op) : ''}
@@ -1929,7 +1952,7 @@ function renderActivationBar(playerSlot, turn) {
   // activation. RAW: Move/Dash repeat, Shoot/Fight don't.
   const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal || hasShot || !!shootBlockReason || eligibleRanged.length === 0;
   const fightDisabled = ap < 1 || !melee.length  || !hasFightTarget(op) || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
-  const dragActive    = !!shootState || !!fightState || !!dragState;
+  const dragActive    = !!shootState || !!fightState || !!dragState || !!markerlightState;
   const moveDisabled  = ap < 1 || dragActive || hasMoved;
   const dashDisabled  = ap < 1 || dragActive || hasDashed;
   // KT-4 item 3: Fall Back only makes sense (and only shows) while
@@ -1957,10 +1980,12 @@ function renderActivationBar(playerSlot, turn) {
         ${engaged ? `<button class="action-btn" onclick="startMove('${playerSlot}','fallback')" ${fallBackDisabled ? 'disabled' : ''} title="${hasMoved ? 'Already moved this activation' : 'Leave control range — ends Shoot eligibility this activation'}">Fall Back (1AP)</button>` : ''}
         <button class="action-btn" onclick="startShoot('${playerSlot}')" ${shootDisabled ? 'disabled' : ''} title="${escHtml(shootTitle)}">Shoot (1AP)</button>
         <button class="action-btn" onclick="startFight('${playerSlot}')" ${fightDisabled ? 'disabled' : ''} title="${hasFought ? 'Already fought this activation' : !hasFightTarget(op) ? 'No enemies in control range (1&quot;)' : !melee.length ? 'No melee weapons' : ''}">Fight (1AP)</button>
+        ${canUseMarkerlight(op) ? `<button class="action-btn" onclick="startMarkerlight('${playerSlot}')" ${ap < 1 || dragActive ? 'disabled' : ''} title="Mark an enemy — stacks, max 4">Markerlight (1AP)</button>` : ''}
         <button class="action-btn stub" ${conceal ? 'title="Locked: Conceal order"' : 'title="Coming in KT-3"'} disabled>Charge (1AP)</button>
       </div>
       <button class="btn" onclick="endActivation('${playerSlot}')" style="margin-left:auto;">End Activation</button>
     </div>
+    ${renderPloyPanel(playerSlot)}
   `;
 }
 
@@ -2401,6 +2426,10 @@ async function startStrategyPhase(initiativeWinner, overrides = {}) {
     'turn/activatingPlayer':   initiativeWinner,
     'turn/cp/player1':         newCP.player1,
     'turn/cp/player2':         newCP.player2,
+    // BON-3: oncePerRound ploy usage resets each Turning Point, same
+    // cadence as CP itself getting (re-)awarded here.
+    'turn/ploysUsedThisRound/player1': null,
+    'turn/ploysUsedThisRound/player2': null,
     ...opUpdates,
     ...overrides,
   });
@@ -2423,7 +2452,11 @@ async function endStrategyPhase(playerSlot) {
 function activateOperative(opId, playerSlot) {
   const op = (gameData.operatives || {})[opId];
   if (!op || !op.ready || op.wounds <= 0) return;
-  activation = { opId, apRemaining: op.apl, playerSlot, apSpent: false, hasMoved: false, hasDashed: false, hasShot: false, hasFought: false, hasFallenBack: false };
+  // BON-3: Stun consumes on activation start (-1 APL, then clears) —
+  // see consumeStunForActivation's own comment for why this lives here
+  // instead of the duration-effect machinery.
+  const apl = consumeStunForActivation(op);
+  activation = { opId, apRemaining: apl, playerSlot, apSpent: false, hasMoved: false, hasDashed: false, hasShot: false, hasFought: false, hasFallenBack: false, activePloys: [] };
   reRenderPhaseBar();
   reRender();
 }
@@ -2450,6 +2483,8 @@ function cancelActivation() {
   // return`, so nulling it here is sufficient — no need to also track and
   // remove the specific listener closures.
   if (dragState) { clearEl(dragState.overlay); dragState.svg.style.cursor = ''; dragState = null; }
+  // BON-3: same orphaned-drag-state family — Markerlight's target drag.
+  if (markerlightState) { clearEl(markerlightState.overlay); markerlightState.svg.style.cursor = ''; markerlightState = null; }
   shootWeapon = null;
   fightWeapon = null;
   radialWeaponPick = null; // KT-3 item 2: same reasoning — don't leave the radial's weapon submenu orphaned
@@ -3715,7 +3750,19 @@ async function rollShot(playerSlot) {
   // preserving the existing cross-client determinism pattern.
   const catalog = gameData.bonuses || {};
   const weaponBonuses = getWeaponBonuses(p.weapon, catalog);
-  const { actorBonuses, targetBonuses } = splitBonusesBySide(weaponBonuses);
+  const { actorBonuses: weaponActorBonuses, targetBonuses: weaponTargetBonuses } = splitBonusesBySide(weaponBonuses);
+  // BON-3: player-activated ploys join the same eligible-bonus pipeline
+  // weapon keywords already use. Attacker's own declared-this-activation
+  // ploys (activePloys — local JS state, since this function only ever
+  // runs on the attacker's own client, same as the comment above already
+  // establishes for the rest of this block). Defender-reactive ploys
+  // (e.g. Hold Fast) are different: the DEFENDER's client is the one that
+  // activates them, so that has to cross clients via a Firebase write —
+  // defenderPloys on pendingShot itself, read here same as p.useCover.
+  const ployBonuses         = (activation?.activePloys || []).map(id => catalog[id]).filter(Boolean);
+  const defenderPloyBonuses = (p.defenderPloys || []).map(id => catalog[id]).filter(Boolean);
+  const actorBonuses  = weaponActorBonuses.concat(ployBonuses);
+  const targetBonuses = weaponTargetBonuses.concat(defenderPloyBonuses);
 
   const distance  = Math.hypot(attacker.x - target.x, attacker.y - target.y);
   const halfRange = computeHalfRangeFact(p.weapon, distance);
@@ -3762,7 +3809,7 @@ async function rollShot(playerSlot) {
 
   playBeamOnly(p, attacker, target);
 
-  const appliedBonuses = dedupeAppliedBonuses(weaponBonuses, finalAttackR.applied.concat(finalDefenseR.applied));
+  const appliedBonuses = dedupeAppliedBonuses(weaponBonuses.concat(ployBonuses, defenderPloyBonuses), finalAttackR.applied.concat(finalDefenseR.applied));
   const flags      = Array.from(new Set([...finalAttackR.flags, ...finalDefenseR.flags]));
   const conditions = finalAttackR.conditions.concat(finalDefenseR.conditions);
 
@@ -3780,6 +3827,239 @@ async function rollShot(playerSlot) {
     halfRange, critScored,
     appliedBonuses, flags, conditions,
   });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  BON-3 — CONDITION TOKENS
+//  Generic per-operative stacking state, keyed by condition name.
+//  Schema/vocab from BONUS_ENGINE_BRIEF/BON1C; this is the live-state
+//  half that was deliberately deferred until now (resolveStats already
+//  surfaces `conditions` in its return value — this is what actually
+//  DOES something with them instead of only rendering a readout badge).
+// ═══════════════════════════════════════════════════════════
+
+// Per-condition cap — declared once here rather than trusting every call
+// site to pass a consistent `max`; a bonus's own effect.max (from the
+// catalog) is still respected too (Math.min of both), so a catalog entry
+// can only ever tighten this, never loosen it.
+const CONDITION_CAPS = { stunned: 1, markerlight: 4 };
+const CONDITION_LABELS = { stunned: 'Stunned', markerlight: 'Markerlight' };
+
+// Builds the Firebase update fragment that applies a resolved `conditions`
+// array (from pendingShot/pendingFight, itself straight from
+// BonusResolver.resolveStats) as real operative state. Stacks ADD onto
+// whatever the recipient already has and clamp at the tighter of the
+// condition's own declared cap and this table's ceiling — safe to call
+// with multiple conditions targeting the same operative in one pass
+// (each read of `recipient.conditions` reflects prior entries in the
+// same array via the running `pending` accumulator below).
+function conditionUpdatesFor(conditions, attacker, target) {
+  const updates = {};
+  const pending = {}; // opId -> { condition -> running stack total }, so two
+                       // conditions of the same name in one resolution don't
+                       // clobber each other via stale `recipient.conditions` reads
+  for (const c of (conditions || [])) {
+    const recipient = c.appliesTo === 'target' ? target : attacker;
+    if (!recipient || !c.condition) continue;
+    const cap = Math.min(CONDITION_CAPS[c.condition] ?? Infinity, c.max ?? Infinity);
+    const already = (pending[recipient.id] || {})[c.condition]
+      ?? (recipient.conditions?.[c.condition]?.stacks || 0);
+    const next = Math.min(cap, already + (c.stacks || 1));
+    pending[recipient.id] = { ...(pending[recipient.id] || {}), [c.condition]: next };
+    updates[`operatives/${recipient.id}/conditions/${c.condition}/stacks`] = next;
+  }
+  return updates;
+}
+
+// BON-3: Stun's actual effect ("-1 APL", per rules-glossary-kt's own
+// text) is consumed once, at the START of the stunned operative's next
+// activation, then cleared — matches real KT's "until this operative is
+// activated" duration, which isn't one of the engine's existing instant/
+// untilEndOfActivation/untilEndOfRound/game duration buckets (it's
+// recipient-activation-scoped, not a fixed clock), so it's handled here
+// explicitly rather than by stretching the duration vocabulary for one
+// condition. Returns the reduced APL to use for this activation.
+function consumeStunForActivation(op) {
+  const stacks = op.conditions?.stunned?.stacks || 0;
+  if (stacks <= 0) return op.apl;
+  db.ref(`games-kt/${gameId}/operatives/${op.id}/conditions/stunned`).remove();
+  return Math.max(0, op.apl - 1);
+}
+
+function renderConditionBadges(op) {
+  const conditions = op.conditions || {};
+  return Object.entries(conditions)
+    .filter(([, c]) => (c?.stacks || 0) > 0)
+    .map(([name, c]) => {
+      const label = CONDITION_LABELS[name] || name;
+      const stackTxt = (CONDITION_CAPS[name] || 1) > 1 ? ` ${c.stacks}` : '';
+      return `<span class="op-tag tag-condition" title="${escHtml(label)}${stackTxt}">${escHtml(label)}${stackTxt}</span>`;
+    }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  BON-3 — CP ECONOMY + GENERIC PLOYS
+//  Ploys are catalog entries like any other bonus (source:"ploy",
+//  faction:null, activation:"active", cost.type:"cp") — activating one
+//  spends CP, records usage, and joins the SAME eligible-bonus/
+//  resolveStats pipeline weapon keywords already flow through (see
+//  rollShot/confirmFightTarget's own comments for exactly where).
+//  Authored via data-pipeline/parsers/generic-ploys.json, per this
+//  repo's "pipeline is the only writer to gameData" rule.
+// ═══════════════════════════════════════════════════════════
+
+// Every non-faction-specific ploy in the game's snapshotted catalog,
+// excluding Hold Fast — that one is defender-reactive, offered from a
+// different UI spot (the incoming-shot cover-choice moment), not the
+// activation-bar panel this function feeds.
+function getActivationPloys() {
+  const catalog = gameData.bonuses || {};
+  return Object.values(catalog).filter(b => b.source === 'ploy' && b.id !== 'ploy-hold-fast');
+}
+
+// Checks CP affordability + usage limits (via the shared resolver, so
+// oncePerRound/oncePerGame/oncePerActivation gating can't drift from how
+// weapon bonuses already enforce it) for ONE bonus. Passing the bonus's
+// own trigger as context.trigger makes eligibleBonuses' trigger check a
+// no-op here on purpose — trigger-matching governs how an activated
+// ploy's effects apply later during onShoot/onFight resolution, not
+// whether it CAN be activated at declaration time.
+function canActivatePloy(bonus, playerSlot, usedThisActivation) {
+  const cp = gameData.turn?.cp?.[playerSlot] ?? 0;
+  if (cp < bonus.cost.amount) return { ok: false, reason: `Need ${bonus.cost.amount}CP (have ${cp})` };
+  const ctx = {
+    trigger: bonus.trigger,
+    usedThisGame:  gameData.ploysUsedThisGame?.[playerSlot] || [],
+    usedThisRound: gameData.turn?.ploysUsedThisRound?.[playerSlot] || [],
+    usedThisActivation: usedThisActivation || [],
+    // BON-3: the scope.range landmine (see buildBonusContext's own
+    // comment) — Firebase drops a `null` scope.range on write, so every
+    // ploy's range check reads `undefined !== null` (true) once round-
+    // tripped through the snapshot, then fails closed for missing
+    // positions. None of these ploys are ranged auras, but positions
+    // must be supplied regardless or eligibleBonuses silently rejects
+    // all of them.
+    positions: { actor: { x: 0, y: 0 }, target: { x: 0, y: 0 } },
+  };
+  if (!BonusResolver.eligibleBonuses([bonus], ctx).length) {
+    return { ok: false, reason: bonus.usage === 'oncePerRound' ? 'Already used this Turning Point' : 'Already used' };
+  }
+  return { ok: true };
+}
+
+// Attacker-side (or "always") ploys, declared from the activation bar
+// before choosing Move/Shoot/Fight — joins activation.activePloys, which
+// rollShot/confirmFightTarget read directly (local JS state; both of
+// those only ever run on the activating operative's own client, per
+// their existing comments).
+async function activatePloy(playerSlot, bonusId) {
+  if (!activation || activation.playerSlot !== playerSlot) return;
+  const bonus = (gameData.bonuses || {})[bonusId];
+  if (!bonus) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op) return;
+
+  // Grit Through It: UI-level gating, not part of the generic check —
+  // the effect itself is a plain `mod hit add -1`, correct only when
+  // there was actually a +1 Injured penalty to cancel in the first
+  // place (see the ploy's own description: it cancels a penalty, it
+  // doesn't grant a bonus that was never there).
+  if (bonusId === 'ploy-grit-through-it' && !isInjuredOp(op)) return;
+
+  const check = canActivatePloy(bonus, playerSlot, activation.activePloys);
+  if (!check.ok) return;
+
+  // Capture the activation object itself, not just its opId — the write
+  // below is async, and cancelActivation()/endActivation() can reassign
+  // (or null) the global `activation` variable while it's in flight
+  // (e.g. the harness jumping to the next scenario; a real player could
+  // hit this too on a slow connection). Mutate the captured reference,
+  // and only if it's still the SAME object the global points at when the
+  // write resolves — otherwise this activation was already torn down and
+  // there's nothing left to safely apply the AP grant to.
+  const startedActivation = activation;
+
+  const cp = gameData.turn?.cp?.[playerSlot] ?? 0;
+  const updates = { [`turn/cp/${playerSlot}`]: cp - bonus.cost.amount };
+  if (bonus.usage !== 'unlimited') {
+    updates[`ploysUsedThisGame/${playerSlot}`] = [...(gameData.ploysUsedThisGame?.[playerSlot] || []), bonusId];
+    updates[`turn/ploysUsedThisRound/${playerSlot}`] = [...(gameData.turn?.ploysUsedThisRound?.[playerSlot] || []), bonusId];
+  }
+  await db.ref(`games-kt/${gameId}`).update(updates);
+  if (activation !== startedActivation) return;
+
+  // Adrenaline Surge is the one deliberate exception to "ploys just join
+  // activePloys" — APL isn't part of any profile object resolveStats
+  // touches (weapon attack/defense profiles are; the operative's own AP
+  // pool isn't), so there's no generic pipeline for it to ride. Direct
+  // engine action instead, same as the schema doc's own note that AP
+  // effects are engine-applied, not resolver-applied.
+  if (bonusId === 'ploy-adrenaline-surge') {
+    activation.apRemaining += 1;
+  } else {
+    activation.activePloys.push(bonusId);
+  }
+
+  logAction({ type: 'ploy', opName: op.name, ployName: bonus.name, cp: bonus.cost.amount });
+  reRenderPhaseBar();
+}
+
+// Defender-reactive: the ONE ploy usable outside the activating player's
+// own turn. Written to pendingShot itself (not local activation state,
+// which the defender doesn't have one of for the attacker's operative)
+// so rollShot — which only runs on the ATTACKER's client — can see it.
+// Mirrors decideCover's existing cross-client pattern exactly.
+async function activateHoldFast(playerSlot) {
+  const p = gameData.pendingShot;
+  if (!p || p.phase !== 'coverChoice') return;
+  const target = (gameData.operatives || {})[p.targetOpId];
+  if (!target || target.player !== playerSlot) return;
+  if ((p.defenderPloys || []).includes('ploy-hold-fast')) return;
+
+  const bonus = (gameData.bonuses || {})['ploy-hold-fast'];
+  if (!bonus) return;
+  const check = canActivatePloy(bonus, playerSlot, []);
+  if (!check.ok) return;
+
+  const cp = gameData.turn?.cp?.[playerSlot] ?? 0;
+  await db.ref(`games-kt/${gameId}`).update({
+    [`turn/cp/${playerSlot}`]: cp - bonus.cost.amount,
+    'pendingShot/defenderPloys': [...(p.defenderPloys || []), bonus.id],
+  });
+  logAction({ type: 'ploy', opName: target.name, ployName: bonus.name, cp: bonus.cost.amount });
+}
+
+// Renders the activation-bar ploy panel — one row per catalog ploy
+// (excluding Hold Fast, see getActivationPloys), greyed with a reason
+// when unaffordable/already-used/ineligible, a small "already active"
+// check once declared this activation (ploys don't un-declare; spending
+// a limited resource is committed the moment it's spent, same as real
+// tabletop play).
+function renderPloyPanel(playerSlot) {
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op) return '';
+  const ploys = getActivationPloys();
+  if (!ploys.length) return '';
+
+  const rows = ploys.map(bonus => {
+    const active = (activation.activePloys || []).includes(bonus.id);
+    if (active) {
+      return `<div class="ploy-row ploy-active"><span class="ploy-name">${escHtml(bonus.name)}</span><span class="ploy-tag">Active</span></div>`;
+    }
+    const isGrit = bonus.id === 'ploy-grit-through-it';
+    if (isGrit && !isInjuredOp(op)) {
+      return `<div class="ploy-row ploy-disabled" title="Only usable while Injured"><span class="ploy-name">${escHtml(bonus.name)}</span><span class="ploy-cost">${bonus.cost.amount}CP</span></div>`;
+    }
+    const check = canActivatePloy(bonus, playerSlot, activation.activePloys);
+    if (!check.ok) {
+      return `<div class="ploy-row ploy-disabled" title="${escHtml(check.reason)}"><span class="ploy-name">${escHtml(bonus.name)}</span><span class="ploy-cost">${bonus.cost.amount}CP</span></div>`;
+    }
+    return `<div class="ploy-row" onclick="activatePloy('${playerSlot}','${bonus.id}')" title="${escHtml(bonus.description)}">
+      <span class="ploy-name">${escHtml(bonus.name)}</span><span class="ploy-cost">${bonus.cost.amount}CP</span>
+    </div>`;
+  }).join('');
+
+  return `<div class="ploy-panel"><div class="ploy-panel-label">Ploys</div>${rows}</div>`;
 }
 
 // KT-3 item 5: wipe-out check runs right after a damage write, using the
@@ -3817,6 +4097,10 @@ async function confirmShotDamage(playerSlot) {
   await db.ref(`games-kt/${gameId}`).update({
     [`operatives/${target.id}/wounds`]: newWounds,
     pendingShot: null,
+    // BON-3: conditions (Stun, Markerlight) were badge-only display before
+    // this — now applied as real per-operative state alongside the damage
+    // write. See conditionUpdatesFor's own comment for stacking/cap logic.
+    ...conditionUpdatesFor(p.conditions, attacker, target),
   });
 
   logAction({
@@ -3956,6 +4240,25 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
     ? `<button class="action-btn" style="border-color:var(--green);color:var(--green);" onclick="rollShot('${playerSlot}')">Roll Dice</button>`
     : '';
 
+  // BON-3: Hold Fast — defender-reactive, offered independent of the
+  // cover choice above (a save boost is useful whether or not you're
+  // also using cover).
+  let holdFastHtml = '';
+  if (!iAmAttacker && pending.phase === 'coverChoice') {
+    const hfBonus = (gameData.bonuses || {})['ploy-hold-fast'];
+    if (hfBonus) {
+      const already = (pending.defenderPloys || []).includes(hfBonus.id);
+      if (already) {
+        holdFastHtml = `<div class="ploy-row ploy-active"><span class="ploy-name">${escHtml(hfBonus.name)}</span><span class="ploy-tag">Active</span></div>`;
+      } else {
+        const check = canActivatePloy(hfBonus, playerSlot, []);
+        holdFastHtml = check.ok
+          ? `<div class="ploy-row" onclick="activateHoldFast('${playerSlot}')" title="${escHtml(hfBonus.description)}"><span class="ploy-name">${escHtml(hfBonus.name)}</span><span class="ploy-cost">${hfBonus.cost.amount}CP</span></div>`
+          : `<div class="ploy-row ploy-disabled" title="${escHtml(check.reason)}"><span class="ploy-name">${escHtml(hfBonus.name)}</span><span class="ploy-cost">${hfBonus.cost.amount}CP</span></div>`;
+      }
+    }
+  }
+
   const cancelBtn = (iAmAttacker && pending.phase !== 'rolled')
     ? `<button class="btn" onclick="cancelShoot()">Cancel Shot</button>`
     : '';
@@ -4006,6 +4309,7 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
           ${cancelBtn}
         </div>
         ${coverHtml}
+        ${holdFastHtml}
         ${rollBtn}
         ${diceHtml}
         ${skipHint}
@@ -4174,7 +4478,12 @@ async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
   // shot, unlike shoot's separate roll step) — defender's client just
   // reads the fully-resolved pendingFight fields.
   const catalog    = gameData.bonuses || {};
-  const atkBonuses = getWeaponBonuses(atkWeapon, catalog);
+  // BON-3: activating operative's own declared ploys join its weapon
+  // bonuses — same reasoning as rollShot's matching comment. No
+  // defender-reactive ploys for Fight this pass (Hold Fast is Shoot-only;
+  // Fight has no pre-roll pause to offer one in — see DEVLOG).
+  const ployBonuses = (activation.activePloys || []).map(id => catalog[id]).filter(Boolean);
+  const atkBonuses = getWeaponBonuses(atkWeapon, catalog).concat(ployBonuses);
   const defBonuses = defWeapon ? getWeaponBonuses(defWeapon, catalog) : [];
   const actorPos   = { x: attacker.x, y: attacker.y };
   const targetPos  = { x: target.x,   y: target.y };
@@ -4250,6 +4559,144 @@ async function confirmFightTarget(attacker, target, atkWeapon, playerSlot) {
   reRenderPhaseBar();
 }
 
+// ═══════════════════════════════════════════════════════════
+//  BON-3 — MARKERLIGHT ACTION
+//  Real KT: only specific datacard-flagged PATHFINDER operatives can
+//  perform this, with per-operative variants (Analyse/High-intensity
+//  Markerlight grant extra tokens). The parser doesn't currently surface
+//  that distinction at all — "Markerlight" is a shared force-level rule
+//  referenced via an infoLink the operative-building loop never follows,
+//  not a per-operative field like `keywords`/`role` (verified against
+//  the raw BSData: Pathfinders.cat's per-operative infoLinks point at a
+//  shared "Markerlight (1 AP)" profile, not something parse-kt.js
+//  captures today). Rather than leave the condition-token system with no
+//  real way to ever apply markerlight (state machinery with nothing to
+//  drive it), this simplifies eligibility to "any tau-pathfinders
+//  operative" — a deliberate, flagged gap, not a guess: every Pathfinder
+//  CAN benefit from tokens per the real rule text, just not every one
+//  can APPLY them. Tightening this to the real subset is parser work,
+//  not an engine change, and is a reasonable follow-up, not silently
+//  smuggled in as "done."
+function canUseMarkerlight(op) {
+  return op.faction === 'tau-pathfinders';
+}
+
+function startMarkerlight(playerSlot) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op || op.x < 0 || !canUseMarkerlight(op)) return;
+  if (activation.apRemaining < 1) return;
+  hideRadialMenu();
+
+  const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
+  const svg = boardWrap?.querySelector('svg.board-svg');
+  if (!svg) return;
+  const overlay = svg.querySelector(`#overlay-${playerSlot}`);
+  clearEl(overlay);
+  markerlightState = { opId: op.id, svg, overlay, playerSlot };
+  svg.style.cursor = 'crosshair';
+
+  function onMouseMove(e) {
+    if (!markerlightState) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    updateMarkerlightOverlay(pt.matrixTransform(svg.getScreenCTM().inverse()));
+  }
+
+  function onMouseUp(e) {
+    if (!markerlightState) return;
+    svg.removeEventListener('mousemove', onMouseMove);
+    svg.removeEventListener('mouseup', onMouseUp);
+
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+
+    const attacker = (gameData.operatives || {})[markerlightState.opId];
+    // No control-range limit (unlike Fight) and no weapon range (unlike
+    // Shoot) — real Markerlight only requires visibility. LOS still
+    // applies (rayResult), matching every other targeted action here.
+    const target = Object.values(gameData.operatives || {}).find(o =>
+      o.player !== attacker?.player && o.wounds > 0 && o.x >= 0 &&
+      Math.hypot(o.x - p.x, o.y - p.y) < TOKEN_R * 1.5
+    );
+
+    const ms = markerlightState;
+    markerlightState = null;
+    clearEl(ms.overlay);
+    ms.svg.style.cursor = '';
+
+    if (target && attacker && rayResult(attacker.x, attacker.y, target.x, target.y, gameData.terrain || {}) !== 'blocked') {
+      confirmMarkerlight(attacker, target, playerSlot);
+      return;
+    }
+    reRenderPhaseBar();
+    reRender();
+  }
+
+  svg.addEventListener('mousemove', onMouseMove);
+  svg.addEventListener('mouseup', onMouseUp);
+}
+
+function updateMarkerlightOverlay(p) {
+  if (!markerlightState) return;
+  const { opId, overlay } = markerlightState;
+  const attacker = (gameData.operatives || {})[opId];
+  if (!attacker) return;
+  clearEl(overlay);
+
+  const hoverTarget = Object.values(gameData.operatives || {}).find(o =>
+    o.player !== attacker.player && o.wounds > 0 && o.x >= 0 &&
+    Math.hypot(o.x - p.x, o.y - p.y) < TOKEN_R * 1.5
+  );
+  if (!hoverTarget) return;
+
+  const blocked = rayResult(attacker.x, attacker.y, hoverTarget.x, hoverTarget.y, gameData.terrain || {}) === 'blocked';
+  const stacks = hoverTarget.conditions?.markerlight?.stacks || 0;
+  overlay.appendChild(svgEl('circle', {
+    cx: hoverTarget.x, cy: hoverTarget.y, r: TOKEN_R * 1.65,
+    fill: 'none', stroke: blocked ? '#666' : '#40c8e8', 'stroke-width': blocked ? 0.1 : 0.18, opacity: '0.85',
+  }));
+  const lineAttrs = {
+    x1: attacker.x, y1: attacker.y, x2: hoverTarget.x, y2: hoverTarget.y,
+    stroke: blocked ? 'rgba(100,100,100,0.35)' : '#40c8e8', 'stroke-width': 0.12, 'stroke-dasharray': '0.35 0.2',
+  };
+  overlay.appendChild(svgEl('line', lineAttrs));
+  const dTxt = blocked ? 'LOS blocked' : stacks >= 4 ? 'MARKED (max)' : `MARK (${stacks}→${stacks + 1})`;
+  const midX = (attacker.x + hoverTarget.x) / 2, midY = (attacker.y + hoverTarget.y) / 2 - 0.55;
+  const lblW = Math.max(1.4, dTxt.length * 0.165 + 0.4);
+  overlay.appendChild(svgEl('rect', { x: midX - lblW/2, y: midY - 0.35, width: lblW, height: 0.72, fill: '#0a0a14', rx: 0.15, opacity: '0.9' }));
+  const lbl = svgEl('text', { x: midX, y: midY + 0.12, 'text-anchor': 'middle', fill: blocked ? '#888' : '#40c8e8', 'font-size': 0.6, 'font-family': 'sans-serif', 'font-weight': 700 });
+  lbl.textContent = dTxt;
+  overlay.appendChild(lbl);
+}
+
+async function confirmMarkerlight(attacker, target, playerSlot) {
+  if (!activation) return;
+  // See activatePloy's matching comment — capture before the await so a
+  // torn-down activation (real player backing out mid-write, or this
+  // harness jumping scenarios) can't crash the post-write read below.
+  const startedActivation = activation;
+  startedActivation.apRemaining -= 1;
+  startedActivation.apSpent = true;
+
+  const updates = conditionUpdatesFor(
+    [{ condition: 'markerlight', stacks: 1, max: 4, appliesTo: 'target' }],
+    attacker, target
+  );
+  await db.ref(`games-kt/${gameId}`).update(updates);
+  if (activation !== startedActivation) return;
+
+  logAction({ type: 'markerlight', opName: attacker.name, targetName: target.name });
+
+  if (activation.apRemaining <= 0) {
+    await endActivation(playerSlot);
+  } else {
+    reRenderPhaseBar();
+    reRender();
+  }
+}
+
 async function confirmFightDamage(playerSlot) {
   const p = gameData.pendingFight;
   if (!p || p.phase !== 'confirm') return;
@@ -4266,6 +4713,8 @@ async function confirmFightDamage(playerSlot) {
     [`operatives/${attacker.id}/wounds`]: newAtkWounds,
     [`operatives/${defender.id}/wounds`]: newDefWounds,
     pendingFight: null,
+    // BON-3: see confirmShotDamage's matching comment.
+    ...conditionUpdatesFor(p.conditions, attacker, defender),
   });
 
   logAction({

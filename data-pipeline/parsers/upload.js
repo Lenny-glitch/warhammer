@@ -28,6 +28,16 @@ const DRY_RUN = process.argv.includes('--dry-run');
 // patches.json fix) without re-running the whole catalog.
 const ONLY_ARG = process.argv.find(a => a.startsWith('--only='));
 const ONLY = ONLY_ARG ? ONLY_ARG.slice('--only='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
+// BON-3: --bonuses-only — the bonus catalog is its own thing (gameData/
+// {system}/bonuses), not scoped by faction slug, so --only can't target
+// it (--only deliberately skips rules/ploys/bonuses entirely, see its
+// own comment). Needed here specifically to push new ploy catalog
+// entries without re-touching all 47 KT factions' unit/composition data
+// (ROSTER-VAL deliberately left compositionRules un-uploaded for 42 of
+// them this pass — a --force run with no scoping would silently give
+// them that data as a side effect of pushing ploys, which isn't this
+// session's call to make).
+const BONUSES_ONLY = process.argv.includes('--bonuses-only');
 
 // ── Firebase config loader ─────────────────────────────────────────────────────
 
@@ -348,6 +358,13 @@ async function main() {
 
   const { databaseURL } = loadFirebaseConfig();
   console.log(`Firebase: ${databaseURL}`);
+
+  if (BONUSES_ONLY) {
+    console.log('[--bonuses-only MODE — bonus catalog only, no faction/rules/ploys writes]');
+    await uploadBonusesCatalog(databaseURL);
+    console.log('\n=== Done ===');
+    return;
+  }
 
   let ktFiles = fs.readdirSync(OUT_DIR)
     .filter(f => f.startsWith('kt-') && f.endsWith('.json'))
