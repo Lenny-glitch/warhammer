@@ -2457,13 +2457,34 @@ function setupTerrainPaint(svg, playerSlot) {
   svg.addEventListener('mouseleave', finish);
 }
 
+// BUG_CRITICAL_ROUND6 item 3: was checking gameData.terrainPassed — the
+// client's realtime-listener-delivered snapshot, which can lag the actual
+// server state by a full round-trip. Two players passing within that
+// window each compute their "has the other passed?" check against a
+// STALE read that still says false, so neither write ever includes the
+// meta/status advance — both terrainPassed flags end up true but nothing
+// ever moves the game to deployment, and neither client re-checks
+// afterward. warhammer40k's confirmTerrainDone (state.js) narrowed this
+// same race with a fresh once('value') read at confirm-time, but that's
+// still a plain read-then-write — two passes within the same network
+// round-trip (a real risk, not just theoretical: verified live with two
+// Playwright contexts firing passTerrainTurn in the same tick) both read
+// "not yet passed" and neither ever advances. A Firebase transaction on
+// terrainPassed itself is what actually closes it: the server serializes
+// concurrent transactions on the same path, so whichever commits second
+// is guaranteed to see the first's merged value, and exactly one of the
+// two ever observes both flags true.
 function passTerrainTurn(playerSlot) {
   const other = playerSlot === 'player1' ? 'player2' : 'player1';
-  const updates = { [`terrainPassed/${playerSlot}`]: true };
-  if ((gameData.terrainPassed || {})[other]) {
-    updates['meta/status'] = 'deployment';
-  }
-  db.ref(`games-kt/${gameId}`).update(updates);
+  db.ref(`games-kt/${gameId}/terrainPassed`).transaction(current => {
+    return { ...(current || {}), [playerSlot]: true };
+  }, (error, committed, snapshot) => {
+    if (error || !committed) return;
+    const passed = snapshot.val() || {};
+    if (passed[other]) {
+      db.ref(`games-kt/${gameId}/meta/status`).set('deployment');
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════

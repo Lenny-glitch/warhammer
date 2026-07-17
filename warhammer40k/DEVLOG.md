@@ -610,3 +610,63 @@ height fix, `.side-panel` clamp, `.token-hoverable`, `.log-panel-*`/
 `warhammer40k/js/state.js` (`logAction`, `deployGroup` extended),
 `warhammer40k/js/game.js` (`describeActionLogEntry`, `actionLogHTML`,
 deployment panel wiring).
+
+---
+
+## 2026-07-17 — BUG_CRITICAL_ROUND6 items 2 & 5: investigation only, no code changed
+
+Brief: `briefs/BUG_CRITICAL_ROUND6.md` (killteam-primary; this
+subproject's two items investigated as part of the same session — see
+`killteam/DEVLOG.md` for the full brief and its other items). **No
+warhammer40k files touched** — a separate concurrent session was
+actively editing `js/board.js`/`game.js`/`state.js` while this
+investigation ran; kept to read-only grep/Read throughout specifically
+to avoid collision, confirmed via `git status` before writing this entry
+that DEVLOG.md itself was still clean.
+
+**Item 2 — dead models blocking the Command Phase: audited thoroughly,
+not reproduced.** Checked every `.alive`-dependent gate in `game.js`:
+`unmovedeGroups`/`unShotGroups`/the charge-queue builder all correctly
+exclude dead units; the four `.every(u => u...ThisTurn)` phase-sync
+checks (lines ~1386-1436) all correctly `.filter(u => ... && u.alive)`
+first; `getPendingCasGroups`/casualty allocation's `isAutoWipe` branch
+correctly handles a fully-wiped group. Live-tested two scenarios with
+real published rosters (Astra Militarum "Jon-2000" + Craftworlds Eldar,
+13 unit-groups each): (a) one group fully wiped (6/6 dead) plus a
+1-model group wiped, walked all five phases (movement→shooting→
+charge→fight→command) via real `End Phase` clicks — no blocking, no
+errors, both dead groups correctly excluded from every "select a unit
+to X" list; (b) a mixed-casualty group (2 already dead, `pendingCasualties=2`
+more) driven through the real casualty-allocation click-to-select UI —
+worked correctly once tested against genuinely-alive tokens (first
+attempt clicked models that happened to already be dead by test-fixture
+construction, which board.js correctly ignores — a test artifact, not
+an app bug, caught by isolating with a direct `dispatchEvent` vs
+`elementFromPoint` check). Given item 1's cache-staleness hypothesis and
+that every code path checked out clean, this is very plausibly a cache
+ghost too — flagging rather than guessing further without a live
+re-test.
+
+**Item 5 — 40k weapon stats showing "Rng ? A ? BS ? S ? AP 0 D ?":
+root-caused precisely, exact unit not identified.** `game.js`'s
+`weaponRow()` (in `unitCardsHTML`) has two paths: a real roster-def
+weapon (`w`), or — when that's falsy — a fallback to `lw = ((window.
+UNIT_STATS||{})[u.type]).weapon || {}`, the *legacy* hardcoded default-
+army stat table from `units.js`. Every field on an empty `lw` reads
+`undefined` → renders `'?'`, **except** `AP`, which has its own explicit
+`lw.ap !== undefined ? lw.ap : '0'` default — this is the *exact*
+mechanism producing "AP 0" while every other field shows "?", confirmed
+by reading the ternaries directly, not fabricated. Root cause is one
+level up: `def = window.getRosterUnitDef(info.factionId, info.unitId)`
+(→ `RosterLoader.getUnitDef`, a plain `cache[factionId][unitId]` lookup
+into the flat-pool `gameData/warhammer-40k/{factionId}`) returned null
+for whichever unit Nox screenshotted — a `factionId`/`unitId` key that
+doesn't resolve in the flat pool, matching the brief's own "key mismatch
+after the publish sanitizer?" suspicion exactly. Did not identify the
+specific unit (no screenshot to work from, and roster-built `unitId`s
+are roster-instance-specific, not something to guess at without the
+real export) — next step if this recurs: check the browser console for
+`getUnitDef`'s inputs (`u.factionId`, `u.unitId`) for the affected unit
+and diff against `gameData/warhammer-40k/{factionId}`'s actual keys.
+
+Files: none (investigation only).

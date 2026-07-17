@@ -2619,3 +2619,112 @@ markup in `renderGame`/`reRenderPhaseBar`, `renderPhaseBar` + the two
 resolution-bar functions' `{controls,dice}` split, `drawConditionTokens`,
 `activeTweens`/`updateActiveTweens`, `playBeamOnly` recolor +
 `detectAndPlayEffects` relocation).
+
+---
+
+## 2026-07-17 — BUG_CRITICAL_ROUND6: cache headers, terrain race, and three "did not reproduce" reports
+
+Brief: `briefs/BUG_CRITICAL_ROUND6.md`, from back-to-back brother games
+(40k and KT). Root-repo `firebase.json` (item 1) and this file's own
+`.firebaserc`/`.firebase/hosting..cache` confirm a **live Firebase
+Hosting deployment now exists** — `PROJECT_STATE.md`'s "no live
+deployments anywhere" is stale as of this session; flagging for the next
+regeneration rather than silently trusting the old snapshot per
+CLAUDE.md's verify-first rule.
+
+**Item 1 — cache headers (root `firebase.json`).** No `headers` block
+existed at all, so Hosting served its own defaults — plausible root
+cause for a run of "fixed but still broken" reports the brief names.
+Added `Cache-Control: no-cache` for `**/*.@(html|js|css)` (must-
+revalidate every load, not a hard no-store — small apps, simplicity
+over a content-hash scheme). **Deploy + live cached-browser verification
+deliberately left to Nox** — every prior brief this session ended with
+local commits and Nox pushing/redeploying, and a live-site deploy is
+exactly the kind of hard-to-reverse, shared-system action worth
+confirming before taking unilaterally. Asked directly; Nox is handling
+deploy + verify himself.
+
+**Item 3 — terrain placement deadlock, real bug, fixed + verified.**
+`passTerrainTurn()` read `gameData.terrainPassed` — the client's
+realtime-listener-delivered snapshot — to decide whether to also
+advance `meta/status` to `'deployment'`. Two players passing within one
+realtime round-trip of each other each see a stale "other hasn't passed
+yet" and neither write ever includes the advance; both flags end up
+true but nothing ever moves the game forward, and nothing re-checks
+afterward. This is the *same* race warhammer40k's `confirmTerrainDone`
+(state.js) already narrowed by reading fresh via `once('value')` at
+confirm-time instead of trusting the snapshot — ported that shape
+first, then **live-tested it with two real Playwright contexts firing
+`passTerrainTurn` in the same tick and it still deadlocked** (a plain
+read-then-write, even server-fresh, isn't atomic against a truly
+simultaneous pair). Replaced with a Firebase `.transaction()` on
+`terrainPassed` itself — the server serializes concurrent transactions
+on the same path, so whichever commits second is guaranteed to see the
+first's merged value. Re-ran the same simultaneous-race test 4x after
+the transaction fix: 4/4 pass, both clients correctly reach
+`deployment`. (Side note for whoever next touches 40k's terrain code:
+`confirmTerrainDone` has the same narrower theoretical race — not fixed
+here, out of this brief's scope, worth a transaction there too if it's
+ever actually hit.)
+
+**Item 4 — Night Lords/Nemesis Claw ranged weapon selection: real data
+gap found, "can't select" not reproduced.** `gameData/kill-team/
+factions/nemesis-claw`'s Heavy Gunner has **all four** of its ranged
+weapons (missile launcher frag/krak, heavy bolter focused/sweeping)
+missing a range value entirely, and Fearmonger's "Scoped bolt pistol
+(long range)" mode is the same — confirmed by direct fetch, not
+fabricated. This is the same shape as the already-documented "Legionary"
+range bug (`rng` top-level, not nested in `profiles.RNG`) — Nemesis Claw
+is a Night Lords-flavored Legionary-family kill team, so it's very
+plausibly the same underlying data family. BUT: `weaponRange()` treats a
+missing range as **unlimited** (∞), which is permissive, not blocking —
+traced the full pipeline (raw catalog → roster export's `{...w,
+profiles: sanitized}` spread, which preserves top-level `rng` → `build
+Operatives`'s existing `w.rng` fallback) and found no step that would
+make a ranged weapon *unselectable*, no disabled state, no crash. Built
+a synthetic fixture directly from live Nemesis Claw catalog data for
+Heavy Gunner/Gunner/Visionary as player2 and drove Shoot for all three:
+every weapon activated cleanly, zero console/page errors — just an "∞"
+badge where a real range should be. Also noticed (not confirmed as a
+bug, just an observation): the roster export's `chosenLoadout` is built
+as a keyed **object**, but `buildOperatives` only uses it when
+`.length` is truthy — which a plain object never has — so operatives
+may always render their *full* weapon catalog rather than the
+specifically chosen loadout; didn't chase this further, flagging for
+whoever picks this up next. **Root cause not fully closed** — the
+missing-range data gap is real and worth a parser/pipeline pass, but
+doesn't explain "can't select." Recommend a live two-window repro with
+an actual published Nemesis Claw roster (not a synthetic fixture) if
+this recurs post-cache-fix.
+
+**Item 6 — "won't let me click on my dudes" after round 1: not
+reproduced.** Same symptom family as BUG_KT_PLAYTEST_1/2, both of which
+ended with "Nox's next brother game is the real acceptance check, not
+this session's testing" rather than a confirmed fix — worth remembering
+before assuming this is new. Built a fixture at Turning Point 2 (after
+round 1, matching the report), player2's turn, sidebar-click-to-select
+(matching "clicking the sidebar name selects" specifically) then Move,
+tested at both a full desktop viewport and a narrow 620×750 tiled
+window (PT1's own flagged-but-never-proven risk condition: two windows
+tiled side by side have much less room for the bottom action bar).
+Selection and Move both worked cleanly at both sizes, zero console
+errors. Per the brief's own instruction: reporting this as **not
+reproduced against current source — a strong candidate for a cache
+ghost**, consistent with item 1's whole premise. Nox's live re-test
+after deploying the item 1 cache fix is the real check here, exactly as
+the brief asks for.
+
+**Item 2 (40k dead models) and item 5 (40k weapon stats "?") — see
+warhammer40k/DEVLOG.md.** Investigation only in that subproject; no
+warhammer40k files touched by this session (a separate session was
+concurrently editing `js/board.js`/`game.js`/`state.js` while this one
+worked — investigation was read-only throughout, no collision).
+
+**Testing:** all live, two real Playwright browser contexts where the
+symptom is inherently cross-client (items 3, 6), real Chromium via
+`.playwright-libs`, disposable `games-kt/` fixtures via direct Firebase
+REST, all cleaned up after. No committed test scripts, established
+pattern.
+
+Files: `firebase.json` (item 1), `killteam/index.html` (item 3,
+`passTerrainTurn`).

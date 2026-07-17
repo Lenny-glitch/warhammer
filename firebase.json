@@ -10,6 +10,14 @@
       "docs/**",
       "data-pipeline/**",
       "shared/*.test.js"
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(html|js|css)",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache" }
+        ]
+      }
     ]
   }
 }
