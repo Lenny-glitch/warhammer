@@ -2500,3 +2500,122 @@ flow, where you re-select from the sidebar/board each turn. Worth porting
 to KT's Firefight activation loop (auto-select the next ready operative
 after one finishes) if a future brief targets activation-flow polish —
 not built here, note only, per BUG_40K_PREGAME item 5.
+
+---
+
+## 2026-07-17 — KT-5: Table Feel (dice legibility, board indicators, motion)
+
+Sequel to KT-4, same root complaint from three consecutive playtests:
+"everything is too auto-calculated. Told, not shown." Four items, all
+purely presentational — zero die-roll or damage-calculation code touched.
+
+**Item 1 — dice presentation.** Dice faces bumped 22px→30px (Shoot) /
+20px→28px (Fight). Each die now sits in a `.dice-chip`: a tinted
+background + colored border in its outcome color (crit red / hit green /
+miss/fail gray), not just colored pips on a neutral face — color reads
+before the label does, per the brief's explicit ask. `formatDamageBreakdown`
+(KT-4's "N CRIT × dmg + N HIT × dmg = total" line) now colors each segment
+to match its dice-group color, so the eye traces straight from the
+colored math back to the colored dice that produced it — same numbers,
+no logic change, just legible.
+
+**Item 2 — layout.** The board is portrait (22×30), so on wide viewports
+`.board-wrap` left real horizontal gutters empty while the dice pool and
+action log both lived crammed below the board in `.phase-bar`/a
+collapsible bottom strip — direct cause of the "gap is dead space, no
+scrolling ever" complaint (the scroll regression named as having
+recurred twice). Added two new persistent side panels flanking
+`.board-wrap` inside `.game-main`: `.dice-panel` (left) and `.log-panel`
+(right). Action log lost its collapse/expand toggle (`toggleActionLog`
+deleted) — it has the panel's full vertical height now, no reason to
+hide it. `renderPhaseBar()` and its two combat sub-renderers
+(`renderShotResolutionBar`/`renderFightResolutionBar`) now return
+`{controls, dice}` instead of a plain string — dice display (the actual
+roll + math) goes to the side panel, buttons/cover-choice/bonus-readout
+stay in the bottom `.phase-bar`. Only two call sites read `renderPhaseBar`
+(`renderGame`, `reRenderPhaseBar`), so the refactor's blast radius stayed
+small despite touching the two biggest render functions in the file.
+
+Found live during verification, not anticipated in the brief: fixed
+220px/200px side-panel and sidebar widths meant that at half-screen-tiled
+width (960px) the board was squeezed to ~120px — technically zero scroll,
+but the board was barely usable, which misses the brief's actual intent
+even though it satisfied the literal wording. Fixed by switching
+`.sidebar`/`.side-panel` from fixed `width` + `flex-shrink:0` to
+`width: clamp(...)`, so panels shrink smoothly with viewport instead of
+refusing to and crushing the board.
+
+**Item 3 — board-level condition indicators.** New generic
+`drawConditionTokens(g, op)`, called from `drawOperativeToken` for every
+operative with any `op.conditions` stack > 0 (same data BON-3 already
+introduced for the sidebar badges). One colored dot per active condition
+along the token's bottom-left arc (the order pip already owns
+top-right); conditions with `CONDITION_CAPS > 1` (markerlight, cap 4)
+also print their stack count inside the dot. A `CONDITION_TOKEN_COLORS`
+table drives the color per condition name with a neutral-cyan fallback
+for anything not in the table — a brand new condition gets a token dot
+for free, no bespoke per-condition code required, per the brief's ask.
+
+**Item 4 — motion.** Two pieces:
+
+- *Movement tween.* Operatives now animate from old to new position
+  (~200ms, SMIL `animateTransform`) instead of teleporting. Non-trivial
+  because a single move writes to Firebase TWICE — `commitMove`'s
+  position `.update()`, then `logAction`'s separate `actionLog` push —
+  and each one independently fires the root `.on('value')` listener,
+  which does a FULL `buildBoardSVG` rebuild (tears down and redraws
+  every token). A naive "one-shot tween from last render" map gets wiped
+  by the second rebuild well before 200ms is up, cutting the tween short
+  on essentially every real move (confirmed by test: it happened on 100%
+  of moves, not an edge case). Fixed with `activeTweens`, keyed on
+  wall-clock progress rather than "current render pass": each rebuild
+  recomputes the token's current interpolated position from elapsed time
+  and resumes the animation from there, so repeated rebuilds mid-tween
+  are invisible instead of visibly restarting or snapping.
+- *Shot beam, fixed to two real bugs.* The beam previously fired via a
+  direct call inside `rollShot()`, which only ever runs on the
+  *attacker's* client (the Roll Dice button is attacker-gated) — the
+  defender's screen never saw a beam at all, silently failing the "both
+  clients see the same motion" requirement every prior session that
+  built on this code had. Moved the call into `detectAndPlayEffects`'s
+  existing `pendingShot` coverChoice→rolled transition handler, which
+  both clients hit independently via their own Firebase subscription —
+  same mechanism `startDiceAnimation` already relies on for its own
+  two-client sync. Also recolored the beam from weapon-flavor (laser
+  red, bolt yellow, etc.) to hit/miss outcome (green/gray) — the brief's
+  literal ask ("colored by outcome... reads instantly"), and per-weapon
+  color coding is arguably the kind of per-weapon distinction the brief
+  puts out of scope anyway. Damage floaters already spawn at the
+  operative's live `x`/`y` (confirmed by inspection, not changed) — since
+  Shoot/Fight never move the target mid-resolution, "lands on the
+  tween's endpoint" was already true by construction; no code needed.
+- *Explicitly out, logged per the brief:* audio, dust, per-weapon shot
+  effects (distinct tracer shapes/particles per weapon) — next tier if a
+  future brief wants it.
+
+### Verification
+
+Two-Playwright-window fixture (`games-kt/kt5-verify-test`, one page per
+`kt_player_<id>` slot) driving a full loop: viewport-scroll check at
+1900×1000 and 960×1000 (half-screen), a markerlight+stunned target
+(stacks 3/1) for board-indicator checks, a Shoot end-to-end (drag-to-aim
+→ roll → verify beam fires on BOTH pages' `beam-g-*` groups → apply
+damage), a Move (drag via the Move button, not a token drag — `startMove`
+arms its own listeners on button click) sampled mid-animation on both
+pages for a live `animateTransform`, and a Fight end-to-end confirming
+`fight-pools` moved to the dice panel and out of phase-bar controls.
+25/25 checks pass, 0 console/page errors on either client.
+
+Regression: no die-roll, damage, or condition-application code was
+touched this session — `formatDamageBreakdown` returns the identical
+numbers wrapped in colored spans, `playBeamOnly`'s only removed call site
+was a pure-VFX no-op for outcomes, movement's real `x`/`y` write
+(`commitMove`) is untouched, only its *rendering* got a transform
+animation layered on top. `shared/bonus-resolver.test.js` still 32/32
+(unrelated file, sanity-checked anyway).
+
+Files: `killteam/index.html` only (CSS layout/dice-chip rules, side-panel
+markup in `renderGame`/`reRenderPhaseBar`, `renderPhaseBar` + the two
+resolution-bar functions' `{controls,dice}` split, `drawConditionTokens`,
+`activeTweens`/`updateActiveTweens`, `playBeamOnly` recolor +
+`detectAndPlayEffects` relocation).

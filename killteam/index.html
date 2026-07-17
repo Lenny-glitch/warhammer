@@ -205,8 +205,13 @@
     }
 
     /* ── SIDEBARS ── */
+    /* KT-5 item 2: clamp() instead of a fixed width + flex-shrink:0 — at
+       half-screen-tiled widths four fixed panels (2 sidebars + dice + log)
+       used to leave the board almost no room at all even though nothing
+       scrolled. Shrinking smoothly with viewport width keeps the board
+       usable instead of just technically visible. */
     .sidebar {
-      width: 200px; flex-shrink: 0; overflow-y: auto;
+      width: clamp(120px, 12vw, 200px); flex-shrink: 0; overflow-y: auto;
       background: var(--surface); border-right: 1px solid var(--border);
       display: flex; flex-direction: column;
     }
@@ -287,28 +292,43 @@
     /* ── BOARD WRAP ── */
     .board-wrap { flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 12px; }
     .board-svg  { display: block; max-height: 100%; }
+
+    /* ── SIDE PANELS (KT-5 item 2) ──
+       The portrait-aspect board (22x30) leaves horizontal gutters on wide
+       viewports that used to just be empty space next to the model cards,
+       while the dice pool and action log both lived crammed below the
+       board — pushing toward the scroll regression that's recurred twice.
+       Putting them here instead uses that dead space and keeps the phase
+       bar's footprint small and fixed, which is what actually guarantees
+       no scroll at desktop/half-screen widths. */
+    .side-panel {
+      width: clamp(130px, 15vw, 220px); flex-shrink: 0; overflow-y: auto;
+      background: var(--surface); display: flex; flex-direction: column;
+      padding: 8px 10px; gap: 6px;
+    }
+    .dice-panel { border-right: 1px solid var(--border); }
+    .log-panel  { border-left: 1px solid var(--border); }
+    .side-panel-header {
+      font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--text-dim); padding-bottom: 6px; border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .side-panel-empty { font-size: 11px; color: var(--text-dim); font-style: italic; padding-top: 10px; }
+    .dice-panel-block { display: flex; flex-direction: column; gap: 8px; }
+    .dice-panel-title { font-size: 12px; font-weight: 700; }
+    .log-panel-list { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
+    .log-panel-line { color: var(--text); padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04); line-height: 1.4; }
+    .log-panel-line:first-child { color: var(--gold); }
     /* KT-3 item 3: hover-only so touch devices (no real hover) never get a
        stuck pointer cursor or anything that could interfere with tap-select. */
     @media (hover: hover) {
       .op-token.token-selectable { cursor: pointer; }
     }
 
-    /* ── ACTION LOG (KT-3 item 4) ── */
-    .action-log-strip {
-      flex-shrink: 0; background: var(--surface); border-top: 1px solid var(--border);
-      font-size: 11px; color: var(--text-dim); cursor: pointer;
-    }
-    .action-log-strip:not(.expanded) {
-      padding: 5px 16px; display: flex; align-items: center; gap: 10px;
-    }
-    .action-log-latest { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
-    .action-log-toggle { flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.5px; }
-    .action-log-header {
-      padding: 5px 16px; display: flex; align-items: center; justify-content: space-between;
-      text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer;
-    }
-    .action-log-list { max-height: 130px; overflow-y: auto; padding: 0 16px 6px; }
-    .action-log-line { color: var(--text); padding: 2px 0; }
+    /* ── ACTION LOG ──
+       KT-3 item 4 introduced this as a collapsible bottom strip; KT-5 item
+       2 moved it into the persistent .log-panel side panel (see side-panel
+       rules above) — .log-panel-list/.log-panel-line are its styles now. */
 
     /* ── PHASE BAR ── */
     .phase-bar {
@@ -392,14 +412,17 @@
     .shoot-stats { display: flex; gap: 10px; flex-wrap: wrap; }
     .shoot-stats span { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
     .shoot-stats strong { color: var(--text); }
-    .dice-pool { display: flex; gap: 4px; flex-wrap: wrap; align-items: flex-end; min-height: 28px; }
-    .dice-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-    .dice-group-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; }
-    .dice-group-dice { display: flex; gap: 2px; flex-wrap: wrap; }
-    .dice-separator { width: 1px; height: 32px; background: var(--border); margin: 0 6px; align-self: center; }
+    .dice-pool { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-end; min-height: 38px; }
+    .dice-group { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .dice-group-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
+    .dice-group-dice { display: flex; gap: 3px; flex-wrap: wrap; }
+    /* KT-5 item 1: tinted, outcome-colored chip wrapping each die face —
+       color (background+border) reads before the pip count or label do. */
+    .dice-chip { display: inline-block; border: 1px solid; border-radius: 5px; padding: 2px; line-height: 1; }
+    .dice-separator { width: 1px; height: 44px; background: var(--border); margin: 0 6px; align-self: center; }
     /* KT-2 Part 2: click-to-skip hint shown only while a dice tumble is playing */
     .dice-skip-hint { font-size: 10px; color: var(--text-dim); font-style: italic; text-align: center; padding: 2px 0; }
-    .shoot-result { font-size: 12px; padding: 5px 10px; border-radius: 4px; background: var(--surface2); }
+    .shoot-result { font-size: 14px; font-weight: 600; padding: 6px 10px; border-radius: 4px; background: var(--surface2); }
 
     /* ── STRATEGY PHASE ── */
     .strategy-wrap { display: flex; flex-direction: column; gap: 8px; }
@@ -455,16 +478,16 @@
     .fight-pool-atk { border-color:rgba(74,158,255,0.35); }
     .fight-pool-def { border-color:rgba(201,122,247,0.35); }
     .fight-pool-label { font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;font-weight:700; }
-    .fight-dice { display:flex;flex-wrap:wrap;gap:5px; }
+    .fight-dice { display:flex;flex-wrap:wrap;gap:6px; }
     .fight-die {
       display:flex;flex-direction:column;align-items:center;gap:3px;
-      padding:4px;border-radius:5px;background:var(--surface);border:1px solid var(--border);min-width:44px;
+      padding:4px;border-radius:5px;background:var(--surface);border:1px solid var(--border);min-width:52px;
     }
     .fight-die.available { border-color:var(--gold); }
     .fight-die.used { opacity:0.42; }
     .fight-die.blocked-out { opacity:0.28;border-style:dashed; }
-    .fight-die-result { font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--text-dim); }
-    .fight-pool-total { font-size:10px;font-weight:700; }
+    .fight-die-result { font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--text-dim); }
+    .fight-pool-total { font-size:12px;font-weight:700; }
 
     /* ── ERROR ── */
     .error-box {
@@ -815,7 +838,45 @@ let splatData     = []; // { x, y, pathIdx, rotation, scale, color, bornAt } —
 let diceAnimState = null; // { atkRolls, defRolls, atkStopAt, defStopAt, t0, totalDur, displayAtk, displayDef, _timer }
 let fightDiceAnimState = null; // KT-2 Part 2 — same shape as diceAnimState, Fight's own tumble
 let diceReadoutExpanded = {}; // BON-2b: { shot: bool, fight: bool } — collapsed-by-default readout toggle (always expanded in ?dev=true)
-let actionLogExpanded = false; // KT-3 item 4: collapsed-by-default action log strip
+// KT-5 item 4: movement tween state. A single Firebase move writes TWO
+// separate root-level updates (the position itself, then logAction's
+// separate actionLog push) — each one independently fires a FULL
+// board rebuild (buildBoardSVG tears down and redraws every token). A
+// one-shot "tween from the last render" map gets wiped by the second
+// rebuild before 200ms is up, cutting the tween short on essentially
+// every real move. Tracking wall-clock progress instead survives that:
+// each rebuild recomputes the current interpolated position from elapsed
+// time and resumes from there, rather than restarting or snapping.
+let lastKnownOpPos = {};  // opId -> {x,y} — last position a tween was measured against
+let activeTweens    = {}; // opId -> {fromX, fromY, toX, toY, t0}
+const MOVE_TWEEN_MS = 200;
+
+// Called on every gameData change (see subscribeToGame). Starts a new tween
+// entry for any operative whose real position moved since the last time we
+// looked, using its CURRENT interpolated position (if already mid-tween) as
+// the new tween's start, so a second move mid-animation continues smoothly.
+function updateActiveTweens(curr) {
+  const now = Date.now();
+  for (const id of Object.keys(activeTweens)) {
+    if (now - activeTweens[id].t0 >= MOVE_TWEEN_MS) delete activeTweens[id];
+  }
+  for (const [id, op] of Object.entries(curr.operatives || {})) {
+    if (op.x < 0) continue; // undeployed
+    const last = lastKnownOpPos[id];
+    if (!last) { lastKnownOpPos[id] = { x: op.x, y: op.y }; continue; } // first sighting / deploy-in — no tween
+    if (last.x === op.x && last.y === op.y) continue;
+
+    const existing = activeTweens[id];
+    let fromX = last.x, fromY = last.y;
+    if (existing) {
+      const frac = Math.min(1, (now - existing.t0) / MOVE_TWEEN_MS);
+      fromX = existing.fromX + (existing.toX - existing.fromX) * frac;
+      fromY = existing.fromY + (existing.toY - existing.fromY) * frac;
+    }
+    activeTweens[id] = { fromX, fromY, toX: op.x, toY: op.y, t0: now };
+    lastKnownOpPos[id] = { x: op.x, y: op.y };
+  }
+}
 
 // ═══════════════════════════════════════════════════════════
 //  BOOTSTRAP
@@ -1156,6 +1217,7 @@ function subscribeToGame() {
     const prev = gameData;
     gameData = snap.val();
     if (gameData) {
+      updateActiveTweens(gameData);
       render();
       detectAndPlayEffects(prev, gameData);
     }
@@ -1494,38 +1556,19 @@ function describeActionLogEntry(e) {
   }
 }
 
-function toggleActionLog() {
-  actionLogExpanded = !actionLogExpanded;
-  reRender();
-}
-
+// KT-5 item 2: the action log moved from a collapsible bottom strip into
+// the persistent .log-panel side panel, which has enough vertical room
+// (the full board height) that the collapse/expand toggle no longer earns
+// its complexity — always show the most recent entries, newest first.
 function renderActionLog() {
   const entries = Object.values(gameData.actionLog || {})
     .sort((a, b) => (a.ts || 0) - (b.ts || 0))
     .map(describeActionLogEntry)
     .filter(Boolean);
-  if (!entries.length) return '';
+  if (!entries.length) return `<div class="side-panel-empty">No actions yet.</div>`;
 
-  const count = entries.length;
-
-  if (!actionLogExpanded) {
-    return `
-      <div class="action-log-strip" onclick="toggleActionLog()">
-        <span class="action-log-latest">${escHtml(entries[count - 1])}</span>
-        <span class="action-log-toggle">${count} action${count !== 1 ? 's' : ''} ▾</span>
-      </div>`;
-  }
-
-  const shown = entries.slice(-20).reverse();
-  return `
-    <div class="action-log-strip expanded">
-      <div class="action-log-header" onclick="toggleActionLog()">
-        <span>Action Log (${count})</span><span class="action-log-toggle">▴</span>
-      </div>
-      <div class="action-log-list">
-        ${shown.map(l => `<div class="action-log-line">${escHtml(l)}</div>`).join('')}
-      </div>
-    </div>`;
+  const shown = entries.slice(-50).reverse();
+  return `<div class="log-panel-list">${shown.map(l => `<div class="log-panel-line">${escHtml(l)}</div>`).join('')}</div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1562,6 +1605,11 @@ function renderGame(playerSlot, devContainer) {
     </div>
   `;
 
+  // KT-5 item 2: renderPhaseBar now returns {controls, dice} — controls go
+  // in the bottom phase-bar (as before), dice go in the new side panel so
+  // the board's horizontal gutters carry the roll instead of dead space.
+  const barResult = renderPhaseBar(status, phase, playerSlot, turn);
+
   container.innerHTML = topbar + `
     <div class="game-main">
       <div class="sidebar sidebar-p1" id="sidebar-p1-${playerSlot}">
@@ -1570,7 +1618,17 @@ function renderGame(playerSlot, devContainer) {
         ${p1dead.length ? `<div style="padding:6px 10px;font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;">Incapacitated</div>` + p1dead.map(o => renderOpRow(o, 'player1', playerSlot, status, phase, turn, true)).join('') : ''}
       </div>
 
+      <div class="side-panel dice-panel" id="dice-panel-${playerSlot}">
+        <div class="side-panel-header">Dice</div>
+        ${barResult.dice || `<div class="side-panel-empty">No active roll.</div>`}
+      </div>
+
       <div class="board-wrap" id="board-wrap-${playerSlot}"></div>
+
+      <div class="side-panel log-panel" id="log-panel-${playerSlot}">
+        <div class="side-panel-header">Action Log</div>
+        ${renderActionLog()}
+      </div>
 
       <div class="sidebar sidebar-right sidebar-p2" id="sidebar-p2-${playerSlot}">
         <div class="sidebar-header">${escHtml(p2info.factionName || 'Player 2')}</div>
@@ -1579,10 +1637,8 @@ function renderGame(playerSlot, devContainer) {
       </div>
     </div>
 
-    ${renderActionLog()}
-
     <div class="phase-bar" id="phase-bar-${playerSlot}">
-      ${renderPhaseBar(status, phase, playerSlot, turn)}
+      ${barResult.controls}
     </div>
   `;
 
@@ -1726,16 +1782,23 @@ function renderOpRow(op, opPlayer, viewerSlot, status, phase, turn, isDead) {
 //  PHASE BAR
 // ═══════════════════════════════════════════════════════════
 
+// KT-5 item 2: normalizes every phase's bar to {controls, dice} — only the
+// firefight branch (Shoot/Fight resolution) ever has dice content; every
+// other phase's renderXBar still just returns a plain string, wrapped here
+// so none of them needed to change.
 function renderPhaseBar(status, phase, playerSlot, turn) {
   const iAmActive = turn.activePlayer === playerSlot;
   const myTurn    = turn.activatingPlayer === playerSlot;
 
-  if (status === 'terrain') return renderTerrainBar(playerSlot);
-  if (status === 'deployment') return renderDeployBar(playerSlot);
-  if (status === 'initiative') return renderInitiativeBar(playerSlot);
-  if (phase === 'strategy')    return renderStrategyBar(playerSlot, turn);
-  if (phase === 'firefight')   return renderFirefightBar(playerSlot, turn, myTurn);
-  return `<span class="phase-bar-label">${phaseLabel(status, phase)}</span>`;
+  let result;
+  if (status === 'terrain') result = renderTerrainBar(playerSlot);
+  else if (status === 'deployment') result = renderDeployBar(playerSlot);
+  else if (status === 'initiative') result = renderInitiativeBar(playerSlot);
+  else if (phase === 'strategy') result = renderStrategyBar(playerSlot, turn);
+  else if (phase === 'firefight') result = renderFirefightBar(playerSlot, turn, myTurn);
+  else result = `<span class="phase-bar-label">${phaseLabel(status, phase)}</span>`;
+
+  return typeof result === 'string' ? { controls: result, dice: '' } : result;
 }
 
 // ── Terrain Phase ──
@@ -2189,7 +2252,85 @@ function drawOperativeToken(parent, op, viewerSlot, status, phase) {
     }), g.firstChild);
   }
 
+  // KT-5 item 3: board-level condition indicators — generic, driven by
+  // op.conditions the same way renderConditionBadges (sidebar) already is,
+  // so any future condition gets a token dot for free.
+  drawConditionTokens(g, op);
+
+  // KT-5 item 4: tween a moved operative in from its prior position rather
+  // than letting the full-rebuild render just place it at the new spot.
+  // activeTweens tracks wall-clock progress (see updateActiveTweens) so a
+  // rebuild partway through (e.g. the actionLog write that follows every
+  // move — see commitMove) resumes the tween from its current interpolated
+  // point instead of restarting or snapping.
+  const tw = activeTweens[op.id];
+  if (tw) {
+    const elapsed = Date.now() - tw.t0;
+    if (elapsed < MOVE_TWEEN_MS) {
+      const frac = elapsed / MOVE_TWEEN_MS;
+      const curX = tw.fromX + (tw.toX - tw.fromX) * frac;
+      const curY = tw.fromY + (tw.toY - tw.fromY) * frac;
+      const dx = curX - op.x, dy = curY - op.y;
+      const remainMs = MOVE_TWEEN_MS - elapsed;
+      const anim = document.createElementNS(NS, 'animateTransform');
+      anim.setAttribute('attributeName', 'transform');
+      anim.setAttribute('type', 'translate');
+      anim.setAttribute('from', `${dx} ${dy}`);
+      anim.setAttribute('to', '0 0');
+      anim.setAttribute('dur', (remainMs / 1000).toFixed(3) + 's');
+      anim.setAttribute('fill', 'freeze');
+      g.appendChild(anim);
+    }
+  }
+
   parent.appendChild(g);
+}
+
+// Board-level condition dots — bottom-left arc of the token (order pip
+// already owns top-right). One color per condition name; conditions with a
+// cap > 1 (markerlight) also print their stack count inside the dot, so
+// "how many times has this operative been markerlighted" is readable at a
+// glance without opening the sidebar. Any condition not in this table still
+// gets a dot (falls back to a neutral cyan) — no bespoke per-condition code
+// is required to make a new one show up here.
+const CONDITION_TOKEN_COLORS = {
+  markerlight: '#e84040', // laser-designator red — "you are being targeted"
+  stunned:     '#e8c840', // caution amber
+  empowered:   '#40e870',
+  warded:      '#40c8e8',
+  poisoned:    '#a040e8',
+};
+
+function drawConditionTokens(g, op) {
+  const active = Object.entries(op.conditions || {}).filter(([, c]) => (c?.stacks || 0) > 0);
+  if (!active.length) return;
+
+  const y       = op.y + TOKEN_R * 0.82;
+  const startX  = op.x - TOKEN_R * 0.85;
+  const spacing = TOKEN_R * 0.52;
+  const r       = TOKEN_R * 0.26;
+
+  active.forEach(([name, c], i) => {
+    const color = CONDITION_TOKEN_COLORS[name] || '#40c8e8';
+    const cx    = startX + i * spacing;
+    const cap   = CONDITION_CAPS[name] || 1;
+
+    g.appendChild(svgEl('circle', {
+      cx, cy: y, r,
+      fill: color, stroke: '#14141f', 'stroke-width': 0.05,
+      'pointer-events': 'none',
+    }));
+
+    if (cap > 1) {
+      const t = svgEl('text', {
+        x: cx, y: y + r * 0.36, 'text-anchor': 'middle',
+        fill: '#14141f', 'font-size': r * 1.3, 'font-family': 'sans-serif',
+        'font-weight': 900, 'pointer-events': 'none',
+      });
+      t.textContent = String(c.stacks);
+      g.appendChild(t);
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3830,7 +3971,12 @@ async function rollShot(playerSlot) {
 
   const outcome = resolveShotOutcome(attackProfile, defenseProfile, atkRolls, defRolls, p.useCover);
 
-  playBeamOnly(p, attacker, target);
+  // KT-5 item 4: the beam used to fire here directly, which only ever ran
+  // on the attacker's own client (rollShot is attacker-gated) — the
+  // defender's screen never saw it. Moved to detectAndPlayEffects's
+  // coverChoice->rolled transition, which both clients observe identically
+  // via their own Firebase subscription (same mechanism startDiceAnimation
+  // already relies on for its own two-client sync).
 
   const appliedBonuses = dedupeAppliedBonuses(weaponBonuses.concat(ployBonuses, defenderPloyBonuses, wardedBonus), finalAttackR.applied.concat(finalDefenseR.applied));
   const flags      = Array.from(new Set([...finalAttackR.flags, ...finalDefenseR.flags]));
@@ -4229,13 +4375,17 @@ function renderDicePool(rolls, isAtk, hitStat, saveStat, critThreshold) {
     }
   });
   const defs = isAtk
-    ? [['crit','CRIT','#e74c3c'],['hit','HIT','#27ae60'],['miss','MISS','var(--text-dim)']]
-    : [['critSave','CRIT SAVE','#e74c3c'],['normSave','SAVE','#27ae60'],['auto','COVER','#e67e22'],['fail','FAIL','var(--text-dim)']];
+    ? [['crit','CRIT','#e74c3c'],['hit','HIT','#27ae60'],['miss','MISS','#6a6a80']]
+    : [['critSave','CRIT SAVE','#e74c3c'],['normSave','SAVE','#27ae60'],['auto','COVER','#e67e22'],['fail','FAIL','#6a6a80']];
+  // KT-5 item 1: color now does the work BEFORE the text — each die sits in
+  // a tinted, outcome-colored chip (not just colored pips on a neutral
+  // face) so outcome reads at a glance, plus a bigger face (30 vs the old
+  // 22) for legibility at table distance.
   return defs.map(([key, lbl, col]) => {
     const dice = g[key];
     if (!dice.length) return '';
     return `<div class="dice-group">
-      <div class="dice-group-dice">${dice.map(d => `<span style="color:${col}">${d === 'auto' ? `<span style="font-size:18px;line-height:1">★</span>` : dieFaceSVG(d, 22)}</span>`).join('')}</div>
+      <div class="dice-group-dice">${dice.map(d => `<span class="dice-chip" style="color:${col};background:${col}26;border-color:${col};">${d === 'auto' ? `<span style="font-size:22px;line-height:1">★</span>` : dieFaceSVG(d, 30)}</span>`).join('')}</div>
       <div class="dice-group-label" style="color:${col}">${lbl}</div>
     </div><div class="dice-separator"></div>`;
   }).join('');
@@ -4246,12 +4396,16 @@ function renderDicePool(rolls, isAtk, hitStat, saveStat, critThreshold) {
 // 2 HIT × 3 = 30 wounds") instead of just the total. Shared by Shoot and
 // Fight (both resolve to the same crit-count/hit-count/per-die-damage
 // shape), so the phrasing can't drift between the two.
+// KT-5 item 1: each segment is now colored to match its dice-group color
+// (CRIT red / HIT green, same palette renderDicePool/renderDie use) so the
+// eye can trace straight from a colored number here back to the matching
+// colored dice — "make it READ" without changing what the line says.
 function formatDamageBreakdown(critN, critDmg, hitN, hitDmg, total) {
   const parts = [];
-  if (critN > 0) parts.push(`${critN} CRIT × ${critDmg}`);
-  if (hitN  > 0) parts.push(`${hitN} HIT × ${hitDmg}`);
+  if (critN > 0) parts.push(`<span style="color:#e74c3c">${critN} CRIT × ${critDmg}</span>`);
+  if (hitN  > 0) parts.push(`<span style="color:#27ae60">${hitN} HIT × ${hitDmg}</span>`);
   if (!parts.length) return 'All hits saved — 0 damage';
-  return parts.join(' + ') + ` = ${total} wound${total !== 1 ? 's' : ''}`;
+  return parts.join(' <span style="color:var(--text-dim)">+</span> ') + ` = <strong>${total}</strong> wound${total !== 1 ? 's' : ''}`;
 }
 
 function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp) {
@@ -4307,7 +4461,11 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
     ? `<button class="btn" onclick="cancelShoot()">Cancel Shot</button>`
     : '';
 
-  let diceHtml = '', resultHtml = '', animating = false;
+  // KT-5 item 2: dice display now goes to the side dice-panel, not inline
+  // in the phase bar — split what used to be one returned string into
+  // dice-panel content (diceHtml/dmgLine, read-only) and phase-bar
+  // controls (buttons, cover choice, bonus readout).
+  let diceHtml = '', dmgLine = '', animating = false;
   if (pending.phase === 'rolled' && pending.atkRolls) {
     animating = !!diceAnimState;
     const displayAtk = animating ? (diceAnimState.displayAtk || pending.atkRolls) : pending.atkRolls;
@@ -4322,16 +4480,11 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
       </div>`;
 
     if (!animating) {
-      const dmgStr = formatDamageBreakdown(
+      dmgLine = formatDamageBreakdown(
         pending.remainingCritHits || 0, pending.critDmg,
         pending.remainingNormalHits || 0, pending.normalDmg,
         pending.totalDamage
       );
-      resultHtml = `<div class="shoot-result">${dmgStr}</div>`;
-      resultHtml += iAmAttacker
-        ? `<button class="btn btn-primary" onclick="confirmShotDamage('${playerSlot}')">Apply ${pending.totalDamage} Damage to ${escHtml(tgtName)}</button>`
-        : `<span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`;
-      resultHtml += renderBonusReadout(pending, 'shot');
     }
   }
 
@@ -4343,10 +4496,26 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
   // tumble gets (renderFightResolutionBar).
   const skipHint = animating ? '<div class="dice-skip-hint">(click to skip)</div>' : '';
 
-  return `
+  const dice = diceHtml ? `
+    <div class="dice-panel-block"${animating ? ' onclick="skipDiceAnimation()" style="cursor:pointer;"' : ''}>
+      <div class="dice-panel-title">${escHtml(iAmAttacker ? attName : tgtName)} — ${escHtml(w.name || '?')}</div>
+      ${diceHtml}
+      ${skipHint}
+      ${dmgLine ? `<div class="shoot-result">${dmgLine}</div>` : ''}
+    </div>` : '';
+
+  let confirmHtml = '';
+  if (!animating && dmgLine) {
+    confirmHtml = iAmAttacker
+      ? `<button class="btn btn-primary" onclick="confirmShotDamage('${playerSlot}')">Apply ${pending.totalDamage} Damage to ${escHtml(tgtName)}</button>`
+      : `<span style="font-size:11px;color:var(--text-dim);">Waiting for attacker to confirm…</span>`;
+    confirmHtml += renderBonusReadout(pending, 'shot');
+  }
+
+  const controls = `
     <span class="phase-bar-label">${label}</span>
     <div class="phase-bar-body">
-      <div class="shoot-panel"${animating ? ' onclick="skipDiceAnimation()" style="cursor:pointer;"' : ''}>
+      <div class="shoot-panel">
         <div class="shoot-panel-header">
           <strong style="font-size:13px;">${escHtml(iAmAttacker ? attName : tgtName)}</strong>
           <span class="shoot-stats"><span>${vs}</span></span>
@@ -4355,11 +4524,11 @@ function renderShotResolutionBar(playerSlot, pending, iAmAttacker, attOp, tgtOp)
         ${coverHtml}
         ${holdFastHtml}
         ${rollBtn}
-        ${diceHtml}
-        ${skipHint}
-        ${resultHtml}
+        ${confirmHtml}
       </div>
     </div>`;
+
+  return { controls, dice };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -5021,10 +5190,14 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
   };
   const ROLLING_STYLE = { label: '', color: 'var(--text-dim)' };
 
+  // KT-5 item 1: same chip treatment as Shoot's dice — tinted background +
+  // colored border so a "BLOCKED" or "CRIT STRIKE" die reads by color
+  // before anyone reads the label underneath it.
   function renderDie(roll, style) {
     const isActive = style.label !== 'MISS';
-    return `<div class="fight-die${isActive ? '' : ' used'}">
-      <span style="color:${style.color}">${dieFaceSVG(roll, 20)}</span>
+    const col = style.color.startsWith('var(') ? '#6a6a80' : style.color;
+    return `<div class="fight-die${isActive ? '' : ' used'}" style="background:${col}26;border-color:${col};">
+      <span style="color:${style.color}">${dieFaceSVG(roll, 28)}</span>
       <div class="fight-die-result" style="color:${style.color}">${style.label}</div>
     </div>`;
   }
@@ -5072,31 +5245,40 @@ function renderFightResolutionBar(playerSlot, p, iAmAttacker, iAmDefender, attOp
   const atkTotalTxt = dmgAtk > 0 ? `Deals: ${formatDamageBreakdown(p.atkStrikeCrits || 0, p.atkCDmg, p.atkStrikeHits || 0, p.atkNDmg, dmgAtk)}` : 'No damage';
   const defTotalTxt = dmgDef > 0 ? `Retaliates: ${formatDamageBreakdown(p.defStrikeCrits || 0, p.defCDmg, p.defStrikeHits || 0, p.defNDmg, dmgDef)}` : 'No retaliation';
 
-  return `
+  // KT-5 item 2: the dice pools (with their per-pool math) go to the side
+  // dice-panel; header/status/confirm-and-apply stay in the phase bar.
+  const dice = `
+    <div class="dice-panel-block"${animating ? ' onclick="skipDiceAnimation()" style="cursor:pointer;"' : ''}>
+      <div class="dice-panel-title">${attName} ⚔ ${defName}</div>
+      <div class="fight-pools">
+        <div class="fight-pool fight-pool-atk">
+          <div class="fight-pool-label">${attName} — ${atkWpn} (ATK ${p.atkWeapon?.profiles?.ATK||'?'}, hit on ${p.atkHitStat}+)</div>
+          <div class="fight-dice">${atkDice}</div>
+          <div class="fight-pool-total" style="color:${dmgAtk>0?'var(--red)':'var(--text-dim)'}">${animating ? '&nbsp;' : atkTotalTxt}</div>
+        </div>
+        <div class="fight-pool fight-pool-def">
+          <div class="fight-pool-label">${defName} — ${defWpn} (ATK ${p.defWeapon?.profiles?.ATK||'?'}, hit on ${p.defHitStat}+)</div>
+          <div class="fight-dice">${defDice}</div>
+          <div class="fight-pool-total" style="color:${dmgDef>0?'var(--red)':'var(--text-dim)'}">${animating ? '&nbsp;' : defTotalTxt}</div>
+        </div>
+      </div>
+      ${skipHint}
+    </div>`;
+
+  const controls = `
     <span class="phase-bar-label">${label}</span>
     <div class="phase-bar-body">
-      <div class="fight-panel"${animating ? ' onclick="skipDiceAnimation()" style="cursor:pointer;"' : ''}>
+      <div class="fight-panel">
         <div class="fight-panel-header">
           <strong style="font-size:13px;">${attName} ⚔ ${defName}</strong>
           <span style="font-size:11px;color:var(--text-dim);">${atkWpn} vs ${defWpn}</span>
         </div>
         <div class="fight-status">Auto-resolved — attacker strikes, defender blocks crits first then normals, remainder retaliates.</div>
-        <div class="fight-pools">
-          <div class="fight-pool fight-pool-atk">
-            <div class="fight-pool-label">${attName} — ${atkWpn} (ATK ${p.atkWeapon?.profiles?.ATK||'?'}, hit on ${p.atkHitStat}+)</div>
-            <div class="fight-dice">${atkDice}</div>
-            <div class="fight-pool-total" style="color:${dmgAtk>0?'var(--red)':'var(--text-dim)'}">${animating ? '&nbsp;' : atkTotalTxt}</div>
-          </div>
-          <div class="fight-pool fight-pool-def">
-            <div class="fight-pool-label">${defName} — ${defWpn} (ATK ${p.defWeapon?.profiles?.ATK||'?'}, hit on ${p.defHitStat}+)</div>
-            <div class="fight-dice">${defDice}</div>
-            <div class="fight-pool-total" style="color:${dmgDef>0?'var(--red)':'var(--text-dim)'}">${animating ? '&nbsp;' : defTotalTxt}</div>
-          </div>
-        </div>
-        ${skipHint}
         ${confirmHtml}
       </div>
     </div>`;
+
+  return { controls, dice };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -5371,11 +5553,16 @@ function playShootEffects(pending, attacker, target) {
 
 // Beam fires on Roll Dice — one beam per ATK die, chained sequentially
 // Each beam's duration = totalDur / atkCount so the full volley takes the same time as one beam
+// KT-5 item 4: color now reads outcome (hit vs miss), not weapon flavor —
+// "hit vs miss reads instantly" was the brief's explicit ask, and per-
+// weapon color coding is the kind of per-weapon distinction the brief
+// puts out of scope anyway. Tier (thickness/duration) still comes from the
+// weapon's own damage values — that's about the WEAPON, not the outcome.
 function playBeamOnly(pending, attacker, target) {
   const w = pending.weapon || {};
   const [nDmg, cDmg] = parseDmgPair(w.profiles?.DMG || '1/1');
   const tier     = getAnimTier(nDmg, cDmg);
-  const color    = getBeamColor(w.name || '');
+  const color    = (pending.totalDamage || 0) > 0 ? '#27ae60' : '#6a6a80';
   const atkCount = Math.min(parseInt(w.profiles?.ATK || 1), 6);
   const DURS     = { subtle: 350, dramatic: 700, cinematic: 1200 };
   const beamDur  = Math.max(60, Math.floor(DURS[tier] / atkCount));
@@ -5604,6 +5791,12 @@ function detectAndPlayEffects(prev, curr) {
   if (prev.pendingShot && curr.pendingShot &&
       prev.pendingShot.phase !== 'rolled' && curr.pendingShot.phase === 'rolled') {
     startDiceAnimation(curr.pendingShot);
+    // KT-5 item 4: beam fires here (both clients hit this transition via
+    // their own Firebase subscription) instead of inside rollShot, which
+    // only ever ran on the attacker's client — see rollShot's own comment.
+    const at = (curr.operatives || {})[curr.pendingShot.attackerOpId];
+    const tg = (curr.operatives || {})[curr.pendingShot.targetOpId];
+    if (at && tg && at.x >= 0 && tg.x >= 0) playBeamOnly(curr.pendingShot, at, tg);
   }
 
   // Burst + flash when damage is confirmed (pendingShot cleared after 'rolled' phase)
@@ -5665,14 +5858,19 @@ function reRender() {
 }
 
 function reRenderPhaseBar() {
-  // Re-render just the phase bar without rebuilding the full game
+  // Re-render just the phase bar (+ dice panel) without rebuilding the full game
   const slots = devMode ? ['player1', 'player2'] : [myPlayer];
   slots.forEach(slot => {
     const bar = document.getElementById(`phase-bar-${slot}`);
     if (!bar || !gameData) return;
     const status = gameData.meta?.status;
     const phase  = status === 'active' ? (gameData.turn?.phase || 'strategy') : status;
-    bar.innerHTML = renderPhaseBar(status, phase, slot, gameData.turn || {});
+    const result = renderPhaseBar(status, phase, slot, gameData.turn || {});
+    bar.innerHTML = result.controls;
+    const dicePanel = document.getElementById(`dice-panel-${slot}`);
+    if (dicePanel) {
+      dicePanel.innerHTML = `<div class="side-panel-header">Dice</div>${result.dice || `<div class="side-panel-empty">No active roll.</div>`}`;
+    }
   });
   // BUG_KT_PLAYTEST_2 item 1: the radial menu shows the same AP/action
   // state as the phase bar (e.g. after a move that doesn't end the
