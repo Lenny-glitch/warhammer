@@ -44,7 +44,17 @@
  *     shots:   [{ fromUnitId, toUnitId, hitRoll, woundRoll, saveRoll, damage, hit, wound, saved }],
  *     charges: [{ unitId, targetId, roll2d6, success, distanceInches }],
  *     fights:  [{ attackerId, defenderId, hitRoll, woundRoll, saveRoll, damage }]
- *   } | null
+ *   } | null,
+ *
+ *   actionLog: {
+ *     [pushId]: { type, faction, playerName, ..., ts }
+ *     // structured records, not narrated strings — turned into English by
+ *     // game.js's describeActionLogEntry() at render time, same reasoning
+ *     // as killteam's KT-3 item 4: grows into a replay/catch-up feature
+ *     // later without touching every write site (W40K-UX1 item 2).
+ *     // 'deploy' is the only type written today: { type:'deploy', faction,
+ *     // playerName, groupId, unitLabel, ts }.
+ *   }
  * }
  */
 
@@ -558,9 +568,20 @@ window.GameState = (() => {
     await window.db.ref('games/' + gameId).update(update);
   }
 
+  // W40K-UX1 item 2: structured action-log write, not an ad-hoc string —
+  // see the schema comment above. Every caller passes its own `type` plus
+  // whatever fields that type needs; game.js's describeActionLogEntry()
+  // is the only place that turns a record into English.
+  async function logAction(gameId, record) {
+    await window.db.ref(`games/${gameId}/actionLog`).push({
+      ...record,
+      ts: firebase.database.ServerValue.TIMESTAMP,
+    });
+  }
+
   // Deploys one unit group: writes final model positions, removes group from the queue,
   // then either passes to the other player or ends the phase (transition to initiative).
-  async function deployGroup(gameId, faction, groupId, unitPositions, nextPlayer) {
+  async function deployGroup(gameId, faction, groupId, unitPositions, nextPlayer, playerName, unitLabel) {
     const snap = await window.db.ref(`games/${gameId}/undeployedGroups/${faction}`).once('value');
     const raw  = snap.val();
     const current   = Array.isArray(raw) ? raw : (raw ? Object.values(raw) : []);
@@ -580,6 +601,7 @@ window.GameState = (() => {
       update['initiative']    = { guardRoll: null, eldarRoll: null };
     }
     await window.db.ref('games/' + gameId).update(update);
+    await logAction(gameId, { type: 'deploy', faction, playerName, groupId, unitLabel });
   }
 
   // Skip deployment turn — active player has nothing left to place.
@@ -599,5 +621,5 @@ window.GameState = (() => {
     await window.db.ref('games/' + gameId).update(update);
   }
 
-  return { createGame, joinGame, subscribeToGame, getLocalFaction, setLocalFaction, isDevSession, advancePhase, confirmUnitMove, confirmUnitShoot, allocateCasualties, rollInitiative, clearInitiativeRolls, chooseInitiative, writeTerrain, confirmTerrainDone, deployGroup, passDeploymentTurn, confirmCharge, failCharge, confirmMeleeAttack, devApplyPreset };
+  return { createGame, joinGame, subscribeToGame, getLocalFaction, setLocalFaction, isDevSession, advancePhase, confirmUnitMove, confirmUnitShoot, allocateCasualties, rollInitiative, clearInitiativeRolls, chooseInitiative, writeTerrain, confirmTerrainDone, deployGroup, passDeploymentTurn, confirmCharge, failCharge, confirmMeleeAttack, devApplyPreset, logAction };
 })();

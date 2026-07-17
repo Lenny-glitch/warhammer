@@ -197,11 +197,25 @@ window.Board = (() => {
     const showCoherency = activeGroup && coherencyOk;
 
     allModels.forEach(u => {
+      // W40K-UX1 item 1: readable name for the hover tooltip — roster-built
+      // units carry their own `label` (see roster.js's buildUnitsFromRoster);
+      // legacy dev-preset units (units.js's buildInitialUnits) have none, so
+      // fall back to the same guard_squad/eldar_squad names game.js's
+      // groupLabel() uses, then the type string itself (still more readable
+      // than a raw id).
+      const unitLabel = u.label
+        || (u.unitGroup === 'guard_squad' ? 'Infantry Squad' : null)
+        || (u.unitGroup === 'eldar_squad' ? 'Guardian Defenders' : null)
+        || u.type;
+
       // Destroyed token — generic, works for any model type
       if (!u.alive) {
         const r = ((window.UNIT_STATS || {})[u.type] || {}).baseRadius || 0.5;
-        const g = svgEl('g', { 'data-unit-id': u.id, 'data-unit-group': u.unitGroup });
+        const g = svgEl('g', { 'data-unit-id': u.id, 'data-unit-group': u.unitGroup, class: 'token-hoverable' });
         g.style.opacity = '0.38';
+        const title = svgEl('title', {});
+        title.textContent = `${unitLabel} — destroyed`;
+        g.appendChild(title);
         g.appendChild(svgEl('circle', { cx: u.x, cy: u.y, r, fill: '#1a1a1a', stroke: '#444', 'stroke-width': 0.2 }));
         const skull = svgEl('text', {
           x: u.x, y: u.y + r * 0.38,
@@ -223,7 +237,10 @@ window.Board = (() => {
       // Effective position: pending override → Firebase
       const pos = (pending && pending[u.id]) ? pending[u.id] : { x: u.x, y: u.y };
 
-      const g = svgEl('g', { 'data-unit-id': u.id, 'data-unit-group': u.unitGroup });
+      const g = svgEl('g', { 'data-unit-id': u.id, 'data-unit-group': u.unitGroup, class: 'token-hoverable' });
+      const title = svgEl('title', {});
+      title.textContent = `${unitLabel} — ${u.wounds}/${u.maxWounds}W`;
+      g.appendChild(title);
 
       if (inShootMode) {
         const isShooter      = u.unitGroup === shooterGroup;

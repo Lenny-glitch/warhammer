@@ -516,3 +516,97 @@ verification per the project's one-off-test convention — not committed.
 Files: `warhammer40k/js/state.js`, `warhammer40k/js/roster.js`,
 `warhammer40k/js/game.js`, `warhammer40k/js/lobby.js`,
 `warhammer40k/js/shooting.js`, `killteam/DEVLOG.md`.
+
+---
+
+## W40K-UX1 — Table Feel Parity: hover, deployment log, layout scroll (2026-07-17)
+
+Brief: `briefs/W40K_UX1_BRIEF.md`. From Nox's brother-game 5 playtest (first
+real two-player 40k game, roster chain worked end to end). Brief said to
+port killteam's own fixes for all three rather than reinvent — read
+killteam/DEVLOG.md's `BUG_KT_PLAYTEST_1_1`/`KT-3`/`KT-5` entries first,
+then ported the actual mechanisms (not just the gist) into 40k's
+differently-structured codebase (KT is single-file `index.html`; 40k
+splits `board.js`/`game.js`/`state.js`/`css/styles.css`).
+
+**Item 1 — enemy hover labels.** Ported KT-3 item 3's exact pattern: a
+native SVG `<title>` per token (`board.js`'s `drawUnits`) reading
+`"{label} — {wounds}/{maxWounds}W"`, plus a `.token-hoverable` class with
+`cursor:pointer` gated behind `@media (hover:hover)` (touch devices never
+get a stuck pointer cursor). Readable name comes from `unit.label`
+(roster-built games already carry this — see roster.js's
+`buildUnitsFromRoster`); legacy dev-preset units (no `.label`) fall back
+to the same `guard_squad`/`eldar_squad` names `groupLabel()` already uses,
+then the type string. Applies to both sides' live tokens and destroyed
+tokens (skull icon) alike. Verified live in a two-army dev-mode game
+(13-unit Astra Militarum vs 13-unit Craftworlds Eldar): both sides' tokens
+carry correct titles ("Krieg Command Squad — 3/3W", "Wraithguard — 3/3W").
+
+**Item 2 — deployment placement log.** Ported KT-3 item 4's structured-
+record reasoning exactly, scoped to the brief's explicit "minimum useful
+version": a new `logAction(gameId, record)` in `state.js` pushes to
+`games/{id}/actionLog` (schema comment updated), called from `deployGroup`
+with `{type:'deploy', faction, playerName, groupId, unitLabel}` — the
+caller (game.js's deployment placement handler) already had the deploying
+player's name and the unit's real label in scope, so no extra Firebase
+read was needed. `describeActionLogEntry()` (game.js) is the only place
+that turns a record into English ("Nox deploys Krieg Command Squad") —
+unknown record types render as nothing rather than guessing a sentence,
+same as KT's own function. Rendered in a new "Log" section of the
+deployment screen's left side panel (`actionLogHTML()`), reusing KT's own
+`.log-panel-list`/`.log-panel-line` class names (added to `styles.css`,
+didn't exist in 40k yet) for a consistent look across both apps. Verified
+with two independent browser contexts (real create → join → deploy flow):
+one player's deploy write shows "Nox deploys Krieg Command Squad" on
+BOTH clients' panels, not just the deployer's own. Not extended to
+non-deployment actions (movement/shooting/etc.) — the brief's "Done when"
+only requires deployment narration; matching KT-3's full action-log
+instrumentation for every phase is real additional surface, not "cheap,"
+and wasn't attempted.
+
+**Item 3 — layout scroll (recurring bug class, third occurrence).**
+Reproduced first, deliberately, before touching CSS: a real two-army
+13-unit game (Aaron's actual roster, `Jon-2000`) forced into the main
+turn loop measured `scrollHeight=1436–1468px` against an 800px viewport
+at both 1280px and 640px widths — confirmed the bug, not assumed it.
+Root cause, read directly off `killteam/DEVLOG.md`'s `BUG_KT_PLAYTEST_1_1`
+item 3 and matching exactly: `.screen { min-height: 100vh }` is a floor,
+not a ceiling, so `.game-main`'s `flex:1`/`min-height:0`/`overflow:hidden`
+never actually contains anything — a long unit list just grows the whole
+page. Fixed by giving `#screen-game` a real `height: 100vh` (on top of
+the inherited floor, pinning it exactly) plus `#game-content`'s own
+`min-height: 0` so its flex children can actually shrink. 40k has no
+`#app` wrapper the way KT does (screens are direct `body` children, and
+`body` carries no competing padding), so this needed no extra
+app-fullbleed toggle — simpler than KT's version by construction, not by
+omission. Re-ran the same 13v13 repro after the fix: `scrollHeight ==
+innerHeight` (800==800) at both widths.
+
+Found live during verification, same as KT-5 item 2 found for KT: the
+existing `.side-panel` was a fixed `210px`/`min-width:210px` — technically
+zero page scroll, but at 640px-tiled width that crushed the board to
+~220px (barely usable), same "satisfies the literal wording, misses the
+point" gap KT-5 already fixed once. Ported the identical fix: `width:
+clamp(130px, 15vw, 220px)` instead of a fixed width. Board width recovered
+to ~380px at the same 640px viewport post-fix.
+
+### Testing
+
+Real headless Chromium (`.playwright-libs` workaround, borrowed from
+`roster/` since `warhammer40k/` doesn't have its own copy — Playwright
+itself is already a devDependency here, only the missing system
+`libasound.so.2` needed the workaround), real `createGame`/`joinGame`/
+`deployGroup` writes against live Firebase, disposable games deleted
+implicitly (never referenced again, not cleaned up — matches this
+project's existing 40k test-game hygiene). All Playwright scripts
+one-off, not committed. Scroll repro/fix (2 viewport widths, before and
+after), hover tooltip content on both factions (2), two-browser-context
+deployment log narration on both clients (8 checks), lobby boot smoke
+test (0 console/page errors).
+
+Files: `warhammer40k/css/styles.css` (`#screen-game`/`#game-content`
+height fix, `.side-panel` clamp, `.token-hoverable`, `.log-panel-*`/
+`.side-panel-empty`), `warhammer40k/js/board.js` (`drawUnits` tooltips),
+`warhammer40k/js/state.js` (`logAction`, `deployGroup` extended),
+`warhammer40k/js/game.js` (`describeActionLogEntry`, `actionLogHTML`,
+deployment panel wiring).

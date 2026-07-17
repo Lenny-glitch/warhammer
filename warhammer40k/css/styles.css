@@ -294,8 +294,19 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---- Game screen ---- */
-#screen-game { align-items: stretch; }
-#game-content { display: flex; flex-direction: column; flex: 1; }
+/* W40K-UX1 item 3: .screen's min-height:100vh is a floor, not a ceiling —
+   fine for the lobby (short, centered content) but on a long unit list
+   .game-main's flex:1/min-height:0/overflow:hidden below only actually
+   contains anything if THIS box is capped at the viewport. Without a real
+   ceiling, a 13-unit army's side panels just grow the whole page past
+   100vh instead of scrolling internally (recurring bug class, same root
+   cause KT hit twice — see killteam/DEVLOG.md's BUG_KT_PLAYTEST_1_1 item 3
+   and KT-5 item 2). height (a real ceiling) alongside the inherited
+   min-height pins this screen to exactly 100vh; #game-content needs its
+   own min-height:0 so its flex children (the side panels) can actually
+   shrink to fit instead of pushing the ceiling open. */
+#screen-game { align-items: stretch; height: 100vh; overflow: hidden; }
+#game-content { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
 .game-topbar {
   display: flex;
@@ -381,9 +392,15 @@ body {
 }
 
 /* ---- Side panels ---- */
+/* W40K-UX1 item 3: was a fixed 210px/min-width:210px — two of these plus
+   the board left no page-level scroll, but at half-screen-tiled widths
+   (~640px) squeezed the board to ~220px, technically satisfying "no
+   scroll" while missing the actual point. Same fix KT-5 item 2 needed for
+   the same reason: clamp() lets the panels shrink smoothly with viewport
+   instead of refusing to and crushing the board. */
 .side-panel {
-  width: 210px;
-  min-width: 210px;
+  width: clamp(130px, 15vw, 220px);
+  flex-shrink: 0;
   overflow-y: auto;
   background: var(--bg-panel);
   padding: 0.6rem 0.65rem;
@@ -402,6 +419,22 @@ body {
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.2rem;
 }
+
+/* ---- Action log (W40K-UX1 item 2) ---- */
+.side-panel-empty {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-style: italic;
+  padding-top: 0.4rem;
+}
+.log-panel-list { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.7rem; }
+.log-panel-line {
+  color: var(--text);
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  line-height: 1.4;
+}
+.log-panel-line:first-child { color: var(--gold); }
 
 /* ---- Unit cards ---- */
 .unit-card {
@@ -518,6 +551,15 @@ body {
 .roll-outcome-unsave { color: #e84040; }
 
 /* ---- Board ---- */
+/* W40K-UX1 item 1: hover-only so touch devices (no real hover) never get a
+   stuck pointer cursor — same reasoning as killteam's token-selectable
+   (KT-3 item 3). Applies to every token (own and enemy alike); more
+   specific contextual cursors (grab/crosshair) are set inline in board.js
+   and win over this regardless, since inline style beats a stylesheet rule. */
+@media (hover: hover) {
+  .token-hoverable { cursor: pointer; }
+}
+
 .board-wrap {
   flex: 1;
   min-height: 0;

@@ -229,6 +229,29 @@ window.Game = (() => {
     return groupId;
   }
 
+  // W40K-UX1 item 2: turns a structured actionLog record into English —
+  // the only place that does, per KT-3 item 4's same reasoning (grows into
+  // replay/catch-up later without touching every write site). Unknown
+  // record types render as null rather than guessing a sentence for a
+  // shape this function hasn't been taught yet.
+  function describeActionLogEntry(entry) {
+    if (entry.type === 'deploy') {
+      return `${entry.playerName || 'Someone'} deploys ${entry.unitLabel || 'a unit'}`;
+    }
+    return null;
+  }
+
+  function actionLogHTML(actionLog) {
+    const entries = Object.values(actionLog || {})
+      .sort((a, b) => (a.ts || 0) - (b.ts || 0))
+      .map(describeActionLogEntry)
+      .filter(Boolean);
+    if (!entries.length) return `<div class="side-panel-empty">No actions yet</div>`;
+    return `<div class="log-panel-list">${entries.map(line =>
+      `<div class="log-panel-line">${escHtml(line)}</div>`
+    ).reverse().join('')}</div>`;
+  }
+
   function activateGroup(groupId, units) {
     const snapshots = {};
     Object.values(units).forEach(u => {
@@ -1082,6 +1105,10 @@ window.Game = (() => {
             <div class="deploy-zone-row"><span class="deploy-zone-pip guard-zone-pip"></span>${escHtml(guardName)}: top ${zoneH}"</div>
             <div class="deploy-zone-row"><span class="deploy-zone-pip eldar-zone-pip"></span>${escHtml(eldarName)}: bottom ${zoneH}"</div>
           </div>
+          <div style="margin-top:1.25rem;">
+            <div class="side-panel-title">Log</div>
+            ${actionLogHTML(game.actionLog)}
+          </div>
         </div>
 
         <div id="board-wrap" class="board-wrap"></div>
@@ -1137,8 +1164,11 @@ window.Game = (() => {
         const otherRemaining = otherUndeployed.length;
         const nextPlayer     = (myRemaining === 0 && otherRemaining === 0) ? null : otherFac;
 
+        const deployerName = myFac === 'guard' ? guardName : eldarName;
+        const deployedLabel = (activeGroupModels[0] && activeGroupModels[0].label) || groupLabel(activeGroupId);
+
         try {
-          await window.GameState.deployGroup(currentGameId, myFac, activeGroupId, unitPositions, nextPlayer);
+          await window.GameState.deployGroup(currentGameId, myFac, activeGroupId, unitPositions, nextPlayer, deployerName, deployedLabel);
         } catch (err) {
           console.error('[deploy] Firebase write failed:', err);
           deployPlacing = false;
