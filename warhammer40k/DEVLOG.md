@@ -670,3 +670,133 @@ real export) — next step if this recurs: check the browser console for
 and diff against `gameData/warhammer-40k/{factionId}`'s actual keys.
 
 Files: none (investigation only).
+
+---
+
+## W40K-UX2 — Board Readability & Deployment Fixes (2026-07-17)
+
+Brief: `briefs/W40K_UX2_BRIEF.md`. Sibling to W40K-UX1, from brother-game
+5's second run — his own words are the spec for items 2–4.
+
+**Item 1 — token size reflects base size.** Checked gameData directly
+first: `baseRadius` is uniformly `0.5` for every real unit in the flat
+pool, vehicles and titanic units included — no per-unit mm data exists
+anywhere to read, exactly the situation the brief anticipated. Derived a
+coarse visual tier from each unit's own `keywords` instead (real BSData-
+sourced vocabulary, not invented): `TITANIC` → 1.4, `VEHICLE`/`MONSTER`/
+`WALKER`/`FORTIFICATION` → 0.95, `MOUNTED`/`ARTILLERY` → 0.7, default
+(infantry/character) → 0.5 unchanged. New `getTokenVisualRadius()` in
+`board.js`, used only by the token-drawing/ghost-preview/drag-highlight
+render paths — deliberately NOT wired into `calcCoherency` or any LOS/
+range math, which keep the old flat `UNIT_STATS` default, since changing
+those would shift real gameplay outcomes (out of scope per the brief's
+own "any rules changes"). Verified live against Aaron's real 13-unit
+Astra Militarum roster: Leman Russ variants render at 0.95, the
+Stormlord (TITANIC) at 1.4, Rough Riders/Artillery Team (mounted/
+artillery) at 0.7, every infantry squad unchanged at 0.5.
+
+**Item 2 — deployment zone clarity.** Brother: *"I put my terrain on
+your side... we need a way to make it more clear what side you are
+starting on."* Root cause: the board's zone tint was static (always
+guard-top/eldar-bottom, ~0.07 opacity) and the one PERSPECTIVE-aware
+highlight that existed (`deployZone`/`deployZoneFaction`) only appeared
+during actual deployment and followed whoever's turn it currently was —
+during Terrain there was no perspective-aware indicator at all, and
+during deployment it showed the ACTIVE player's zone, not necessarily
+the viewer's own. Replaced with a `opts.myFaction`-driven render in
+`board.js`: the viewer's own half gets a diagonal hatch pattern (new
+`<pattern id="my-zone-hatch">`), a gold outline, and a "YOUR ZONE" label;
+the opponent's half is grayed down. This is now constant across turns —
+your zone is always yours, whoever's turn it is — wired into both the
+Terrain and Deployment phase renders in `game.js` (`buildBoardOpts`,
+both `boardOpts` branches). **Bonus (done): warn, don't block.** Terrain
+phase now shows "⚠ N of your squares are in the OPPONENT's deployment
+zone" if any of the player's own painted squares fall in the other
+half — recomputed every render (so it stays accurate through erases,
+not a one-shot check), never blocks placement. Verified live: hatch +
+label render correctly in both phases, painting in the opponent's zone
+triggers the warning without blocking the write.
+
+**Item 3 — undo (deployment + movement).** Brother: *"we need an undo
+button."* Ported WHF-5m's phase-scoped snapshot pattern (read
+`warhammer-fantasy/DEVLOG.md`'s Phase 8 entry first, per the brief) —
+same shape, adapted to 40k's per-group commit model:
+- **Movement**: `movementSnapshot` (new game-doc field) is written inside
+  `advancePhase()` at the exact moment a player's Movement phase begins
+  (same branch that already resets `movedThisTurn`, reusing its own
+  `units` read — no extra Firebase round-trip). `undoMove(gameId,
+  groupId)` reverts that group's models to their snapshot x/y and clears
+  `movedThisTurn`, refusing (returns `{undone:false}`) if the group
+  hasn't moved this turn or nothing was actually revertible. Rendered as
+  an "Already moved — undo?" list in the movement queue view
+  (`movementQueueHTML`'s new `movedGroupIds` param), one button per
+  already-moved group.
+- **Deployment**: no per-model position snapshot needed — an undeployed
+  group is hidden from the board purely by its membership in
+  `undeployedGroups`, so undoing a deploy just means putting the group
+  back in that list; stale x/y on its models is harmless until the next
+  real placement overwrites it. `lastDeploy` (new game-doc field, `{
+  faction, groupId, playerName, unitLabel, prevUndeployedGroups,
+  hadNextPlayer }`) gets overwritten by every `deployGroup` call — mine
+  or the opponent's — which is what makes "the opponent hasn't acted
+  since" free to check: `undoDeployment(gameId, faction)` just compares
+  `lastDeploy.faction` against the caller. If the undone deploy had ended
+  the phase (advanced to Initiative), it's reverted back to Deployment
+  too. Deliberately scoped to the deployment phase's own UI only — no
+  undo affordance is wired into the Initiative screen, so a deploy that
+  ends the phase can no longer be undone once Initiative renders
+  (matching the brief's "do not allow undo after any action with
+  opponent-visible side effects": initiative rolls can start immediately
+  on that screen).
+
+Verified with two real browser contexts (not dev mode — dev mode's
+deployment view always follows `turn.activePlayer` for "my" perspective,
+which can never reproduce "my own screen, opponent's turn," the exact
+case this item needs): the deployer's own screen shows an undo button
+after passing the turn to the opponent, the OTHER player's screen does
+not; undo correctly restores the undeployed-group count and reverts
+`turn/activePlayer`. Movement: `advancePhase` genuinely writes the
+snapshot on phase entry, a real commit+undo round-trip restores exact
+position and `movedThisTurn`, and a second undo attempt on an
+already-reverted group correctly refuses.
+
+**Item 4 — model arrangement within a unit.** Brother: *"make it auto
+move them around to keep them from being on top of each other or
+leaving weird gaps."* Deployment already auto-arranges (existing
+`onDeployPlaced` grid-cluster math) — the real gap was after a move,
+since models drag individually with no re-tidy on confirm. Added: on
+`btn-confirm-move`, for any group with more than one model, the
+raw dragged positions are discarded in favor of a clean grid centered on
+their own centroid (same spacing/cols formula as deployment's cluster,
+independently reimplemented in `game.js` rather than reaching into
+`board.js` for a five-line formula) — direction/intent of the drag is
+preserved, per-model overlap/gaps are not. Clamped to board bounds;
+terrain-passability of the arranged positions is NOT re-checked
+(noted, not fixed, per the brief's own "if not cheap, note it and
+stop" — the drag itself already validated the raw positions, and
+re-validating a different set post-arrangement is real additional
+work). Manual rearrangement was not attempted for the same reason —
+auto-tidy was confirmed to be the ask that mattered. Verified with real
+mouse-drag interactions (not synthetic state injection): dragged every
+model in a 6-model squad to the same overlapping spot, confirmed the
+move, and the final Firebase-written positions form a perfect 3×2 grid
+at exactly 2" spacing with zero overlaps.
+
+### Testing
+
+Real headless Chromium (`.playwright-libs` workaround, same as
+W40K-UX1) against live Firebase throughout, real `createGame`/
+`joinGame`/`deployGroup`/`advancePhase`/`confirmUnitMove` calls — no
+fixture, no mocked state. All Playwright scripts one-off, not committed.
+Notable methodology point carried from W40K-UX1: raw REST writes to
+`turn/phase` are fine for pure layout/render checks but **wrong** for
+anything whose side effect lives inside `advancePhase()` itself
+(`movementSnapshot`) — those need the real client function called, not
+the phase value alone.
+
+Files: `warhammer40k/js/board.js` (`getTokenVisualRadius`, zone
+hatch/label rendering, `my-zone-hatch` pattern), `warhammer40k/js/game.js`
+(`buildBoardOpts` myFaction wiring, terrain out-of-zone warning, undo-
+deploy button + handler, `movedGroups`/undo-move UI, move-confirm
+auto-arrangement), `warhammer40k/js/state.js` (`undoDeployment`,
+`movementSnapshot` write in `advancePhase`, `undoMove`).

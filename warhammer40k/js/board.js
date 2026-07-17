@@ -129,6 +129,18 @@ window.Board = (() => {
 
   function buildDefs(svg) {
     const defs   = svgEl('defs');
+
+    // W40K-UX2 item 2: diagonal hatch for "YOUR ZONE" — a pattern reads as
+    // "this is a marked-off area" at a glance in a way a flat tint alone
+    // doesn't, per the brief's own "tint/hatch your half" wording.
+    const hatch = svgEl('pattern', {
+      id: 'my-zone-hatch', width: 2, height: 2,
+      patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)'
+    });
+    hatch.appendChild(svgEl('rect', { width: 2, height: 2, fill: 'rgba(201,168,76,0.05)' }));
+    hatch.appendChild(svgEl('line', { x1: 0, y1: 0, x2: 0, y2: 2, stroke: 'rgba(201,168,76,0.35)', 'stroke-width': 0.35 }));
+    defs.appendChild(hatch);
+
     const filter = svgEl('filter', { id: 'sel-glow', x: '-80%', y: '-80%', width: '260%', height: '260%' });
     [
       ['feGaussianBlur', { in: 'SourceAlpha', stdDeviation: '0.45', result: 'blur' }],
@@ -186,6 +198,28 @@ window.Board = (() => {
 
   const ABBREV = { infantry: 'G', sergeant: 'Sgt', guardian: 'E' };
 
+  // W40K-UX2 item 1: VISUAL token size only — never read by calcCoherency,
+  // range, or LOS math (those keep UNIT_STATS's plain baseRadius default;
+  // changing them would shift real gameplay outcomes, which the brief puts
+  // out of scope). Checked directly: gameData's own `baseRadius` field is
+  // uniformly 0.5 for every real unit in the flat pool, vehicles and
+  // titanic units included — there's no per-unit mm data to read, so this
+  // derives a coarse tier from the unit's own keywords instead, exactly as
+  // the brief allows when real base-size data doesn't exist. Priority
+  // order matters (TITANIC beats VEHICLE, e.g. a Titanic walker) — checked
+  // most-extreme-first.
+  const SIZE_TIER_RADIUS = { titanic: 1.4, large: 0.95, medium: 0.7, small: 0.5 };
+  function getTokenVisualRadius(u) {
+    const def = (u.factionId && window.getRosterUnitDef)
+      ? window.getRosterUnitDef(u.factionId, u.unitId) : null;
+    const kw = new Set((def && def.keywords) || []);
+    let tier = 'small';
+    if (kw.has('TITANIC')) tier = 'titanic';
+    else if (kw.has('VEHICLE') || kw.has('MONSTER') || kw.has('WALKER') || kw.has('FORTIFICATION')) tier = 'large';
+    else if (kw.has('MOUNTED') || kw.has('ARTILLERY')) tier = 'medium';
+    return SIZE_TIER_RADIUS[tier];
+  }
+
   function drawUnits(parent, units, opts) {
     const { activeGroup, pending, snapshots, coherencyOk,
             shooterGroup, validTargetGroups, selectedTargetGroup,
@@ -210,7 +244,7 @@ window.Board = (() => {
 
       // Destroyed token — generic, works for any model type
       if (!u.alive) {
-        const r = ((window.UNIT_STATS || {})[u.type] || {}).baseRadius || 0.5;
+        const r = getTokenVisualRadius(u);
         const g = svgEl('g', { 'data-unit-id': u.id, 'data-unit-group': u.unitGroup, class: 'token-hoverable' });
         g.style.opacity = '0.38';
         const title = svgEl('title', {});
@@ -232,7 +266,7 @@ window.Board = (() => {
       const fill     = isGuard ? '#8a9a5b' : '#4a8fb5';
       const stroke   = isGuard ? '#c8d4a0' : '#a0c8e8';
       const abbrev   = ABBREV[u.type] || u.type[0].toUpperCase();
-      const r        = ((window.UNIT_STATS || {})[u.type] || {}).baseRadius || 0.5;
+      const r        = getTokenVisualRadius(u);
 
       // Effective position: pending override → Firebase
       const pos = (pending && pending[u.id]) ? pending[u.id] : { x: u.x, y: u.y };
@@ -646,7 +680,7 @@ window.Board = (() => {
       const badStroke   = '#e84040';
 
       const ghosts = models.map(m => {
-        const r = ((window.UNIT_STATS || {})[m.type] || {}).baseRadius || 0.5;
+        const r = getTokenVisualRadius(m);
         const g = svgEl('circle', {
           r, fill: ghostFill, stroke: ghostStroke,
           'stroke-width': 0.2, 'stroke-dasharray': '0.5 0.3',
@@ -738,7 +772,7 @@ window.Board = (() => {
 
       // Current display position (pending if already moved this activation)
       const curPos     = (pending && pending[unitId]) ? pending[unitId] : { x: unit.x, y: unit.y };
-      const baseRadius = ((window.UNIT_STATS || {})[unit.type] || {}).baseRadius || 0.5;
+      const baseRadius = getTokenVisualRadius(unit);
 
       // Shift+drag = move whole group in sync; plain drag = move this model only
       const syncGroup = e.shiftKey;
@@ -906,8 +940,47 @@ window.Board = (() => {
     buildDefs(svg);
 
     svg.appendChild(svgEl('rect', { x: 0, y: 0, width: bW, height: bH, fill: '#0b1209' }));
-    svg.appendChild(svgEl('rect', { x: 0, y: 0,        width: bW, height: zoneH, fill: 'rgba(138,154,91,0.07)' }));
-    svg.appendChild(svgEl('rect', { x: 0, y: bH-zoneH, width: bW, height: zoneH, fill: 'rgba(74,143,181,0.07)' }));
+
+    // W40K-UX2 item 2: always from the VIEWER's own perspective (opts.myFaction),
+    // not whoever's currently active — brother's report ("I put my terrain on
+    // your side") was a which-half-is-mine problem, not a whose-turn problem,
+    // so this stays constant across turns within terrain/deployment instead of
+    // flipping to match the active player like the old deployZone-only
+    // highlight did.
+    const zoneRects = { guard: { yMin: 0, yMax: zoneH }, eldar: { yMin: bH - zoneH, yMax: bH } };
+    if (opts.myFaction) {
+      const other = zoneRects[opts.myFaction === 'guard' ? 'eldar' : 'guard'];
+      const mine  = zoneRects[opts.myFaction];
+
+      // Opponent's half: grayed / de-emphasized
+      svg.appendChild(svgEl('rect', {
+        x: 0, y: other.yMin, width: bW, height: other.yMax - other.yMin,
+        fill: 'rgba(110,110,110,0.06)'
+      }));
+
+      // My half: hatched + tinted + labeled
+      svg.appendChild(svgEl('rect', {
+        x: 0, y: mine.yMin, width: bW, height: mine.yMax - mine.yMin,
+        fill: 'url(#my-zone-hatch)'
+      }));
+      svg.appendChild(svgEl('rect', {
+        x: 0, y: mine.yMin, width: bW, height: mine.yMax - mine.yMin,
+        fill: 'none', stroke: 'rgba(201,168,76,0.55)', 'stroke-width': 0.25
+      }));
+      const label = svgEl('text', {
+        x: bW / 2, y: mine.yMin + zoneH / 2, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
+        'font-size': Math.min(zoneH * 0.28, 1.6), 'font-family': 'sans-serif', 'font-weight': 700,
+        'letter-spacing': '0.05em', fill: 'rgba(201,168,76,0.4)'
+      });
+      label.textContent = 'YOUR ZONE';
+      svg.appendChild(label);
+    } else {
+      // No viewer perspective supplied (e.g. spectator/legacy call site) —
+      // fall back to the old always-both-shown static tint rather than
+      // showing neither zone at all.
+      svg.appendChild(svgEl('rect', { x: 0, y: 0,        width: bW, height: zoneH, fill: 'rgba(138,154,91,0.07)' }));
+      svg.appendChild(svgEl('rect', { x: 0, y: bH-zoneH, width: bW, height: zoneH, fill: 'rgba(74,143,181,0.07)' }));
+    }
 
     if (opts.deployZone) {
       const { yMin, yMax } = opts.deployZone;

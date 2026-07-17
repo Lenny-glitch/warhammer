@@ -221,6 +221,25 @@ window.Game = (() => {
     return groups;
   }
 
+  // W40K-UX2 item 3: groups the active player has already moved this
+  // Movement phase — the undo candidates. Mirrors unmovedeGroups' shape
+  // (inverted condition) rather than deriving one from the other, since
+  // "moved" here means "every alive model in the group has movedThisTurn"
+  // (a group can't be half-moved — confirmUnitMove writes the flag for
+  // every model in the positions map at once).
+  function movedGroups(units, faction) {
+    const seen = new Set();
+    const groups = [];
+    Object.values(units).forEach(u => {
+      if (u.faction !== faction || !u.movedThisTurn || !u.alive) return;
+      if (!seen.has(u.unitGroup)) {
+        seen.add(u.unitGroup);
+        groups.push(u.unitGroup);
+      }
+    });
+    return groups;
+  }
+
   // Human-readable label for a unit group
   function groupLabel(groupId) {
     if (groupLabelCache[groupId]) return groupLabelCache[groupId];
@@ -603,16 +622,28 @@ window.Game = (() => {
 
   // ---- Phase-bar HTML builders ----
 
-  function movementQueueHTML(queueGroups) {
-    if (queueGroups.length === 0) {
-      return `<p style="font-size:0.82rem;color:var(--text-dim);margin-bottom:0.75rem;">All units have moved.</p>`;
-    }
-    const btns = queueGroups.map(g =>
-      `<button class="btn btn-gold" data-group="${escHtml(g)}" style="margin-right:0.5rem;margin-bottom:0.4rem;">${escHtml(groupLabel(g))}</button>`
-    ).join('');
-    return `
-      <p style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:0.6rem;">Select a unit to move</p>
-      <div>${btns}</div>`;
+  function movementQueueHTML(queueGroups, movedGroupIds) {
+    const queueSection = queueGroups.length === 0
+      ? `<p style="font-size:0.82rem;color:var(--text-dim);margin-bottom:0.75rem;">All units have moved.</p>`
+      : `
+        <p style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:0.6rem;">Select a unit to move</p>
+        <div>${queueGroups.map(g =>
+          `<button class="btn btn-gold" data-group="${escHtml(g)}" style="margin-right:0.5rem;margin-bottom:0.4rem;">${escHtml(groupLabel(g))}</button>`
+        ).join('')}</div>`;
+
+    // W40K-UX2 item 3: one-level undo per already-moved group, ported from
+    // WHF-5m's phase-start-snapshot pattern. Only ever this Movement phase's
+    // own moves — nothing here survives advancePhase (movementSnapshot is
+    // overwritten fresh next time this player enters Movement).
+    const undoSection = (movedGroupIds && movedGroupIds.length) ? `
+      <div style="margin-top:0.75rem;padding-top:0.6rem;border-top:1px solid var(--border);">
+        <p style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.4rem;">Already moved — undo?</p>
+        <div>${movedGroupIds.map(g =>
+          `<button class="btn btn-ghost" data-undo-move-group="${escHtml(g)}" style="margin-right:0.5rem;margin-bottom:0.4rem;">Undo ${escHtml(groupLabel(g))}</button>`
+        ).join('')}</div>
+      </div>` : '';
+
+    return queueSection + undoSection;
   }
 
   function shootingQueueHTML(queue, shotLogEntries) {
@@ -853,6 +884,22 @@ window.Game = (() => {
       }).join('');
       const outOfBudgetNote = myRemain < minCost
         ? `<p style="font-size:0.72rem;color:var(--gold);margin-top:0.35rem;">Out of budget — click Done with Terrain when ready.</p>` : '';
+
+      // W40K-UX2 item 2 bonus: warn, don't block, if any of MY OWN painted
+      // squares fall in the opponent's deployment zone — the exact mistake
+      // the brother's report described. Recomputed every render (not a
+      // one-shot stroke check), so it stays accurate through erases too.
+      const bH2   = game.boardHeight || 60;
+      const zoneH2 = Math.round(bH2 * 0.2);
+      const inOtherZone = (yKey) => myFac === 'guard' ? yKey >= bH2 - zoneH2 : yKey < zoneH2;
+      const wrongZoneCount = Object.entries(terrainOwner)
+        .filter(([key, f]) => f === myFac && inOtherZone(Number(key.split(',')[1])))
+        .length;
+      const wrongZoneWarning = wrongZoneCount > 0
+        ? `<p style="font-size:0.72rem;color:var(--red-bright, #a02020);margin-top:0.35rem;">
+             ⚠ ${wrongZoneCount} of your square${wrongZoneCount !== 1 ? 's are' : ' is'} in the OPPONENT's deployment zone.
+           </p>` : '';
+
       phaseBarContent = `
         <p style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:0.5rem;">
           Select tier · paint squares on the board · both players place at once
@@ -862,6 +909,7 @@ window.Game = (() => {
           ${myRemain} pt${myRemain !== 1 ? 's' : ''} remaining
         </p>
         ${outOfBudgetNote}
+        ${wrongZoneWarning}
         <div style="margin-top:0.5rem;">
           <button class="btn btn-primary" id="btn-done-terrain">Done with Terrain</button>
         </div>`;
@@ -941,8 +989,9 @@ window.Game = (() => {
 
     // Build board opts — extracted so tier-change can rebuild without duplication.
     function buildBoardOpts() {
-      if (iAmDone || myRemain < minCost) return {};
+      if (iAmDone || myRemain < minCost) return { myFaction: myFac };
       return {
+        myFaction: myFac,
         terrainPlacement: {
           tier:            terrainState.tier,
           existingTerrain: terrain || {},
@@ -1073,9 +1122,24 @@ window.Game = (() => {
         </div>`;
     };
 
+    // W40K-UX2 item 3: one-level deployment undo. Only valid while nothing
+    // has happened since MY OWN last deploy — game.lastDeploy gets
+    // overwritten by every deployGroup call (mine or the opponent's), so a
+    // faction mismatch here just means "too late," not an error. Scoped
+    // deliberately to the deployment phase's own UI: if my last placement
+    // was the one that ended the phase, there's no undo affordance once
+    // Initiative renders instead — matching the brief's "do not allow undo
+    // after any action with opponent-visible side effects" (initiative
+    // rolls can start immediately once that screen is up).
+    const canUndoDeploy = game.lastDeploy && game.lastDeploy.faction === myFac;
+    const undoDeployBtn = canUndoDeploy
+      ? `<button class="btn btn-ghost" id="btn-undo-deploy" style="margin-top:0.5rem;">
+           Undo — ${escHtml(game.lastDeploy.unitLabel || 'last placement')}
+         </button>` : '';
+
     let phaseBarContent;
     if (!iAmActive) {
-      phaseBarContent = `<p class="phase-card-body">Waiting for ${escHtml(activeName)} to deploy…</p>`;
+      phaseBarContent = `<p class="phase-card-body">Waiting for ${escHtml(activeName)} to deploy…</p>${undoDeployBtn}`;
     } else {
       phaseBarContent = `
         <p style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:0.5rem;">
@@ -1084,7 +1148,8 @@ window.Game = (() => {
         <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.5rem;">
           Click within your highlighted deployment zone to place the unit.
           Models auto-arrange in a cluster around the clicked point.
-        </p>`;
+        </p>
+        ${undoDeployBtn}`;
     }
 
     document.getElementById('game-content').innerHTML = `
@@ -1140,6 +1205,7 @@ window.Game = (() => {
     `;
 
     const boardOpts = iAmActive && activeGroupId ? {
+      myFaction:         myFac,
       deployZone:        myZone,
       deployZoneFaction: myFac,
       deployPlacement:   { faction: myFac, models: activeGroupModels, zone: myZone },
@@ -1177,11 +1243,22 @@ window.Game = (() => {
         }
       }
     } : {
+      myFaction:         myFac,
       deployZone:        iAmActive ? myZone : deployZones[turn.activePlayer],
       deployZoneFaction: iAmActive ? myFac  : turn.activePlayer
     };
 
     window.Board.render({ ...game, units: deployedUnits }, document.getElementById('board-wrap'), boardOpts);
+
+    const undoDeployBtnEl = document.getElementById('btn-undo-deploy');
+    if (undoDeployBtnEl) {
+      undoDeployBtnEl.addEventListener('click', async () => {
+        undoDeployBtnEl.disabled = true;
+        undoDeployBtnEl.innerHTML = '<span class="spinner"></span>';
+        try { await window.GameState.undoDeployment(currentGameId, myFac); }
+        finally { undoDeployBtnEl.disabled = false; }
+      });
+    }
 
     if (isDev) {
       document.querySelectorAll('.dev-preset-btn').forEach(btn => {
@@ -1456,9 +1533,10 @@ window.Game = (() => {
     let phaseBarContent;
     if (inMovement) {
       const queue  = unmovedeGroups(units, turn.activePlayer);
+      const moved  = movedGroups(units, turn.activePlayer);
       const endBtn = `<button class="btn btn-primary" id="btn-end-phase" style="margin-top:0.5rem;">End Phase</button>`;
       if (moveState.mode === 'queue') {
-        phaseBarContent = movementQueueHTML(queue) + endBtn;
+        phaseBarContent = movementQueueHTML(queue, moved) + endBtn;
       } else {
         phaseBarContent = movementActiveHTML(moveState.groupId) +
           `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
@@ -1860,6 +1938,15 @@ window.Game = (() => {
             rerenderPhaseBar(game, units, turn, isDev, isActive);
           });
         });
+
+        // W40K-UX2 item 3: undo an already-moved group back into the queue.
+        document.querySelectorAll('[data-undo-move-group]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try { await window.GameState.undoMove(currentGameId, btn.dataset.undoMoveGroup); }
+            finally { btn.disabled = false; }
+          });
+        });
       } else if (moveState.mode === 'active') {
         const confirmBtn = document.getElementById('btn-confirm-move');
         const cancelBtn  = document.getElementById('btn-cancel-move');
@@ -1867,14 +1954,44 @@ window.Game = (() => {
         if (confirmBtn) {
           confirmBtn.addEventListener('click', async () => {
             // Build final positions: pending override → original Firebase position
-            const positions = {};
+            const rawPositions = {};
             const groupModels = [];
             Object.values(units).forEach(u => {
               if (u.unitGroup === moveState.groupId && u.alive) {
-                positions[u.id] = moveState.pending[u.id] || { x: u.x, y: u.y };
+                rawPositions[u.id] = moveState.pending[u.id] || { x: u.x, y: u.y };
                 groupModels.push(u);
               }
             });
+
+            // W40K-UX2 item 4: auto-arrange into a clean grid on confirm,
+            // centered on the centroid of wherever the player actually
+            // dragged the models — keeps the direction/intent of the move,
+            // just cleans up per-model overlaps/gaps ("a squatter should
+            // look like a squad, not a scatter"). Same spacing/grid formula
+            // deployment already uses (board.js's onDeployPlaced), applied
+            // here on confirm instead of on every intermediate drag frame —
+            // single-model groups are trivially already "arranged," so this
+            // only matters for groupModels.length > 1.
+            let positions = rawPositions;
+            if (groupModels.length > 1) {
+              const cx = groupModels.reduce((s, u) => s + rawPositions[u.id].x, 0) / groupModels.length;
+              const cy = groupModels.reduce((s, u) => s + rawPositions[u.id].y, 0) / groupModels.length;
+              const SPACING = 2;
+              const cols  = Math.ceil(Math.sqrt(groupModels.length));
+              const nRows = Math.ceil(groupModels.length / cols);
+              const bW = game.boardWidth  || 44;
+              const bH = game.boardHeight || 60;
+              const arranged = {};
+              groupModels.forEach((u, i) => {
+                const x = cx + ((i % cols) - (cols - 1) / 2) * SPACING;
+                const y = cy + (Math.floor(i / cols) - (nRows - 1) / 2) * SPACING;
+                arranged[u.id] = {
+                  x: parseFloat(Math.max(0, Math.min(bW, x)).toFixed(2)),
+                  y: parseFloat(Math.max(0, Math.min(bH, y)).toFixed(2)),
+                };
+              });
+              positions = arranged;
+            }
 
             const coherencyOk = window.Board.calcCoherency(groupModels, positions);
             const hasRed = groupModels.length > 1 && groupModels.some(u => !coherencyOk.has(u.id));
@@ -2098,10 +2215,11 @@ window.Game = (() => {
   // Partial re-render: only update phase-bar content without rebuilding the whole DOM
   function rerenderPhaseBar(game, units, turn, isDev, isActive) {
     const queue = unmovedeGroups(units, turn.activePlayer);
+    const moved = movedGroups(units, turn.activePlayer);
     const endBtn = `<button class="btn btn-primary" id="btn-end-phase" style="margin-top:0.5rem;">End Phase</button>`;
     let html;
     if (moveState.mode === 'queue') {
-      html = movementQueueHTML(queue) + endBtn;
+      html = movementQueueHTML(queue, moved) + endBtn;
     } else {
       html = movementActiveHTML(moveState.groupId) +
         `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">

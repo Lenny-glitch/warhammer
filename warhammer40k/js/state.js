@@ -54,7 +54,19 @@
  *     // later without touching every write site (W40K-UX1 item 2).
  *     // 'deploy' is the only type written today: { type:'deploy', faction,
  *     // playerName, groupId, unitLabel, ts }.
- *   }
+ *   },
+ *
+ *   lastDeploy: { faction, groupId, playerName, unitLabel,
+ *     prevUndeployedGroups, hadNextPlayer } | null,
+ *     // one-level deployment undo (W40K-UX2 item 3) — overwritten by every
+ *     // deployGroup call (mine or the opponent's), which is what makes "the
+ *     // opponent hasn't acted since" free to check: just compare `faction`.
+ *
+ *   movementSnapshot: { [unitId]: {x, y} } | null,
+ *     // one-level Movement undo (W40K-UX2 item 3), ported from WHF-5m's
+ *     // phase-start-snapshot pattern — see warhammer-fantasy/DEVLOG.md.
+ *     // Written once per player's Movement phase entry (advancePhase),
+ *     // covers only that player's own units.
  * }
  */
 
@@ -360,10 +372,55 @@ window.GameState = (() => {
       Object.entries(units).forEach(([unitId, unit]) => {
         if (unit.faction === next.activePlayer) update[`units/${unitId}/${flag}`] = false;
       });
+      // W40K-UX2 item 3: one-level undo for Movement, ported from WHF-5m's
+      // phase-start-snapshot pattern. Recorded here (not in confirmUnitMove)
+      // because it needs the position BEFORE any move this phase, which is
+      // exactly the moment the phase starts — same reasoning as WHF's
+      // snapshotUnitsForMovement(), called from the equivalent phase-entry
+      // point. Only the active player's own units are snapshotted (the
+      // opponent's can't move during this phase anyway).
+      if (next.phase === 'movement') {
+        const movementSnapshot = {};
+        Object.entries(units).forEach(([unitId, unit]) => {
+          if (unit.faction === next.activePlayer) movementSnapshot[unitId] = { x: unit.x, y: unit.y };
+        });
+        update.movementSnapshot = movementSnapshot;
+      }
       await window.db.ref('games/' + gameId).update(update);
     } else {
       await window.db.ref('games/' + gameId + '/turn').set(next);
     }
+  }
+
+  // Reverts one group's move back to its position when this Movement phase
+  // started. Refuses (returns undone:false) if the group hasn't moved this
+  // turn, or has no snapshot entry (shouldn't happen — every active-player
+  // unit gets one at phase start). No dice/reactions to strand in 40k's
+  // movement (unlike WHF's charges), so no other refusal condition is
+  // needed — the phase itself already gates when this can be called.
+  async function undoMove(gameId, groupId) {
+    const [unitsSnap, snapSnap] = await Promise.all([
+      window.db.ref(`games/${gameId}/units`).once('value'),
+      window.db.ref(`games/${gameId}/movementSnapshot`).once('value'),
+    ]);
+    const units    = unitsSnap.val() || {};
+    const snapshot = snapSnap.val() || {};
+    const groupUnits = Object.values(units).filter(u => u.unitGroup === groupId);
+    if (!groupUnits.length || !groupUnits.some(u => u.movedThisTurn)) return { undone: false };
+
+    const update = {};
+    let revertedAny = false;
+    groupUnits.forEach(u => {
+      const orig = snapshot[u.id];
+      if (!orig) return;
+      update[`units/${u.id}/x`]             = orig.x;
+      update[`units/${u.id}/y`]             = orig.y;
+      update[`units/${u.id}/movedThisTurn`] = false;
+      revertedAny = true;
+    });
+    if (!revertedAny) return { undone: false };
+    await window.db.ref('games/' + gameId).update(update);
+    return { undone: true };
   }
 
   // Successful charge: write final positions and mark chargedThisTurn for the charging group.
@@ -600,8 +657,45 @@ window.GameState = (() => {
       update['turn/phase']    = 'initiative';
       update['initiative']    = { guardRoll: null, eldarRoll: null };
     }
+
+    // W40K-UX2 item 3: one-level undo, ported from WHF-5m's phase-scoped
+    // snapshot pattern (see warhammer-fantasy/DEVLOG.md's Phase 8 entry).
+    // Deployment has no dice/reactions to strand — the only invalidating
+    // event is a LATER deploy (mine or the opponent's), which naturally
+    // overwrites this same key, so undoDeployment() just has to check the
+    // faction still matches. No position revert needed: the group's units
+    // simply go back into undeployedGroups, which is what hides them from
+    // the board regardless of their stale x/y.
+    update['lastDeploy'] = {
+      faction, groupId, playerName, unitLabel,
+      prevUndeployedGroups: current,
+      hadNextPlayer: !!nextPlayer,
+    };
+
     await window.db.ref('games/' + gameId).update(update);
     await logAction(gameId, { type: 'deploy', faction, playerName, groupId, unitLabel });
+  }
+
+  // Reverts the caller's own most recent deployment, if nothing has
+  // overwritten it since (their own next deploy, or the opponent's — both
+  // overwrite the same lastDeploy key, so a faction mismatch here means
+  // "too late," not an error).
+  async function undoDeployment(gameId, faction) {
+    const snap = await window.db.ref(`games/${gameId}/lastDeploy`).once('value');
+    const last = snap.val();
+    if (!last || last.faction !== faction) return { undone: false };
+
+    const update = {
+      [`undeployedGroups/${faction}`]: last.prevUndeployedGroups,
+      'turn/activePlayer': faction,
+      lastDeploy: null,
+    };
+    if (!last.hadNextPlayer) {
+      update['turn/phase'] = 'deployment';
+      update['initiative'] = null;
+    }
+    await window.db.ref('games/' + gameId).update(update);
+    return { undone: true };
   }
 
   // Skip deployment turn — active player has nothing left to place.
@@ -621,5 +715,5 @@ window.GameState = (() => {
     await window.db.ref('games/' + gameId).update(update);
   }
 
-  return { createGame, joinGame, subscribeToGame, getLocalFaction, setLocalFaction, isDevSession, advancePhase, confirmUnitMove, confirmUnitShoot, allocateCasualties, rollInitiative, clearInitiativeRolls, chooseInitiative, writeTerrain, confirmTerrainDone, deployGroup, passDeploymentTurn, confirmCharge, failCharge, confirmMeleeAttack, devApplyPreset, logAction };
+  return { createGame, joinGame, subscribeToGame, getLocalFaction, setLocalFaction, isDevSession, advancePhase, confirmUnitMove, confirmUnitShoot, allocateCasualties, rollInitiative, clearInitiativeRolls, chooseInitiative, writeTerrain, confirmTerrainDone, deployGroup, undoDeployment, passDeploymentTurn, confirmCharge, failCharge, confirmMeleeAttack, devApplyPreset, logAction, undoMove };
 })();
