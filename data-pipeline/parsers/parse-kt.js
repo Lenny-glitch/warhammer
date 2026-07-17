@@ -74,6 +74,16 @@ const SKIP_KEYWORDS = new Set([
   'Operative', 'Leader', 'Configuration', 'Reference',
 ]);
 
+// ROSTER_VAL_ALL: a few factions mark their Leader-equivalent operative(s)
+// with a faction-specific categoryLink name instead of BSData's generic
+// "Leader" link. Only add an alias here when the source itself proves it —
+// confirmed directly for Warpcoven: no generic "Leader" categoryLink exists
+// anywhere in its .cat, but all 3 "Sorcerer of X" operatives (its only
+// psyker/leader-eligible profiles) carry their own "Sorcerer" categoryLink.
+// Deliberately NOT used to paper over a faction with no structural leader
+// marker at all (e.g. Strike Force Variel — left as a real, reported gap).
+const LEADER_CATEGORY_ALIASES = { Warpcoven: 'Sorcerer' };
+
 const PARSER_OPTS = {
   ignoreAttributes:    false,
   attributeNamePrefix: '@_',
@@ -608,8 +618,11 @@ function parseCat(cat, glossary, crossGlossary, globalById) {
     // reads the same categoryLinks in parallel to keep that filter
     // untouched while still surfacing which role(s) can lead, for
     // composition-rule derivation below.
+    // ROSTER_VAL_ALL: LEADER_CATEGORY_ALIASES covers factions using a
+    // faction-specific name for this same structural link (see its comment).
+    const leaderCategoryName = LEADER_CATEGORY_ALIASES[catName] || 'Leader';
     const isLeader = asArray(entry.categoryLinks?.categoryLink)
-      .some(cl => attrStr(cl, '@_name') === 'Leader');
+      .some(cl => attrStr(cl, '@_name') === leaderCategoryName);
     if (isLeader) leaderRoles.push(role);
 
     operatives.push({
@@ -714,7 +727,10 @@ function main() {
       const applied = applyPatches(faction, patches, 'operatives');
       if (applied.length) {
         patchesApplied.push(...applied);
-        for (const p of applied) console.log(`  patch: ${p.unit}.${p.field} = ${JSON.stringify(p.value)} (${p.reason})`);
+        for (const p of applied) {
+          const target = p.scope === 'faction' ? 'composition' : p.unit;
+          console.log(`  patch: ${target}.${p.field} = ${JSON.stringify(p.value)} (${p.reason})`);
+        }
       }
 
       const outFile = path.join(OUT_DIR, `kt-${faction.id}.json`);

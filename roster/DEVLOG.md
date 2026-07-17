@@ -1313,3 +1313,128 @@ Files: `data-pipeline/parsers/upload.js` (`uploadKtFaction` fail-loud
 check). No `roster/index.html` or `parse-kt.js` changes — nothing there
 was found broken.
 
+---
+
+## ROSTER_VAL_ALL — composition rules for the whole KT catalogue (2026-07-16)
+
+Brief: `briefs/ROSTER_VAL_ALL_FACTIONS.md`. Follow-up to the coverage
+number from `BUG_ROSTER_VAL_FACTIONS`: 42/47 factions were auto-
+authorable with zero parser work; this pass does the catalogue instead
+of five hand-picked factions.
+
+### Part 1 — authored 37 new factions
+
+37 of the 42 auto-authorable factions still needed their `--only` run
+(5 — legionary, ork-kommandos, kasrkin, tau-pathfinders, vespid-
+stingwings — were already live from ROSTER-VAL). Dry-ran first (37/37
+clean, no fail-loud errors), then ran for real: `upload.js --only=<37
+slugs>`, all 37 wrote successfully. Verified directly against Firebase
+(spot count: 42 factions now carry `info.compositionRules`, exactly the
+5 already-done + 37 new) and against the live app in headless Chromium
+— fresh builds for `angels-of-death`, `wyrmblade`, `raveners` all show
+correct empty-state violations and flip to `Roster is legal` once
+filled.
+
+### Part 2 — the 5 gap factions, root-caused individually
+
+Read the actual `.cat` XML for each rather than inferring from the
+parser's output — the brief's own instruction was "report WHY," not
+just "list which."
+
+- **`strike-force-variel` (missing leader) — genuinely absent, left
+  unfixed.** Its `forceEntry` has only an `Operative` categoryLink (with
+  a working min/max constraint — team size was never the issue here);
+  no operative-level categoryLink resembling "Leader" exists anywhere in
+  the file, generic or faction-specific. All 7 operatives are uniquely-
+  named fixed characters (Lieutenant Variel, Veteran Sergeant Ramus, 5
+  Brothers) — thematically "Lieutenant Variel" is obviously the leader,
+  but nothing in BSData says so structurally, and even Lieutenant Variel
+  himself is missing the `Operative` categoryLink the rest have. Not
+  fixed: inventing a leader here is exactly the "needs a real rules
+  decision" case the brief calls out — **Nox: confirm from the card
+  whether Lieutenant Variel is the mechanical Leader (or if some other
+  operative is), then this is a one-line patches.json addition** (same
+  shape as the two below, `scope:"faction"`, but the actual field would
+  need a small extension — right now `applyPatches` only supports
+  `totalOperatives`; adding leader-role override support is more parser
+  work than this pass's "obvious and safe" bar allows unassisted).
+
+- **`warpcoven` (missing leader) — different BSData shape, fixed in the
+  parser.** No generic "Leader" categoryLink exists in this catalogue
+  either, but all 3 "Sorcerer of X" operatives (Destiny, Tempyrion,
+  Warpfire — its only Psyker-tagged profiles) carry their own
+  faction-specific "Sorcerer" categoryLink instead. This is a real,
+  unambiguous structural signal (not a guess), so fixed at the source:
+  `parse-kt.js` gained `LEADER_CATEGORY_ALIASES = { Warpcoven: 'Sorcerer'
+  }`, checked before falling back to the generic `'Leader'` name.
+  Verified: Warpcoven now derives `Requires a Leader` with all 3
+  Sorcerers as OR-alternatives (same multi-role pattern as Legionary's
+  Aspiring Champion/Chosen), confirmed live in the app that adding
+  *any one* of the three (tested with the last of the three,
+  Sorcerer of Warpfire, specifically — not just the first — to prove
+  the OR-match isn't order-dependent) clears the Leader violation.
+
+- **`chaos-cult` / `elucidian-starstriders` (missing team size) —
+  genuinely absent in source, patched with sourced (not guessed)
+  values.** Both catalogues' `forceEntry`s have an `Operative`
+  categoryLink with literally no nested `<constraints>` at all — not a
+  different shape, just absent. Rather than invent a number, looked up
+  each team's real composition from Goonhammer's Kill Team 2024 reviews
+  (a specific per-operative breakdown, not a bare number): Chaos Cult =
+  14 (1 Cult Demagogue + 2 Blessed Blade + 1 Iconarch + 1 Mindwitch + 9
+  Chaos Devotee); Elucidian Starstriders = 10 (6 fixed named characters
+  + Canid + 3 Voidsmen, one of which can carry the rotor cannon). Added
+  as `patches.json` entries with `scope:"faction"` (new — see below) and
+  the source URL in `reason`. **Both flagged: NOT verified against the
+  physical/PDF card — Nox, please confirm before treating either as
+  final**, especially Elucidian Starstriders, which Goonhammer describes
+  as "one of the few completely locked" teams (no selection at all),
+  a mechanic this app's compositionRules model doesn't distinguish from
+  an ordinary min=max fixed team — the number is what drives the banner
+  either way, but worth knowing the shape is unusual.
+
+- **`gellerpox-infected` (missing team size) — genuinely absent, NOT
+  patched, real ambiguity.** Same absent-constraint shape as the two
+  above, but the real-world number itself is contested by its own
+  mechanic: sources describe an "11 operative core team" that can add
+  up to 4 summonable Mutoid Vermin as equipment, "maxing out at 15" —
+  i.e. this may be a genuine min/max RANGE (11–15), not a fixed number
+  like every other faction in this catalogue. Guessing which shape is
+  correct crosses from "real 2024 value, flag for verification" into
+  "invent a mechanic," which the brief explicitly says to stop short of.
+  **Listed, not fixed — Nox's call**: is it a fixed 11 (vermin excluded
+  from the operative count, tracked separately) or a real min:11/max:15
+  range? Either is a one-line patches.json addition once decided.
+
+### `apply-patches.js` extended: faction-level patches
+
+`applyPatches` only ever patched a named unit's field. Added
+`scope:"faction"` patches that write directly to
+`faction.composition.<field>` instead (only `totalOperatives` is wired
+up — extend when a second field actually needs it, not before). Same
+fail-loud contract as unit patches: a faction-scope patch throws if
+`faction.composition` doesn't exist at all, same FATAL-abort-the-run
+behavior as a dangling unit patch.
+
+### Final coverage
+
+**45 of 47 KT factions have live `compositionRules`** (42 + warpcoven +
+chaos-cult + elucidian-starstriders). 2 real gaps remain
+(`strike-force-variel`, `gellerpox-infected`), both documented above
+with a proposed next step, neither guessed at.
+
+### Testing
+
+Real headless Chromium against live Firebase (same pattern as
+ROSTER-VAL/BUG_ROSTER_VAL_FACTIONS): fresh-build spot checks on 3 newly
+authored factions (green banner on completion) plus all 3 gap-fixed
+factions (`warpcoven`, `chaos-cult`, `elucidian-starstriders` — correct
+violations empty, correct Leader-clearing behavior, including the
+OR-alias case). `--dry-run` before every real `--only` upload; both
+upload passes (37, then 3) came back clean, 0 fail-loud errors.
+
+Files: `data-pipeline/parsers/parse-kt.js` (`LEADER_CATEGORY_ALIASES`),
+`data-pipeline/parsers/apply-patches.js` (`scope:"faction"` patches),
+`data-pipeline/parsers/patches.json` (2 new entries, both flagged for
+Nox's card check).
+

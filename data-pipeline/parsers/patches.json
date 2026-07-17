@@ -14,5 +14,21 @@
     "field": "countsAs",
     "value": 0.5,
     "reason": "counts as half an operative (manual correction, pre-dates pipeline)"
+  },
+  {
+    "system": "kill-team",
+    "scope": "faction",
+    "faction": "chaos-cult",
+    "field": "totalOperatives",
+    "value": { "min": 14, "max": 14 },
+    "reason": "ROSTER_VAL_ALL gap fix — 2024 .cat's forceEntry has no min/max constraint on the Operative categoryLink at all (checked directly, not a parser bug). 14 = 1 Cult Demagogue + 2 Blessed Blade + 1 Iconarch + 1 Mindwitch + 9 Chaos Devotee, per Goonhammer's Kill Team 2024 Chaos Cult review (https://www.goonhammer.com/kill-team-2024-review-chaos-cult/). NOT verified against the physical/PDF card by Nox — flagged for that check before treating as final."
+  },
+  {
+    "system": "kill-team",
+    "scope": "faction",
+    "faction": "elucidian-starstriders",
+    "field": "totalOperatives",
+    "value": { "min": 10, "max": 10 },
+    "reason": "ROSTER_VAL_ALL gap fix — same missing-constraint shape as chaos-cult. 10 = Elucia Vhane + Death Cult Executioner + Rejuvenat Adept (lectomaester) + Voidmaster + Canid + 1 gunner-equipped Voidsman + 2 more Voidsmen troopers, per Goonhammer's Kill Team 2024 Elucidian Starstriders review (https://www.goonhammer.com/kill-team-2024-review-elucidian-starstriders/) — this team is fully locked/pre-built (no selection), which the app's compositionRules model doesn't distinguish from an ordinary min=max fixed team, so the number is what matters here. NOT verified against the physical/PDF card by Nox — flagged for that check before treating as final."
   }
 ]

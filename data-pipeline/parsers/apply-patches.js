@@ -31,10 +31,34 @@ function loadPatches() {
 //   'units' for 40k).
 // Returns the list of applied patches (for logging); throws on any patch
 // targeting this faction that doesn't match an existing unit.
+//
+// ROSTER_VAL_ALL: patches with `scope: 'faction'` target
+// `faction.composition` directly instead of a unit — for values BSData
+// genuinely doesn't encode (e.g. a team's total operative count, when the
+// .cat's forceEntry has no min/max constraint at all). Only `totalOperatives`
+// is supported today (the one real case this pass needed) — extend this,
+// don't guess a generic path-setter, when a second field actually needs it.
 function applyPatches(faction, patches, unitsKey = 'operatives') {
   const relevant = patches.filter(p => p.faction === faction.id);
   const applied = [];
   for (const patch of relevant) {
+    if (patch.scope === 'faction') {
+      if (!faction.composition) {
+        throw new Error(
+          `patches.json entry targets a faction-level field but faction=${patch.faction} has no ` +
+          `composition object at all — BSData shape may have changed. Fix or remove the patch entry.`
+        );
+      }
+      if (patch.field !== 'totalOperatives') {
+        throw new Error(
+          `patches.json entry: unsupported faction-level field "${patch.field}" for faction=${patch.faction} ` +
+          `— only "totalOperatives" is implemented.`
+        );
+      }
+      faction.composition.totalOperatives = patch.value;
+      applied.push(patch);
+      continue;
+    }
     const unit = (faction[unitsKey] || []).find(u => u.id === patch.unit);
     if (!unit) {
       throw new Error(
