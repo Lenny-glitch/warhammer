@@ -103,6 +103,20 @@ test('condition effects accepted and surfaced, no state kept across calls', () =
   assert.strictEqual(r2.conditions.length, 1);
 });
 
+test('damage effects (v1.5.0) accepted and surfaced on their own channel, not touching stats', () => {
+  const b = bonus({ id: 'mental-onslaught', effects: [{ type: 'damage', value: 2, appliesTo: 'target' }] });
+  const { stats, damages } = resolveStats({ hit: 4 }, [b], { trigger: 'always' });
+  assert.strictEqual(stats.hit, 4); // untouched -- damage isn't a stat mod
+  assert.strictEqual(damages.length, 1);
+  assert.deepStrictEqual(damages[0], { bonusId: 'mental-onslaught', value: 2, appliesTo: 'target' });
+});
+
+test('damage effect appliesTo defaults to actor, same default as condition', () => {
+  const b = bonus({ id: 'self-damage', effects: [{ type: 'damage', value: 1 }] });
+  const { damages } = resolveStats({}, [b], { trigger: 'always' });
+  assert.strictEqual(damages[0].appliesTo, 'actor');
+});
+
 test('conditional (`when`) effect applies when the matching fact is present', () => {
   const b = bonus({
     id: 'piercing-crits-1',
@@ -308,6 +322,19 @@ test('active-with-cp-cost is accepted', () => {
 test('well-formed passive/free bonus is accepted', () => {
   const { valid, errors } = validateBonus(bonus());
   assert.strictEqual(valid, true, `expected valid, got errors: ${JSON.stringify(errors)}`);
+});
+
+test('damage effect with a positive value is accepted (v1.5.0)', () => {
+  const b = bonus({ effects: [{ type: 'damage', value: 2, appliesTo: 'target' }] });
+  const { valid, errors } = validateBonus(b);
+  assert.strictEqual(valid, true, `expected valid, got errors: ${JSON.stringify(errors)}`);
+});
+
+test('damage effect with a non-positive value is rejected', () => {
+  const b = bonus({ effects: [{ type: 'damage', value: 0, appliesTo: 'target' }] });
+  const { valid, errors } = validateBonus(b);
+  assert.strictEqual(valid, false);
+  assert.ok(errors.some(e => e.includes('effects[0].value must be a positive number')));
 });
 
 console.log(`\n${passed} passed${process.exitCode ? ', see FAIL lines above' : ''}`);

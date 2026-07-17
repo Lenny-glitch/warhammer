@@ -1,0 +1,139 @@
+[
+  {
+    "id": "psychic-ravage-destiny",
+    "name": "Ravage Destiny",
+    "description": "Cast (1AP): target enemy within 9\" is Stunned (-1 APL at their next activation).",
+    "system": "kill-team",
+    "faction": "warpcoven",
+    "source": "magic",
+    "activation": "active",
+    "cost": { "type": "ap", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "always",
+    "duration": "untilEndOfActivation",
+    "scope": { "target": "enemy", "range": 9, "filter": [] },
+    "effects": [
+      { "type": "condition", "condition": "stunned", "stacks": 1, "max": 1, "appliesTo": "target" }
+    ]
+  },
+  {
+    "id": "psychic-protected-by-fate",
+    "name": "Protected by Fate",
+    "description": "Cast (1AP): target ally within 6\" is Warded — their next defence roll rerolls all dice.",
+    "system": "kill-team",
+    "faction": "warpcoven",
+    "source": "magic",
+    "activation": "active",
+    "cost": { "type": "ap", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "always",
+    "duration": "untilEndOfActivation",
+    "scope": { "target": "ally", "range": 6, "filter": [] },
+    "effects": [
+      { "type": "condition", "condition": "warded", "stacks": 1, "max": 1, "appliesTo": "target" }
+    ]
+  },
+  {
+    "id": "psychic-soul-channel",
+    "name": "Soul Channel",
+    "description": "Cast (1AP): target ally within 6\" is Empowered (+1 APL at their next activation).",
+    "system": "kill-team",
+    "faction": "corsair-voidscarred",
+    "source": "magic",
+    "activation": "active",
+    "cost": { "type": "ap", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "always",
+    "duration": "untilEndOfActivation",
+    "scope": { "target": "ally", "range": 6, "filter": [] },
+    "effects": [
+      { "type": "condition", "condition": "empowered", "stacks": 1, "max": 1, "appliesTo": "target" }
+    ]
+  },
+  {
+    "id": "psychic-warding-shield",
+    "name": "Warding Shield",
+    "description": "Cast (1AP): target ally within 6\" is Warded — their next defence roll rerolls all dice.",
+    "system": "kill-team",
+    "faction": "corsair-voidscarred",
+    "source": "magic",
+    "activation": "active",
+    "cost": { "type": "ap", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "always",
+    "duration": "untilEndOfActivation",
+    "scope": { "target": "ally", "range": 6, "filter": [] },
+    "effects": [
+      { "type": "condition", "condition": "warded", "stacks": 1, "max": 1, "appliesTo": "target" }
+    ]
+  },
+  {
+    "id": "psychic-mental-onslaught",
+    "name": "Mental Onslaught",
+    "description": "Cast (1AP): inflict 2 damage on an enemy within 6\".",
+    "system": "kill-team",
+    "faction": "brood-brothers",
+    "source": "magic",
+    "activation": "active",
+    "cost": { "type": "ap", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "always",
+    "duration": "instant",
+    "scope": { "target": "enemy", "range": 6, "filter": [] },
+    "effects": [
+      { "type": "damage", "value": 2, "appliesTo": "target" }
+    ]
+  },
+  {
+    "id": "psychic-poisonous-miasma",
+    "name": "Poisonous Miasma",
+    "description": "Cast (1AP): inflict 1 damage and Poison an enemy within 7\".",
+    "system": "kill-team",
+    "faction": "plague-marines",
+    "source": "magic",
+    "activation": "active",
+    "cost": { "type": "ap", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "always",
+    "duration": "instant",
+    "scope": { "target": "enemy", "range": 7, "filter": [] },
+    "effects": [
+      { "type": "damage", "value": 1, "appliesTo": "target" },
+      { "type": "condition", "condition": "poisoned", "stacks": 1, "max": 1, "appliesTo": "target" }
+    ]
+  },
+  {
+    "id": "psychic-disconcerting-mimicry",
+    "name": "Disconcerting Mimicry",
+    "description": "Cast (1AP): force an enemy within 6\" to Engage order.",
+    "system": "kill-team",
+    "faction": "nemesis-claw",
+    "source": "magic",
+    "activation": "active",
+    "cost": { "type": "ap", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "always",
+    "duration": "instant",
+    "scope": { "target": "enemy", "range": 6, "filter": [] },
+    "effects": [
+      { "type": "flag", "flag": "forceEngage" }
+    ]
+  },
+  {
+    "id": "psychic-heinous-deluge",
+    "name": "Heinous Deluge",
+    "description": "Cast (1AP): target enemy within 6\" is Stunned (-1 APL at their next activation).",
+    "system": "kill-team",
+    "faction": "chaos-cult",
+    "source": "magic",
+    "activation": "active",
+    "cost": { "type": "ap", "amount": 1 },
+    "usage": "unlimited",
+    "trigger": "always",
+    "duration": "untilEndOfActivation",
+    "scope": { "target": "enemy", "range": 6, "filter": [] },
+    "effects": [
+      { "type": "condition", "condition": "stunned", "stacks": 1, "max": 1, "appliesTo": "target" }
+    ]
+  }
+]

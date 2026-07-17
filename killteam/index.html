@@ -801,6 +801,7 @@ let shootState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } 
 let fightWeapon   = null;  // null | weapon object — during fight action
 let fightState    = null;  // null | { opId, weapon, svg, overlay, playerSlot } — during fight drag
 let markerlightState = null; // BON-3: null | { opId, svg, overlay, playerSlot } — during Markerlight target drag
+let castState = null; // BON-3b: null | { opId, power, svg, overlay, playerSlot } — during a psychic power's target drag
 let radialSlot    = null;  // playerSlot whose radial is currently showing
 // KT-3 item 2: { kind: 'shoot'|'fight', playerSlot, weapons } while the
 // radial's weapon submenu is showing (multi-weapon operatives only —
@@ -1486,6 +1487,8 @@ function describeActionLogEntry(e) {
       return `${e.opName} uses ${e.ployName} (${e.cp}CP)`;
     case 'markerlight':
       return `${e.opName} marks ${e.targetName}`;
+    case 'cast':
+      return `${e.opName} casts ${e.powerName} on ${e.targetName}`;
     default:
       return null;
   }
@@ -1952,7 +1955,7 @@ function renderActivationBar(playerSlot, turn) {
   // activation. RAW: Move/Dash repeat, Shoot/Fight don't.
   const shootDisabled = ap < 1 || !ranged.length || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || conceal || hasShot || !!shootBlockReason || eligibleRanged.length === 0;
   const fightDisabled = ap < 1 || !melee.length  || !hasFightTarget(op) || !!shootState || !!fightState || !!gameData.pendingShot || !!gameData.pendingFight || hasFought;
-  const dragActive    = !!shootState || !!fightState || !!dragState || !!markerlightState;
+  const dragActive    = !!shootState || !!fightState || !!dragState || !!markerlightState || !!castState;
   const moveDisabled  = ap < 1 || dragActive || hasMoved;
   const dashDisabled  = ap < 1 || dragActive || hasDashed;
   // KT-4 item 3: Fall Back only makes sense (and only shows) while
@@ -1981,6 +1984,7 @@ function renderActivationBar(playerSlot, turn) {
         <button class="action-btn" onclick="startShoot('${playerSlot}')" ${shootDisabled ? 'disabled' : ''} title="${escHtml(shootTitle)}">Shoot (1AP)</button>
         <button class="action-btn" onclick="startFight('${playerSlot}')" ${fightDisabled ? 'disabled' : ''} title="${hasFought ? 'Already fought this activation' : !hasFightTarget(op) ? 'No enemies in control range (1&quot;)' : !melee.length ? 'No melee weapons' : ''}">Fight (1AP)</button>
         ${canUseMarkerlight(op) ? `<button class="action-btn" onclick="startMarkerlight('${playerSlot}')" ${ap < 1 || dragActive ? 'disabled' : ''} title="Mark an enemy — stacks, max 4">Markerlight (1AP)</button>` : ''}
+        ${getCastablePowers(op).length ? `<button class="action-btn" onclick="startCastPower('${playerSlot}')" ${ap < 1 || dragActive ? 'disabled' : ''} title="Cast a psychic power">Cast (1AP)</button>` : ''}
         <button class="action-btn stub" ${conceal ? 'title="Locked: Conceal order"' : 'title="Coming in KT-3"'} disabled>Charge (1AP)</button>
       </div>
       <button class="btn" onclick="endActivation('${playerSlot}')" style="margin-left:auto;">End Activation</button>
@@ -2452,10 +2456,10 @@ async function endStrategyPhase(playerSlot) {
 function activateOperative(opId, playerSlot) {
   const op = (gameData.operatives || {})[opId];
   if (!op || !op.ready || op.wounds <= 0) return;
-  // BON-3: Stun consumes on activation start (-1 APL, then clears) —
-  // see consumeStunForActivation's own comment for why this lives here
-  // instead of the duration-effect machinery.
-  const apl = consumeStunForActivation(op);
+  // BON-3/3b: Stun/Empowered consume on activation start (-1/+1 APL,
+  // then clear) — see consumeActivationConditions' own comment for why
+  // this lives here instead of the duration-effect machinery.
+  const apl = consumeActivationConditions(op);
   activation = { opId, apRemaining: apl, playerSlot, apSpent: false, hasMoved: false, hasDashed: false, hasShot: false, hasFought: false, hasFallenBack: false, activePloys: [] };
   reRenderPhaseBar();
   reRender();
@@ -2485,6 +2489,8 @@ function cancelActivation() {
   if (dragState) { clearEl(dragState.overlay); dragState.svg.style.cursor = ''; dragState = null; }
   // BON-3: same orphaned-drag-state family — Markerlight's target drag.
   if (markerlightState) { clearEl(markerlightState.overlay); markerlightState.svg.style.cursor = ''; markerlightState = null; }
+  // BON-3b: same family again — a psychic power's target drag.
+  if (castState) { clearEl(castState.overlay); castState.svg.style.cursor = ''; castState = null; }
   shootWeapon = null;
   fightWeapon = null;
   radialWeaponPick = null; // KT-3 item 2: same reasoning — don't leave the radial's weapon submenu orphaned
@@ -2994,7 +3000,9 @@ function renderRadialWeaponPicker(pick) {
     // show every weapon so the player sees why one's greyed, but only the
     // eligible ones are clickable.
     const blockReason = kind === 'shoot' ? getWeaponHeavyBlockReason(w, activation) : null;
-    const badge = kind === 'shoot' ? (weaponRange(w) === null ? '∞' : `${w.profiles.RNG}″`) : 'Melee';
+    const badge = kind === 'shoot' ? (weaponRange(w) === null ? '∞' : `${w.profiles.RNG}″`)
+      : kind === 'cast' ? (w.scope.range === null ? 'Any' : `${w.scope.range}″`)
+      : 'Melee';
     const label = w.name.length > 12 ? w.name.slice(0, 11) + '…' : w.name;
     const titleTxt = blockReason ? `${w.name} — ${blockReason}` : w.name;
     return `<button class="radial-item r-weapon" style="left:${ix}px;top:${iy}px;width:${bSz}px;height:${bSz}px;" ${blockReason ? 'disabled' : `onclick="pickRadialWeapon(${i})"`} title="${escHtml(titleTxt)}">
@@ -3020,6 +3028,7 @@ function pickRadialWeapon(idx) {
   radialWeaponPick = null;
   hideRadialMenu();
   if (kind === 'shoot') beginShootDrag(playerSlot, w);
+  else if (kind === 'cast') beginCastDrag(playerSlot, w);
   else beginFightDrag(playerSlot, w);
 }
 
@@ -3761,8 +3770,22 @@ async function rollShot(playerSlot) {
   // defenderPloys on pendingShot itself, read here same as p.useCover.
   const ployBonuses         = (activation?.activePloys || []).map(id => catalog[id]).filter(Boolean);
   const defenderPloyBonuses = (p.defenderPloys || []).map(id => catalog[id]).filter(Boolean);
+  // BON-3b: Warded (psychic-protected-by-fate/psychic-warding-shield) is a
+  // condition consumed on the recipient's next DEFENCE roll, rather than
+  // at their next activation (Stun/Empowered) — a third distinct
+  // condition-duration shape. No compiled catalog bonus carries this
+  // effect (it's cast directly onto the target as state, not attached to
+  // a weapon), so it's synthesized here from the condition itself, same
+  // shape any real bonus would have, then fed into the identical
+  // eligibleBonuses/resolveStats pipeline everything else already uses.
+  const targetWarded = (target.conditions?.warded?.stacks || 0) > 0;
+  const wardedBonus = targetWarded ? [{
+    id: 'condition-warded', name: 'Warded', trigger: 'always', usage: 'unlimited',
+    scope: { target: 'self', range: null, filter: [] },
+    effects: [{ type: 'mod', stat: 'rerollAll', op: 'add', value: 1 }],
+  }] : [];
   const actorBonuses  = weaponActorBonuses.concat(ployBonuses);
-  const targetBonuses = weaponTargetBonuses.concat(defenderPloyBonuses);
+  const targetBonuses = weaponTargetBonuses.concat(defenderPloyBonuses, wardedBonus);
 
   const distance  = Math.hypot(attacker.x - target.x, attacker.y - target.y);
   const halfRange = computeHalfRangeFact(p.weapon, distance);
@@ -3809,7 +3832,7 @@ async function rollShot(playerSlot) {
 
   playBeamOnly(p, attacker, target);
 
-  const appliedBonuses = dedupeAppliedBonuses(weaponBonuses.concat(ployBonuses, defenderPloyBonuses), finalAttackR.applied.concat(finalDefenseR.applied));
+  const appliedBonuses = dedupeAppliedBonuses(weaponBonuses.concat(ployBonuses, defenderPloyBonuses, wardedBonus), finalAttackR.applied.concat(finalDefenseR.applied));
   const flags      = Array.from(new Set([...finalAttackR.flags, ...finalDefenseR.flags]));
   const conditions = finalAttackR.conditions.concat(finalDefenseR.conditions);
 
@@ -3827,6 +3850,12 @@ async function rollShot(playerSlot) {
     halfRange, critScored,
     appliedBonuses, flags, conditions,
   });
+  // BON-3b: Warded is single-use, consumed by this roll — clear it now
+  // that it's actually been applied (a separate write since it targets a
+  // different subtree than pendingShot above).
+  if (targetWarded) {
+    await db.ref(`games-kt/${gameId}/operatives/${target.id}/conditions/warded`).remove();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3842,8 +3871,17 @@ async function rollShot(playerSlot) {
 // site to pass a consistent `max`; a bonus's own effect.max (from the
 // catalog) is still respected too (Math.min of both), so a catalog entry
 // can only ever tighten this, never loosen it.
-const CONDITION_CAPS = { stunned: 1, markerlight: 4 };
-const CONDITION_LABELS = { stunned: 'Stunned', markerlight: 'Markerlight' };
+// BON-3b: empowered/warded/poisoned added — psychic-power conditions,
+// same generic machinery, no new state model needed.
+const CONDITION_CAPS = { stunned: 1, markerlight: 4, empowered: 1, warded: 1, poisoned: 1 };
+const CONDITION_LABELS = { stunned: 'Stunned', markerlight: 'Markerlight', empowered: 'Empowered', warded: 'Warded', poisoned: 'Poisoned' };
+// Consumed at the recipient's OWN next activation start, alongside Stun —
+// same "recipient-activation-scoped duration" reasoning
+// consumeStunForActivation's own comment already explains, generalized
+// from a single hardcoded condition to a small signed table (stunned:-1,
+// empowered:+1) so a second activation-consumed condition didn't need a
+// second bespoke function.
+const ACTIVATION_CONSUMED_CONDITIONS = { stunned: -1, empowered: 1 };
 
 // Builds the Firebase update fragment that applies a resolved `conditions`
 // array (from pendingShot/pendingFight, itself straight from
@@ -3871,19 +3909,25 @@ function conditionUpdatesFor(conditions, attacker, target) {
   return updates;
 }
 
-// BON-3: Stun's actual effect ("-1 APL", per rules-glossary-kt's own
-// text) is consumed once, at the START of the stunned operative's next
-// activation, then cleared — matches real KT's "until this operative is
-// activated" duration, which isn't one of the engine's existing instant/
+// BON-3/3b: Stun's ("-1 APL", per rules-glossary-kt's own text) and now
+// Empowered's ("+1 APL", psychic-soul-channel) actual effects are
+// consumed once, at the START of the recipient's next activation, then
+// cleared — matches real KT's "until this operative is activated"
+// duration, which isn't one of the engine's existing instant/
 // untilEndOfActivation/untilEndOfRound/game duration buckets (it's
 // recipient-activation-scoped, not a fixed clock), so it's handled here
-// explicitly rather than by stretching the duration vocabulary for one
-// condition. Returns the reduced APL to use for this activation.
-function consumeStunForActivation(op) {
-  const stacks = op.conditions?.stunned?.stacks || 0;
-  if (stacks <= 0) return op.apl;
-  db.ref(`games-kt/${gameId}/operatives/${op.id}/conditions/stunned`).remove();
-  return Math.max(0, op.apl - 1);
+// explicitly via ACTIVATION_CONSUMED_CONDITIONS rather than by
+// stretching the duration vocabulary. Returns the adjusted APL to use
+// for this activation.
+function consumeActivationConditions(op) {
+  let apl = op.apl;
+  for (const [name, delta] of Object.entries(ACTIVATION_CONSUMED_CONDITIONS)) {
+    const stacks = op.conditions?.[name]?.stacks || 0;
+    if (stacks <= 0) continue;
+    db.ref(`games-kt/${gameId}/operatives/${op.id}/conditions/${name}`).remove();
+    apl = Math.max(0, apl + delta);
+  }
+  return apl;
 }
 
 function renderConditionBadges(op) {
@@ -4688,6 +4732,212 @@ async function confirmMarkerlight(attacker, target, playerSlot) {
   if (activation !== startedActivation) return;
 
   logAction({ type: 'markerlight', opName: attacker.name, targetName: target.name });
+
+  if (activation.apRemaining <= 0) {
+    await endActivation(playerSlot);
+  } else {
+    reRenderPhaseBar();
+    reRender();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  BON-3b — PSYCHIC POWER CASTING
+//  Powers are catalog entries (source:"magic", faction-locked, real
+//  name + one-line simplified effect per Nox's "identity fidelity, not
+//  rules fidelity" ruling) — same eligibleBonuses/resolveStats pipeline
+//  everything else in this file already uses, reached through a new
+//  action instead of Shoot/Fight/a ploy. Same select-then-drag-to-target
+//  shape Shoot/Fight/Markerlight already use; multi-power operatives
+//  route through the existing radial weapon-picker (kind:'cast').
+// ═══════════════════════════════════════════════════════════
+
+// PSYKER-keyword-gated (BSData's "Psyker" categoryLink survives into the
+// parsed keywords array uppercased, same as any other keyword) and
+// faction-locked to the caster's own faction. Real per-operative
+// eligibility — which specific Sorcerer variant "owns" which named
+// power — isn't captured by the parser today (verify-first, see
+// DEVLOG); every Psyker in a faction can cast anything that faction has,
+// per the same identity-not-rules ruling this whole brief runs on.
+function getCastablePowers(op) {
+  if (!op.keywords?.includes('PSYKER')) return [];
+  const catalog = gameData.bonuses || {};
+  return Object.values(catalog).filter(b => b.source === 'magic' && b.faction === op.faction);
+}
+
+function startCastPower(playerSlot) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op || op.x < 0) return;
+  const powers = getCastablePowers(op);
+  if (!powers.length || activation.apRemaining < 1) return;
+  if (powers.length === 1) { hideRadialMenu(); beginCastDrag(playerSlot, powers[0]); return; }
+  radialWeaponPick = { kind: 'cast', playerSlot, weapons: powers };
+  refreshRadialIfActive();
+}
+
+function beginCastDrag(playerSlot, power) {
+  if (!activation) return;
+  const op = (gameData.operatives || {})[activation.opId];
+  if (!op || op.x < 0) return;
+  hideRadialMenu();
+
+  const boardWrap = document.getElementById(`board-wrap-${playerSlot}`);
+  const svg = boardWrap?.querySelector('svg.board-svg');
+  if (!svg) return;
+  const overlay = svg.querySelector(`#overlay-${playerSlot}`);
+  clearEl(overlay);
+  castState = { opId: op.id, power, svg, overlay, playerSlot };
+  svg.style.cursor = 'crosshair';
+
+  function findCastTarget(caster, p) {
+    const wantEnemy = power.scope.target === 'enemy';
+    return Object.values(gameData.operatives || {}).find(o => {
+      if (o.wounds <= 0 || o.x < 0) return false;
+      if (wantEnemy ? o.player === caster.player : (o.player !== caster.player || o.id === caster.id)) return false;
+      return Math.hypot(o.x - p.x, o.y - p.y) < TOKEN_R * 1.5;
+    });
+  }
+
+  function onMouseMove(e) {
+    if (!castState) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    updateCastOverlay(pt.matrixTransform(svg.getScreenCTM().inverse()));
+  }
+
+  function onMouseUp(e) {
+    if (!castState) return;
+    svg.removeEventListener('mousemove', onMouseMove);
+    svg.removeEventListener('mouseup', onMouseUp);
+
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+
+    const attacker = (gameData.operatives || {})[castState.opId];
+    const target = attacker ? findCastTarget(attacker, p) : null;
+
+    const cs = castState;
+    castState = null;
+    clearEl(cs.overlay);
+    cs.svg.style.cursor = '';
+
+    if (target && attacker) {
+      const dist = Math.hypot(target.x - attacker.x, target.y - attacker.y);
+      const inRange = power.scope.range === null || dist <= power.scope.range;
+      const clear = rayResult(attacker.x, attacker.y, target.x, target.y, gameData.terrain || {}) !== 'blocked';
+      if (inRange && clear) { confirmCastPower(attacker, target, power, playerSlot); return; }
+    }
+    reRenderPhaseBar();
+    reRender();
+  }
+
+  svg.addEventListener('mousemove', onMouseMove);
+  svg.addEventListener('mouseup', onMouseUp);
+}
+
+function updateCastOverlay(p) {
+  if (!castState) return;
+  const { opId, power, overlay } = castState;
+  const attacker = (gameData.operatives || {})[opId];
+  if (!attacker) return;
+  clearEl(overlay);
+
+  if (power.scope.range !== null) {
+    overlay.appendChild(svgEl('circle', {
+      cx: attacker.x, cy: attacker.y, r: power.scope.range,
+      fill: 'rgba(160,80,220,0.06)', stroke: 'rgba(160,80,220,0.3)',
+      'stroke-width': 0.1, 'stroke-dasharray': '0.5 0.3',
+    }));
+  }
+
+  const wantEnemy = power.scope.target === 'enemy';
+  const hoverTarget = Object.values(gameData.operatives || {}).find(o => {
+    if (o.wounds <= 0 || o.x < 0) return false;
+    if (wantEnemy ? o.player === attacker.player : (o.player !== attacker.player || o.id === attacker.id)) return false;
+    return Math.hypot(o.x - p.x, o.y - p.y) < TOKEN_R * 1.5;
+  });
+  if (!hoverTarget) return;
+
+  const dist = Math.hypot(hoverTarget.x - attacker.x, hoverTarget.y - attacker.y);
+  const inRange = power.scope.range === null || dist <= power.scope.range;
+  const blocked = rayResult(attacker.x, attacker.y, hoverTarget.x, hoverTarget.y, gameData.terrain || {}) === 'blocked';
+  const valid = inRange && !blocked;
+  const col = valid ? '#a050dc' : '#666';
+
+  overlay.appendChild(svgEl('circle', {
+    cx: hoverTarget.x, cy: hoverTarget.y, r: TOKEN_R * 1.65,
+    fill: 'none', stroke: col, 'stroke-width': valid ? 0.18 : 0.1, opacity: '0.85',
+  }));
+  overlay.appendChild(svgEl('line', {
+    x1: attacker.x, y1: attacker.y, x2: hoverTarget.x, y2: hoverTarget.y,
+    stroke: valid ? col : 'rgba(100,100,100,0.35)', 'stroke-width': 0.12, 'stroke-dasharray': '0.35 0.2',
+  }));
+  const txt = blocked ? 'LOS blocked' : !inRange ? 'Out of range' : power.name;
+  const midX = (attacker.x + hoverTarget.x) / 2, midY = (attacker.y + hoverTarget.y) / 2 - 0.55;
+  const lblW = Math.max(1.4, txt.length * 0.165 + 0.4);
+  overlay.appendChild(svgEl('rect', { x: midX - lblW/2, y: midY - 0.35, width: lblW, height: 0.72, fill: '#0a0a14', rx: 0.15, opacity: '0.9' }));
+  const lbl = svgEl('text', { x: midX, y: midY + 0.12, 'text-anchor': 'middle', fill: valid ? col : '#888', 'font-size': 0.6, 'font-family': 'sans-serif', 'font-weight': 700 });
+  lbl.textContent = txt;
+  overlay.appendChild(lbl);
+}
+
+// Parallel to conditionUpdatesFor — applies a resolved `damages` array
+// (BonusResolver v1.5.0's new effect channel) directly to wounds. Flat,
+// unconditional, no dice roll at all (that's the point of the new
+// effect type: some psychic powers just deal a number, no ATK/HIT/DMG
+// profile involved). Returns both the ready-to-write Firebase fragment
+// and a plain {opId: newWounds} map for checkForWipeout, so the caller
+// doesn't have to reverse-parse Firebase path strings to get it.
+function damageUpdatesFor(damages, attacker, target) {
+  const updates = {};
+  const wounds = {};
+  const pending = {};
+  for (const d of (damages || [])) {
+    const recipient = d.appliesTo === 'target' ? target : attacker;
+    if (!recipient) continue;
+    const current = pending[recipient.id] ?? (recipient.wounds || 0);
+    const next = Math.max(0, current - d.value);
+    pending[recipient.id] = next;
+    updates[`operatives/${recipient.id}/wounds`] = next;
+    wounds[recipient.id] = next;
+  }
+  return { updates, wounds };
+}
+
+async function confirmCastPower(attacker, target, power, playerSlot) {
+  if (!activation) return;
+  // See activatePloy's matching comment on why this is captured before
+  // the await instead of reading the global `activation` afterward.
+  const startedActivation = activation;
+  startedActivation.apRemaining -= 1;
+  startedActivation.apSpent = true;
+
+  // Resolves through the exact same eligibleBonuses/resolveStats
+  // pipeline weapon keywords/ploys use — a power is just a bonus whose
+  // trigger ('always') the caster satisfies unconditionally.
+  const ctx = { trigger: power.trigger, positions: { actor: { x: attacker.x, y: attacker.y }, target: { x: target.x, y: target.y } } };
+  const eligible = BonusResolver.eligibleBonuses([power], ctx);
+  const { flags, conditions, damages } = BonusResolver.resolveStats({}, eligible, ctx);
+
+  const dmg = damageUpdatesFor(damages, attacker, target);
+  const updates = { ...conditionUpdatesFor(conditions, attacker, target), ...dmg.updates };
+  // Disconcerting Mimicry's forceEngage is the one deliberate special
+  // case, same shape as Adrenaline Surge's direct-APL-grant exception in
+  // BON-3 — "force an operative's order" isn't a stat/condition/damage,
+  // it's a raw field write, so it rides the flag vocabulary (engines
+  // already apply flags they understand and ignore ones they don't)
+  // rather than inventing a 5th effect type for one power.
+  if (flags.includes('forceEngage')) {
+    updates[`operatives/${target.id}/order`] = 'engage';
+  }
+  await db.ref(`games-kt/${gameId}`).update(updates);
+  if (activation !== startedActivation) return;
+
+  logAction({ type: 'cast', opName: attacker.name, powerName: power.name, targetName: target.name });
+
+  if (Object.keys(dmg.wounds).length && await checkForWipeout(dmg.wounds)) return;
 
   if (activation.apRemaining <= 0) {
     await endActivation(playerSlot);

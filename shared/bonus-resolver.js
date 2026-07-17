@@ -19,7 +19,19 @@
 
 'use strict';
 
-const BONUS_RESOLVER_VERSION = '1.4.0';
+const BONUS_RESOLVER_VERSION = '1.5.0';
+
+// v1.5.0 (BON-3b): 'damage' effect type — a flat, unconditional damage
+// instance that doesn't belong to any attack-dice roll (psychic powers
+// like Mental Onslaught: "inflict 2 damage", no ATK/HIT/DMG profile
+// involved at all). Additive extension, same pattern as 'when' and
+// 'appliesTo' before it: a new effect shape, no existing one touched.
+// Same reasoning as 'condition' already established — this isn't a stat
+// modifier (resolveStats' set/add/improve/cap op ordering doesn't apply,
+// there's nothing to "resolve" against a baseStats object), so it gets
+// its own return channel (`damages`) instead of touching `stats`, exactly
+// how 'condition' got its own `conditions` channel rather than being
+// forced through the mod pipeline.
 
 // v1.4.0 (PIPE-H1 item 3): 'onAttack' — a weapon-keyword rule that applies
 // whenever the weapon attacks, regardless of whether that attack came from
@@ -49,7 +61,7 @@ const DURATIONS = new Set(['instant', 'untilEndOfActivation', 'untilEndOfRound',
 const SCOPE_TARGETS = new Set(['self', 'ally', 'team', 'enemy']);
 const SYSTEMS = new Set(['kill-team', 'warhammer-40k', 'warhammer-fantasy', 'any']);
 const SOURCES = new Set(['keyword', 'ploy', 'stratagem', 'ability', 'aura', 'magic', 'user']);
-const EFFECT_TYPES = new Set(['mod', 'flag', 'condition']);
+const EFFECT_TYPES = new Set(['mod', 'flag', 'condition', 'damage']);
 const APPLIES_TO = new Set(['actor', 'target']);
 const APPLIES_TO_DEFAULT = 'actor';
 const MOD_OPS = ['set', 'add', 'improve', 'cap']; // fixed application order, do not reorder
@@ -149,6 +161,8 @@ function validateBonus(bonus) {
         if (typeof effect.condition !== 'string' || effect.condition.trim() === '') err(`effects[${i}].condition must be a non-empty string`);
         if (typeof effect.stacks !== 'number') err(`effects[${i}].stacks must be a number`);
         if (typeof effect.max !== 'number') err(`effects[${i}].max must be a number`);
+      } else if (effect.type === 'damage') {
+        if (typeof effect.value !== 'number' || effect.value <= 0) err(`effects[${i}].value must be a positive number`);
       }
     });
   }
@@ -249,8 +263,13 @@ function effectApplies(effect, context) {
 //   target's own baseStats and only the subset of activeBonuses/effects
 //   whose appliesTo is "target". resolveStats does not filter by appliesTo
 //   itself; it applies every mod effect it's given to whatever baseStats it
-//   was handed, and passes appliesTo through untouched on `applied` and
-//   `conditions` entries so the caller can also inspect it after the fact.
+//   was handed, and passes appliesTo through untouched on `applied`,
+//   `conditions`, and `damages` entries so the caller can also inspect it
+//   after the fact. `damages` (v1.5.0) is a flat, unconditional damage
+//   instance not tied to any dice roll — same "own return channel, not
+//   forced through the stat-mod pipeline" treatment `conditions` already
+//   got, for the same reason (there's no baseStats value to resolve it
+//   against).
 // activeBonuses: Bonus[] — already filtered by eligibleBonuses; order matters
 //   for tie-breaking within the same op (first-seen wins ties), so callers
 //   should pass them in a stable, deterministic order.
@@ -261,6 +280,7 @@ function resolveStats(baseStats, activeBonuses, context) {
   const stats = { ...baseStats };
   const flags = [];
   const conditions = [];
+  const damages = [];
   const applied = [];
 
   // Bucket mod effects per stat so we can apply them in fixed op order,
@@ -282,6 +302,12 @@ function resolveStats(baseStats, activeBonuses, context) {
           appliesTo: effect.appliesTo || APPLIES_TO_DEFAULT,
         });
         applied.push({ bonusId: bonus.id, effect });
+      } else if (effect.type === 'damage') {
+        damages.push({
+          bonusId: bonus.id, value: effect.value,
+          appliesTo: effect.appliesTo || APPLIES_TO_DEFAULT,
+        });
+        applied.push({ bonusId: bonus.id, effect });
       }
     }
   }
@@ -299,7 +325,7 @@ function resolveStats(baseStats, activeBonuses, context) {
     stats[stat] = value;
   }
 
-  return { stats, flags, conditions, applied };
+  return { stats, flags, conditions, damages, applied };
 }
 
 const BonusResolver = {

@@ -2264,3 +2264,227 @@ upload.js` (`--bonuses-only` flag — needed to push the catalog without
 also re-touching all 47 factions' unit data, which would have silently
 given all of them ROSTER-VAL's compositionRules a session before that
 scope decision), `killteam/index.html`.
+
+## 2026-07-17 — BON-3b: psychic powers (extensible catalog)
+
+Brief: `briefs/BON3B_PSYCHIC_BRIEF.md`. Fourth use of the same bonus-
+engine machinery (weapon keywords → ploys → conditions → now powers).
+
+### Divergence, confirmed before building anything
+
+The brief's own worked example doesn't hold. Verified against the raw
+`.cat` source directly (not the parsed output, not
+`PIPE_40K_INVESTIGATE_REPORT.md`'s summary of it, though that report's
+own Q3 finding is what flagged this): **Legionary Balefire Acolyte has
+zero castable psychic actions.** "Balefire" is the operative's role
+name; its three weapons (Fireblast, Life siphon, Fell dagger) all carry
+the `PSYCHIC` weapon keyword and nothing else — that's real content,
+already fully working today via the ordinary Shoot pipeline (mapped
+since BON-1b), not something this brief needed to add. Legionaries has
+no `typeName="Unique Actions"` profile carrying `**PSYCHIC**` anywhere
+in its catalogue. The brief's acceptance criterion ("Balefire Acolyte
+casts a real power by name") is retargeted below to a real castable
+example instead of forcing a fictional power onto an operative that
+RAW-wise doesn't have one.
+
+Pulled the full 23-action list myself from the raw BSData across the 9
+factions the investigation report named (regex over
+`typeName="Unique Actions"` profiles whose text starts `**PSYCHIC**`),
+to work from primary source rather than the report's per-faction tallies
+alone.
+
+### Schema — one real addition
+
+New `damage` effect type (resolver v1.5.0): flat, unconditional damage
+not tied to any dice roll (psychic powers like "inflict 2 damage" have
+no ATK/HIT/DMG profile at all). Additive-only, same pattern as `when`
+and `appliesTo` before it — new `damages` return channel on
+`resolveStats`, same "own channel, not forced through the stat-mod
+pipeline" treatment `condition` already got in BON-1, for the identical
+reason (nothing to resolve against a `baseStats` value). 4 new resolver
+tests (32/32 total): damage surfaced without touching `stats`,
+`appliesTo` default, positive-value validation, non-positive rejected.
+
+Everything else (mod/flag/condition) already covered every power
+attempted — no other schema gap found.
+
+### 8 powers authored, real names, faction-locked, one-line simplified effects
+
+`data-pipeline/parsers/psychic-powers.json` (new, mirrors
+`generic-ploys.json`'s pattern exactly — hand-authored, reviewable,
+validated against `BonusResolver.validateBonus` in `compile-keywords.js`
+before ever reaching the catalog, faction slug cross-checked against
+real KT faction files too since a typo here would silently produce a
+power no operative could ever be eligible for):
+
+- **Ravage Destiny** (Warpcoven, 1AP, 9" enemy) — Stunned (reuses the
+  BON-3 condition as-is: -1 APL at next activation).
+- **Protected by Fate** (Warpcoven, 1AP, 6" ally) — new "Warded"
+  condition, consumed on the recipient's next DEFENCE roll (rerollAll
+  +1). A third distinct condition-duration shape alongside Stun/
+  Empowered's "next activation" and Markerlight's "just stacks" —
+  needed one real engine hook (see below).
+- **Soul Channel** (Corsair Voidscarred, 1AP, 6" ally) — new
+  "Empowered" condition (+1 APL at next activation), the positive
+  mirror of Stun.
+- **Mental Onslaught** (Brood Brothers, 1AP, 6" enemy) — flat 2 damage,
+  the new `damage` effect type's first real use.
+- **Poisonous Miasma** (Plague Marines, 1AP, 7" enemy) — 1 damage +
+  new "Poisoned" condition in one entry (two effects, one power —
+  Poisoned is state/display only this pass, same as Markerlight's own
+  precedent: real state, mechanical consumption deferred, not smuggled
+  in as done).
+- **Disconcerting Mimicry** (Nemesis Claw, 1AP, 6" enemy) — forces the
+  target's order to Engage. Doesn't fit mod/flag/condition/damage as a
+  RESOLVED stat at all (it's a raw field write) — rides the flag
+  vocabulary instead (`forceEngage`, special-cased in
+  `confirmCastPower`, same one-deliberate-exception shape BON-3's
+  Adrenaline Surge already established for "this effect needs a direct
+  engine action, not a fifth effect type for one power").
+- **Heinous Deluge** (Chaos Cult, 1AP, 6" enemy) — Stunned again,
+  deliberately: two different real named powers, same simplified
+  mechanic, exactly the "reuse conditions" instruction working as
+  intended rather than inventing bespoke state per power.
+- **Warding Shield** (Corsair Voidscarred, 1AP, 6" ally) — the recipe-
+  proof power (see below), reuses Warded. Kept, not dropped — real,
+  harmless, and Corsair Voidscarred having 2 powers instead of 1
+  exercises the multi-power radial picker in actual play, not just in
+  this session's test.
+
+Dropped from the original 23: Inquisitorial Agents' "Scry" — its caster
+("Mystic") doesn't carry the generic `Psyker` categoryLink every other
+faction's caster does (verified against the raw `.cat`; a different,
+undocumented eligibility convention), so the same PSYKER-keyword gate
+this brief uses everywhere else would never have made it castable.
+Fixing that is a parser change (teaching it a second caster-tag
+convention), not a data-authoring one — flagged, not silently worked
+around. Everything else from the 23 not listed above: skipped per the
+brief's own instruction (heals — Soul Heal/Reconstitution Ritual/
+Putrescent Vitality, this engine has no heal mechanic anywhere, wounds
+only ever decrease; teleports/placement — Temporal Flux, Warp Fold;
+board markers with recurring effects — Malefic Vortex, Ruinous Icon;
+activation-sequencing locks — Fog of Dreams; multi-die contested rolls —
+Mirror of Minds, Mind Control; resource systems this engine doesn't
+have — Premonition's "Prescience points").
+
+### Cast UI
+
+New `Cast (1AP)` action on the activation bar, shown only for
+`PSYKER`-keyword operatives with at least one faction-locked power in
+the live catalog (`getCastablePowers` — BSData's `Psyker` categoryLink
+survives into the parsed `keywords` array uppercased, same as any other
+keyword, no parser change needed to read it). Single power skips
+straight to targeting (same shape Shoot/Fight/Markerlight already use);
+multiple powers route through the EXISTING radial weapon-picker
+(`kind:'cast'`, generalized from its `kind:'shoot'|'fight'` two cases —
+badge now shows `scope.range` in inches, or "Any" for unlimited-range
+powers). Target-then-resolve reuses `rayResult` for LOS (same as
+Markerlight/Shoot) and `power.scope.range`/`.target` (enemy/ally) for
+eligibility — no new targeting primitive, the third consumer of the
+click-and-drag-to-target shape after Shoot and Fight.
+
+Resolution (`confirmCastPower`) routes through the exact same
+`eligibleBonuses`/`resolveStats` call every other bonus source already
+uses — a power is just a bonus whose `trigger:"always"` the caster
+satisfies unconditionally by casting it. `conditionUpdatesFor` (BON-3)
+and the new `damageUpdatesFor` (parallel helper, same shape, returns
+both the Firebase-ready fragment and a plain `{opId: wounds}` map so
+`checkForWipeout` doesn't need to reverse-parse Firebase path strings)
+apply whatever the resolution produced in one write.
+
+**One real engine addition**, not just data: Warded's "consumed on the
+recipient's NEXT DEFENCE ROLL" duration needed an actual hook, since
+nothing currently re-checks an operative's conditions mid-resolution.
+`rollShot` now checks `target.conditions?.warded` before building
+`targetBonuses`, synthesizes a bonus object on the fly (`{mod,
+rerollAll, add, 1}` — no catalog entry exists for this, it's not
+attached to any weapon, it's cast directly onto the target as state)
+and clears the condition in a follow-up write once the roll actually
+consumes it. This is the one place a psychic-power addition COULD need
+more than pure data — any future power needing a similarly-shaped
+"consumed on a specific future roll, not a future activation" duration
+would need the same kind of hook. Every power actually authored this
+session reuses either the activation-consumed shape (Stun/Empowered,
+zero new code) or this roll-consumed shape (Warded, built once, reused
+by two different powers with zero further code).
+
+### The "add a power" recipe — proven, not just written
+
+1. Pick a real name + faction (from the 23-action audit, or any future
+   BSData sweep).
+2. Author one entry in `data-pipeline/parsers/psychic-powers.json`: real
+   name, real faction slug, one-line description that matches the
+   effects exactly, and effects built from mod/flag/condition/damage —
+   reusing an existing condition name (stunned/empowered/warded/
+   poisoned/markerlight) whenever the mechanic fits, to stay in the
+   zero-engine-code case.
+3. `node parsers/compile-keywords.js` — validates against
+   `BonusResolver.validateBonus` and the known-faction-slug set, merges
+   into `bonuses-catalog.json`, fails loud on either kind of mistake.
+4. `node parsers/upload.js --bonuses-only --force` (dry-run first) —
+   pushes the catalog live without touching faction/unit data.
+5. Done. Any `PSYKER`-keyword operative in that faction sees it in
+   their Cast picker automatically — no `killteam/index.html` edit.
+
+**Proved for real**, per the brief's explicit "prove it" instruction:
+added Warding Shield (step above) with `killteam/index.html` UNCHANGED
+between the two upload runs — confirmed live afterward (fresh disposable
+fixture, real headless Chromium) that Corsair Voidscarred's caster now
+sees exactly 2 powers in the radial picker where it saw 1 before,
+0 console errors. This only holds for powers reusing an existing
+condition's consumption shape, as noted above — a power needing a truly
+novel duration/effect shape would still need an engine change, same as
+Warded itself did.
+
+### Testing
+
+Real headless Chromium via `.playwright-libs`, disposable
+`games-kt/bon3b-verify-test` fixture via direct Firebase REST (16
+operatives — fresh game so it snapshots the just-updated catalog, per
+the snapshot rule). 16 checks across 8 scenarios, 0 console errors:
+
+- Cast button hidden for a non-psyker and for Legionary Balefire
+  Acolyte (PSYKER keyword present, but Legionaries has 0 real powers —
+  the button correctly gates on "any castable power exists," not just
+  the keyword); shown for a Warpcoven Sorcerer.
+- Ravage Destiny cast through the multi-power radial picker, applies
+  Stunned to the enemy target, action log names it by its real name.
+- Protected by Fate applies Warded; a simulated incoming shot from a
+  different operative shows the reroll bonus in its own dice readout by
+  name, then the condition clears — the full roll-consumed lifecycle,
+  not just the apply half.
+- Soul Channel's Empowered grants +1 APL at the target's next
+  activation (4 AP on an apl-3 operative) and clears — the buff mirror
+  of BON-3's Stun test, now exercising the generalized
+  `consumeActivationConditions`.
+  Mental Onslaught inflicts exactly 2 damage with no dice at all.
+  Poisonous Miasma's combined damage+condition entry does both.
+  Disconcerting Mimicry flips a Concealed target straight to Engage.
+  Heinous Deluge (2nd faction, reused Stunned) confirms reuse doesn't
+  drift.
+- Recipe proof (separate run, described above): Warding Shield reaches
+  the live picker with zero `killteam/index.html` changes.
+
+Two real test-harness bugs found and fixed while building this (not app
+bugs — both were BON-3's own established patterns applied slightly
+wrong in this session's script, worth recording since they cost real
+debugging time): a token selector unscoped to the board matched the
+sidebar row instead of the SVG token (both carry `data-op-id`, `.first()`
+silently picked the wrong one); and re-clicking an operative that had
+already ended its activation this Turning Point correctly fails (real
+rule — one activation per operative per round) but looks identical to a
+real bug until you check `ready`.
+
+### Not done, per the brief's own "Out of scope"
+
+40k/WHF psychic, Deny/psychic defense, perils/Prescience points, the
+15+ remaining complex powers this session explicitly skipped (heals,
+teleports, markers, sequencing locks, contested-roll powers — see
+above, each with its own reason recorded, not just "future work").
+Inquisitorial Agents' Scry, blocked on the Mystic-vs-Psyker parser gap
+noted above.
+
+Files: `shared/bonus-resolver.js` (v1.5.0, `damage` effect type),
+`shared/bonus-resolver.test.js` (4 new tests), `data-pipeline/parsers/
+psychic-powers.json` (new), `data-pipeline/parsers/compile-keywords.js`,
+`killteam/index.html`.

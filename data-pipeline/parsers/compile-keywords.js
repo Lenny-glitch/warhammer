@@ -24,6 +24,12 @@ const MAPPING_REVIEW_PATH = path.join(OUT_DIR, 'mapping-review.txt');
 // a plain, reviewable data file, not hand-JSON dropped straight into
 // Firebase (pipeline stays the only writer to gameData).
 const GENERIC_PLOYS_PATH = path.join(__dirname, 'generic-ploys.json');
+// BON-3b: same pattern, faction-LOCKED this time (unlike ploys' faction:
+// null) — real power name, real faction, deliberately simplified one-line
+// effect (Nox's "identity fidelity, not rules fidelity" ruling). See this
+// file's own header/DEVLOG for the "how to add a power" recipe: author an
+// entry here, re-run this script + the bonuses-only upload, done.
+const PSYCHIC_POWERS_PATH = path.join(__dirname, 'psychic-powers.json');
 
 function parseParam(raw) {
   const m = raw.match(/(\d+)/);
@@ -657,6 +663,30 @@ function main() {
     }
   }
 
+  // BON-3b: same merge for psychic powers, plus one extra check ploys
+  // don't need — ploys are faction:null (universal), powers are faction-
+  // LOCKED, so a typo'd slug here would silently produce a power no
+  // operative could ever be eligible for. Cross-checked against the set
+  // of faction files that actually exist in this run's output.
+  let powerCount = 0;
+  if (fs.existsSync(PSYCHIC_POWERS_PATH)) {
+    const knownFactions = new Set(ktFiles.map(f => JSON.parse(fs.readFileSync(path.join(OUT_DIR, f), 'utf8')).id));
+    const powers = JSON.parse(fs.readFileSync(PSYCHIC_POWERS_PATH, 'utf8'));
+    for (const power of powers) {
+      const { valid, errors } = BonusResolver.validateBonus(power);
+      if (!valid) {
+        console.error(`  INVALID power "${power.id}": ${errors.join('; ')}`);
+        process.exit(1);
+      }
+      if (!power.faction || !knownFactions.has(power.faction)) {
+        console.error(`  INVALID power "${power.id}": faction "${power.faction}" is not a known KT faction slug`);
+        process.exit(1);
+      }
+      fullCatalog.set(power.id, power);
+      powerCount++;
+    }
+  }
+
   fs.writeFileSync(path.join(OUT_DIR, 'bonuses-catalog.json'), JSON.stringify([...fullCatalog.values()], null, 2) + '\n');
   writeMappingReview(fullCatalog);
 
@@ -696,6 +726,7 @@ function main() {
   console.log(`Unmapped: ${totalUnmappedInstances} (${Object.keys(totals.unmapped).length} distinct rules)`);
   console.log(`Unresolved raw strings: ${totalUnresolved}`);
   console.log(`Generic ploys merged: ${ployCount} (all validated)`);
+  console.log(`Psychic powers merged: ${powerCount} (all validated, faction slugs checked)`);
   console.log(`Catalog entries (deduped bonus definitions): ${fullCatalog.size}`);
   console.log(`Report written: ${UNMAPPED_PATH}`);
   console.log(`Catalog written: ${path.join(OUT_DIR, 'bonuses-catalog.json')}`);
