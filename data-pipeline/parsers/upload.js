@@ -129,6 +129,25 @@ async function uploadKtFaction(dbUrl, file) {
   const unitCount = (data.operatives || []).length;
   console.log(`\nKT faction: ${data.name} (${slug}) — ${unitCount} operatives`);
 
+  // BUG_ROSTER_VAL_FACTIONS: when --only explicitly requests this faction,
+  // the operator is asking for its compositionRules specifically (this is
+  // exactly how ROSTER-VAL authored its 5 factions). Silently writing
+  // `compositionRules: null` when extraction produced nothing defeats the
+  // entire point of the run and gives no signal anything went wrong — the
+  // roster app just shows "Not Validated" gray, indistinguishable from a
+  // faction nobody's authored yet. Fail loud instead, before any write.
+  if (ONLY && ONLY.includes(slug)) {
+    const comp = data.composition;
+    const hasRules = comp && comp.totalOperatives && comp.totalOperatives.max != null;
+    if (!hasRules) {
+      throw new Error(
+        `--only requested compositionRules for "${slug}" but extraction produced ` +
+        `${comp ? 'no totalOperatives.max (empty force constraints)' : 'nothing (no forceEntries found)'} ` +
+        `— check the BSData catalogue's forceEntries/categoryLinks shape before re-running.`
+      );
+    }
+  }
+
   // No skip-if-exists here (removed per PATCH_OVERLAY_BRIEF.md guard note):
   // the pipeline is now authoritative, so an existing faction isn't data to
   // protect from overwrite, it's the normal case. The pre-upload manifest

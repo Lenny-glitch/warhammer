@@ -1234,3 +1234,82 @@ Files: `data-pipeline/parsers/parse-kt.js` (`parseCat`'s main loop,
 (`uploadKtFaction`), `roster/index.html` (`_checkLegality`,
 `FactionPicker.render`).
 
+---
+
+## BUG_ROSTER_VAL_FACTIONS — investigated, not reproducible; fail-loud + coverage added (2026-07-16)
+
+Brief: `briefs/BUG_ROSTER_VAL_FACTIONS.md`. Symptom as reported: of the 5
+factions ROSTER-VAL authored `compositionRules` for, only Kommandos
+showed live validation; the other 4 (Legionaries, Kasrkin, Pathfinders,
+Vespid Stingwings) showed none.
+
+**Item 1 — checked Firebase directly.** All 5 factions' real slugs
+(`legionary`, `ork-kommandos`, `kasrkin`, `tau-pathfinders`,
+`vespid-stingwings` — not the colloquial names in the brief) have
+`info.compositionRules` live in Firebase right now, correctly shaped,
+matching the Kommandos reference shape exactly (same `rules[]`/
+`totalOperatives`/`perModelLimits` structure, `unitRoles` array form for
+the Leader rule).
+
+**Item 2/3 — could not reproduce the symptom.** Drove the actual app in
+headless Chromium (same pattern as ROSTER-VAL's own testing) against live
+Firebase, no fixture:
+- Built a fresh roster for all 5 factions from scratch: every one shows
+  the correct violation list when empty (`Need N operatives — have 0`,
+  `Requires a Leader`) and flips to green `Roster is legal` once filled
+  correctly, including a full Legionary build (5 ops, leader included).
+- Opened Nox's actual existing roster docs for all 5 factions directly
+  (`#roster/edit/{rosterId}`) — every one currently shows a live,
+  correctly-computed banner, mostly "Too many operatives" (test debris
+  from repeated adds during earlier sessions, not a bug) with specific
+  named violations exactly like Kommandos.
+- `git log` confirms the compositionRules fix (`30cc15c`, 2026-07-14) has
+  been in the repo continuously since ROSTER-VAL landed it, verified live
+  the same day; no commit since has touched this path.
+
+**Conclusion: this bug is not currently reproducible against the live
+data and current code.** Most likely explanation: the brief's "post-
+deploy" observation was made against a local checkout that hadn't pulled
+`30cc15c` yet, or a browser tab loaded before that point (there's no
+service worker/cache-control in `roster/` that could otherwise explain
+persistent staleness — checked). Flagging the divergence per this repo's
+verify-first rule rather than re-authoring data that's already correct.
+**Nox: if you still see this live, tell me exactly which roster/tab and
+whether you'd pulled latest master first** — that'll pin down whether
+it's a stale-checkout artifact or something this investigation missed.
+
+**Item 2's fail-loud ask — done regardless of the above**, since it's a
+real gap independent of whether the original symptom reproduces:
+`uploadKtFaction` (`upload.js`) computed `compositionRules:
+data.composition || null` with nothing else downstream ever checking
+whether that was meaningful — an operator explicitly requesting
+compositionRules for a faction via `--only=<slug>` had no way to know if
+the run had actually produced anything. Added a check: when `--only`
+names a faction and its extracted `composition.totalOperatives.max` is
+absent, `uploadKtFaction` now throws before any write (verified against
+real output data: throws for `chaos-cult`, passes for `kasrkin`).
+
+**Item 4 — coverage of the other 42 factions.** Ran the same two
+extraction checks (`totalOperatives.max` derivable, at least one
+`required`-Leader rule derivable) against all 47 factions' parsed output:
+- **42 / 47 have both** — fully auto-authorable today with zero further
+  parser work, the same mechanical derivation already used for the 5.
+- **2 have a team size but no detected leader** (`strike-force-variel`,
+  `warpcoven`) — likely a different BSData leader-designation scheme in
+  those catalogues, needs a look before authoring.
+- **3 have a leader but no parseable team size** (`chaos-cult`,
+  `elucidian-starstriders`, `gellerpox-infected`) — `extractComposition`
+  finds no usable `forceEntries`/`Operative` category constraint for
+  these; same three factions the new fail-loud check would now catch if
+  someone tried `--only`-authoring them today.
+- It's most of them, so: this repo agrees with the brief's own
+  hypothesis — Nox will likely want the other 42 authored in one pass
+  rather than five hand-picked factions. Not done here — a scope
+  decision, not something to smuggle into a bug investigation (same
+  call ROSTER-VAL made about these same 42, now with an exact number
+  attached).
+
+Files: `data-pipeline/parsers/upload.js` (`uploadKtFaction` fail-loud
+check). No `roster/index.html` or `parse-kt.js` changes — nothing there
+was found broken.
+
