@@ -109,6 +109,45 @@ window.Shooting = (() => {
     return results;
   }
 
+  // BUG-40K-PREGAME item 4: when findValidTargets comes back empty, say why
+  // instead of a bare "no targets" — nearest enemy group's distance vs. the
+  // shooter's longest ranged weapon, or "blocked by terrain" if in range but
+  // no model has LOS. Read-only: does not change targeting, only wording.
+  function explainNoTargets(shooterGroup, allUnits, terrain) {
+    const all = Object.values(allUnits);
+    const shooterModels = all.filter(u => u.unitGroup === shooterGroup && u.alive);
+    if (!shooterModels.length) return null;
+
+    const weapons = shooterModels.flatMap(sm => getAllRangedWeapons(sm));
+    const weaponRange = Math.max(0, ...weapons.map(w => w.range || 0));
+    if (weapons.length === 0) return 'This unit has no ranged weapons equipped.';
+
+    const shooterFaction = shooterModels[0].faction;
+    const enemyGroups = {};
+    all.forEach(u => {
+      if (u.faction === shooterFaction || !u.alive) return;
+      (enemyGroups[u.unitGroup] = enemyGroups[u.unitGroup] || []).push(u);
+    });
+    const enemyGroupIds = Object.keys(enemyGroups);
+    if (!enemyGroupIds.length) return 'No enemy units remain on the board.';
+
+    let nearest = null;
+    enemyGroupIds.forEach(groupId => {
+      const models = enemyGroups[groupId];
+      shooterModels.forEach(sm => models.forEach(tm => {
+        const d = Math.hypot(sm.x - tm.x, sm.y - tm.y);
+        if (!nearest || d < nearest.dist) nearest = { groupId, dist: d };
+      }));
+    });
+
+    const rangeName = weapons.find(w => (w.range || 0) === weaponRange);
+    const rangeLabel = rangeName ? rangeName.name : 'Ranged weapon';
+    if (nearest.dist > weaponRange) {
+      return `Nearest enemy is ${nearest.dist.toFixed(1)}" away — ${rangeLabel} range is ${weaponRange}".`;
+    }
+    return `${nearest.dist.toFixed(1)}" away, in range — but no clear line of sight (blocked by terrain).`;
+  }
+
   // ---- Dice & resolution ----
 
   function d6() { return Math.floor(Math.random() * 6) + 1; }
@@ -520,5 +559,5 @@ window.Shooting = (() => {
     };
   }
 
-  return { findValidTargets, findChargeTargets, estimateAttacks, resolveAttacks, estimateMeleeAttacks, resolveMeleeAttacks, unitLOS, unitInRange, rayResult, getAllRangedWeapons };
+  return { findValidTargets, explainNoTargets, findChargeTargets, estimateAttacks, resolveAttacks, estimateMeleeAttacks, resolveMeleeAttacks, unitLOS, unitInRange, rayResult, getAllRangedWeapons };
 })();

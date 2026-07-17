@@ -2488,3 +2488,15 @@ Files: `shared/bonus-resolver.js` (v1.5.0, `damage` effect type),
 `shared/bonus-resolver.test.js` (4 new tests), `data-pipeline/parsers/
 psychic-powers.json` (new), `data-pipeline/parsers/compile-keywords.js`,
 `killteam/index.html`.
+
+---
+
+## 2026-07-16 — Port-worthy note from BUG_40K_PREGAME (not built here)
+
+40k's deployment phase auto-advances to the next undeployed unit after you
+place one, instead of making you re-click a unit picker every time. Nox's
+brother noted it feels better than KT's current per-operative activation
+flow, where you re-select from the sidebar/board each turn. Worth porting
+to KT's Firefight activation loop (auto-select the next ready operative
+after one finishes) if a future brief targets activation-flow polish —
+not built here, note only, per BUG_40K_PREGAME item 5.

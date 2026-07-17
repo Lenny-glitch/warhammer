@@ -240,11 +240,19 @@ window.RosterLoader = (() => {
     });
   }
 
-  function buildUnitsFromRoster(roster, playerFaction, boardHeight) {
+  // BUG-40K-PREGAME items 2+3: `playerSlot` ('guard'/'eldar') is a pure
+  // POSITIONAL identifier now (deployment side, unitGroup ownership) — NOT
+  // the player's army choice. `factionId` (used for all gameData/stat
+  // lookups) comes from the roster's OWN `meta.factionId` — the export
+  // already knows what army it is, so two players can bring the same one.
+  // `FACTION_MAP[playerSlot]` is kept only as a defensive fallback for a
+  // malformed roster missing `meta.factionId` entirely (shouldn't happen
+  // with a real export, but "behaves as today" rather than throwing).
+  function buildUnitsFromRoster(roster, playerSlot, boardHeight) {
     const units      = {};
-    const factionId  = FACTION_MAP[playerFaction];
+    const factionId  = (roster.meta && roster.meta.factionId) || FACTION_MAP[playerSlot];
     const bH         = boardHeight || 60;
-    const isGuard    = playerFaction === 'guard';
+    const isGuard    = playerSlot === 'guard';
     const SPACING    = 2;
 
     const rosterUnitList = Array.isArray(roster.units)
@@ -291,7 +299,7 @@ window.RosterLoader = (() => {
       }
 
       for (let i = 0; i < count; i++) {
-        const id  = `${playerFaction}_${instanceId}_${i}`;
+        const id  = `${playerSlot}_${instanceId}_${i}`;
         const col = i % cols;
         const row = Math.floor(i / cols);
         const x   = 6 + col * SPACING;
@@ -299,10 +307,10 @@ window.RosterLoader = (() => {
 
         units[id] = {
           id,
-          faction:   playerFaction,
+          faction:   playerSlot,
           factionId,
           unitId,
-          unitGroup: `${playerFaction}_${instanceId}`,
+          unitGroup: `${playerSlot}_${instanceId}`,
           label:     rosterUnit.name || rosterUnit.unitName || (def ? def.name : unitId),
           type:      unitId,   // kept for legacy UNIT_STATS fallbacks
           x, y,

@@ -609,9 +609,12 @@ window.Game = (() => {
       <div>${btns}</div>`;
   }
 
-  function shootingTargetingHTML(groupId, validTargets) {
+  function shootingTargetingHTML(groupId, validTargets, units, terrain) {
     const hasTargets = validTargets.length > 0;
     const coverNote  = validTargets.some(t => t.cover) ? ' (some targets have cover)' : '';
+    const noTargetsReason = !hasTargets && window.Shooting.explainNoTargets
+      ? window.Shooting.explainNoTargets(groupId, units, terrain || {})
+      : null;
     return `
       <p style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:0.35rem;">
         Shooting — <strong style="color:var(--text);">${escHtml(groupLabel(groupId))}</strong>
@@ -619,7 +622,7 @@ window.Game = (() => {
       <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.6rem;">
         ${hasTargets
           ? `Select a target on the board. Amber rings = valid targets${coverNote}.`
-          : 'No valid targets in range or line of sight.'}
+          : escHtml(noTargetsReason || 'No valid targets in range or line of sight.')}
       </p>`;
   }
 
@@ -765,9 +768,21 @@ window.Game = (() => {
     };
   }
 
+  // BUG-40K-PREGAME item 1: SIMULTANEOUS terrain placement, not turn-
+  // alternating. Both players paint at once against their own budget
+  // (board.js already gates painting by budget/enemyOwned per faction,
+  // never by turn — no change needed there). Each player explicitly
+  // confirms "Done with Terrain" whenever they choose (with or without
+  // spending their whole budget); the phase advances once BOTH have
+  // confirmed (game.turnDone, written by confirmTerrainDone). Replaces the
+  // old alternating Pass-Turn flow, which could leave the player who
+  // still had budget stuck re-passing back and forth once the other
+  // player ran out — there was no way to just END the phase without one
+  // more full round-trip through whoever was currently "active".
   function renderTerrain(game) {
-    const { terrain, terrainBudget, players, turn } = game;
+    const { terrain, terrainBudget, players } = game;
     const terrainOwner = game.terrainOwner || {};
+    const terrainDone   = game.terrainDone || { guard: false, eldar: false };
     const isDev        = window.GameState.isDevSession(currentGameId);
     const myFac        = localFaction;
     const otherFac     = myFac === 'guard' ? 'eldar' : 'guard';
@@ -782,19 +797,12 @@ window.Game = (() => {
       .reduce((sum, [k]) => sum + (TERRAIN_COSTS[(terrain || {})[k]] || 0), 0);
 
     const myRemain    = budget - mySpent;
-    const otherRemain = budget - otherSpent;
     const minCost     = 1;
-    const iAmActive   = turn.activePlayer === myFac;
     const guardName   = players.guard.name || 'Guard';
     const eldarName   = players.eldar.name || 'Eldar';
-    const activeName  = turn.activePlayer === 'guard' ? guardName : eldarName;
-
-    // Auto-pass when active player is out of budget
-    if (iAmActive && myRemain < minCost) {
-      const nextPlayer = otherRemain < minCost ? null : otherFac;
-      window.GameState.passTerrainTurn(currentGameId, nextPlayer);
-      return;
-    }
+    const otherName   = otherFac === 'guard' ? guardName : eldarName;
+    const iAmDone     = !!terrainDone[myFac];
+    const otherDone   = !!terrainDone[otherFac];
 
     // Init/preserve tier selection
     if (!terrainState) {
@@ -802,10 +810,13 @@ window.Game = (() => {
       terrainState = { tier: affordable[0] || 'tall' };
     }
 
-    // Phase bar
+    // Phase bar — a player who's confirmed Done sees the OTHER's remaining
+    // state, not a pass-turn prompt (item 1's explicit requirement); both
+    // players otherwise always see their own paint controls, simultaneously.
     let phaseBarContent;
-    if (!iAmActive) {
-      phaseBarContent = `<p class="phase-card-body">Waiting for ${escHtml(activeName)} to place terrain…</p>`;
+    if (iAmDone) {
+      phaseBarContent = `<p class="phase-card-body">Done — waiting for ${escHtml(otherName)}
+        (${otherSpent}/${budget} pt${budget !== 1 ? 's' : ''} placed${otherDone ? ', done' : ''})…</p>`;
     } else {
       const tierBtns = ['rough','chestHigh','tall'].map(t => {
         const cost  = TERRAIN_COSTS[t];
@@ -817,16 +828,19 @@ window.Game = (() => {
           <span class="terrain-tier-effect">${TERRAIN_FX[t]}</span>
         </button>`;
       }).join('');
+      const outOfBudgetNote = myRemain < minCost
+        ? `<p style="font-size:0.72rem;color:var(--gold);margin-top:0.35rem;">Out of budget — click Done with Terrain when ready.</p>` : '';
       phaseBarContent = `
         <p style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:0.5rem;">
-          Select tier · paint squares on the board · then pass your turn
+          Select tier · paint squares on the board · both players place at once
         </p>
         <div class="terrain-tier-row">${tierBtns}</div>
         <p style="font-size:0.75rem;color:var(--text-dim);margin-top:0.5rem;">
           ${myRemain} pt${myRemain !== 1 ? 's' : ''} remaining
         </p>
+        ${outOfBudgetNote}
         <div style="margin-top:0.5rem;">
-          <button class="btn btn-primary" id="btn-pass-terrain">Pass Turn</button>
+          <button class="btn btn-primary" id="btn-done-terrain">Done with Terrain</button>
         </div>`;
     }
 
@@ -886,7 +900,7 @@ window.Game = (() => {
         <div class="phase-card" style="max-width:640px;width:100%;">
           <div class="phase-card-label">
             ${isDev ? `Dev · Viewing as ${myFac}` : `You are ${myFac}`}
-            ${iAmActive ? ' · <strong>Your turn</strong>' : ''}
+            ${iAmDone ? ' · <strong>Done</strong>' : ''}
           </div>
           ${phaseBarContent}
         </div>
@@ -904,7 +918,7 @@ window.Game = (() => {
 
     // Build board opts — extracted so tier-change can rebuild without duplication.
     function buildBoardOpts() {
-      if (!iAmActive || myRemain < minCost) return {};
+      if (iAmDone || myRemain < minCost) return {};
       return {
         terrainPlacement: {
           tier:            terrainState.tier,
@@ -944,7 +958,7 @@ window.Game = (() => {
       });
     }
 
-    if (iAmActive) {
+    if (!iAmDone) {
       // Tier selector — re-render board section only (ghost color update)
       document.querySelectorAll('[data-tier]:not([disabled])').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -955,17 +969,18 @@ window.Game = (() => {
         });
       });
 
-      // Pass turn button
-      const passBtn = document.getElementById('btn-pass-terrain');
-      if (passBtn) passBtn.addEventListener('click', async () => {
-        passBtn.disabled = true;
-        passBtn.innerHTML = '<span class="spinner"></span>';
-        const nextPlayer = otherRemain < minCost ? null : otherFac;
+      // Done with Terrain button — confirms this player is finished;
+      // phase advances once BOTH players have confirmed (see
+      // confirmTerrainDone). Available any time, budget spent or not.
+      const doneBtn = document.getElementById('btn-done-terrain');
+      if (doneBtn) doneBtn.addEventListener('click', async () => {
+        doneBtn.disabled = true;
+        doneBtn.innerHTML = '<span class="spinner"></span>';
         try {
-          await window.GameState.passTerrainTurn(currentGameId, nextPlayer);
+          await window.GameState.confirmTerrainDone(currentGameId, myFac);
         } finally {
-          passBtn.disabled = false;
-          passBtn.textContent = 'Pass Turn';
+          doneBtn.disabled = false;
+          doneBtn.textContent = 'Done with Terrain';
         }
       });
     }
@@ -1158,6 +1173,11 @@ window.Game = (() => {
     const isDev    = window.GameState.isDevSession(currentGameId);
     const guardName = players.guard.name || 'Guard';
     const eldarName = players.eldar.name || 'Eldar';
+    // BUG-40K-PREGAME item 2: army name comes from what each player
+    // actually brought (players.{slot}.factionName), not a guaranteed-
+    // unique guess by slot — both can be the same army.
+    const guardArmy = players.guard.factionName || FACTION_NAMES.guard;
+    const eldarArmy = players.eldar.factionName || FACTION_NAMES.eldar;
 
     const bothRolled = ini.guardRoll !== null && ini.eldarRoll !== null;
     const isTie      = bothRolled && ini.guardRoll === ini.eldarRoll;
@@ -1220,13 +1240,13 @@ window.Game = (() => {
           <div class="initiative-player">
             <div class="initiative-player-name guard-name">${escHtml(guardName)}</div>
             <div class="initiative-die">${guardDieHTML}</div>
-            <div class="initiative-faction-label">Astra Militarum</div>
+            <div class="initiative-faction-label">${escHtml(guardArmy)}</div>
           </div>
           <div class="initiative-vs">vs</div>
           <div class="initiative-player">
             <div class="initiative-player-name eldar-name">${escHtml(eldarName)}</div>
             <div class="initiative-die">${eldarDieHTML}</div>
-            <div class="initiative-faction-label">Craftworld Eldar</div>
+            <div class="initiative-faction-label">${escHtml(eldarArmy)}</div>
           </div>
         </div>
         <div class="initiative-actions">
@@ -1272,8 +1292,13 @@ window.Game = (() => {
     const { winner, reason } = game.gameOver;
     const units   = game.units || {};
     const loser   = winner === 'guard' ? 'eldar' : 'guard';
-    const winName = FACTION_NAMES[winner] || winner;
-    const losName = FACTION_NAMES[loser]  || loser;
+    // BUG-40K-PREGAME item 2: player NAME is the real disambiguator now —
+    // both players' army name (FACTION_NAMES-by-slot) can be identical in
+    // a same-faction game, so lead with who actually won, not which slot.
+    const winPlayer = game.players[winner] || {};
+    const losPlayer = game.players[loser]  || {};
+    const winName = winPlayer.name || FACTION_NAMES[winner] || winner;
+    const losName = losPlayer.name || FACTION_NAMES[loser]  || loser;
     const winnerAlive = Object.values(units).filter(u => u.faction === winner && u.alive).length;
 
     // Stop listening — game is over
@@ -1308,6 +1333,12 @@ window.Game = (() => {
     const eldarName  = players.eldar.name || 'Eldar';
     const activeName = turn.activePlayer === 'guard' ? guardName : eldarName;
     const phaseLabel = PHASE_LABELS[turn.phase] || turn.phase;
+    // BUG-40K-PREGAME item 2: army label comes from what was actually
+    // brought (players.{slot}.factionName) — can be identical for both
+    // slots in a same-faction game, so the player-strip's NAME line (just
+    // below) is the real disambiguator, not this label.
+    const guardArmy  = players.guard.factionName || FACTION_NAMES.guard;
+    const eldarArmy  = players.eldar.factionName || FACTION_NAMES.eldar;
 
     const guardAlive = Object.values(units).filter(u => u.faction === 'guard' && u.alive).length;
     const eldarAlive = Object.values(units).filter(u => u.faction === 'eldar' && u.alive).length;
@@ -1412,7 +1443,7 @@ window.Game = (() => {
         phaseBarContent = shootingQueueHTML(queue, getShotLogEntries(turn.shotLog)) + endBtn;
       } else if (shootState.mode === 'targeting') {
         const hasTargets = shootState.validTargets.length > 0;
-        phaseBarContent = shootingTargetingHTML(shootState.groupId, shootState.validTargets) +
+        phaseBarContent = shootingTargetingHTML(shootState.groupId, shootState.validTargets, units, game.terrain) +
           `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
             ${hasTargets ? '' : `<button class="btn btn-primary" id="btn-skip-shoot">Skip Shooting</button>`}
             <button class="btn btn-ghost" id="btn-cancel-shoot">Cancel</button>
@@ -1529,12 +1560,12 @@ window.Game = (() => {
 
       <div class="player-strips">
         <div class="player-strip guard-strip ${turn.activePlayer === 'guard' ? 'active-player' : ''}">
-          <div class="faction-label">Astra Militarum</div>
+          <div class="faction-label">${escHtml(guardArmy)}</div>
           <div class="player-name">${escHtml(guardName)}</div>
           <div class="player-cp">${guardAlive} models · CP ${players.guard.cp}</div>
         </div>
         <div class="player-strip eldar-strip ${turn.activePlayer === 'eldar' ? 'active-player' : ''}">
-          <div class="faction-label">Craftworld Eldar</div>
+          <div class="faction-label">${escHtml(eldarArmy)}</div>
           <div class="player-name">${escHtml(eldarName)}</div>
           <div class="player-cp">${eldarAlive} models · CP ${players.eldar.cp}</div>
         </div>
@@ -2069,7 +2100,7 @@ window.Game = (() => {
       html = shootingQueueHTML(queue, getShotLogEntries(turn.shotLog)) + endBtn;
     } else if (shootState.mode === 'targeting') {
       const hasTargets = shootState.validTargets.length > 0;
-      html = shootingTargetingHTML(shootState.groupId, shootState.validTargets) +
+      html = shootingTargetingHTML(shootState.groupId, shootState.validTargets, units, game.terrain) +
         `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
           ${hasTargets ? '' : `<button class="btn btn-primary" id="btn-skip-shoot">Skip Shooting</button>`}
           <button class="btn btn-ghost" id="btn-cancel-shoot">Cancel</button>

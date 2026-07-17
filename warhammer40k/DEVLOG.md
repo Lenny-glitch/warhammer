@@ -436,3 +436,83 @@ Same bonus-resolver work noted in killteam/DEVLOG.md. Specific to this repo:
   Hits, and Lance (all of which modify the Wound roll specifically) came
   back unmapped in `data-pipeline/output/_unmapped_keywords.txt`. Worth a
   vocab decision before BON-4, not something to guess into place then.
+
+---
+
+## BUG_40K_PREGAME — 5 pre-game blockers ahead of brother game 5 (2026-07-16)
+
+**Item 1 (blocker) — terrain placement infinite loop.** Turn-alternating
+"Pass Turn" placement could strand a player with an active turn and no
+budget left while the other player still had budget and no way to act.
+Replaced with simultaneous placement: both players paint terrain against
+their own budget at the same time, each hits "Done with Terrain"
+independently (`terrainDone: {guard, eldar}` on the game doc), and the
+phase advances to Deployment once both are done. `passTerrainTurn`
+removed from `state.js`'s API, replaced by `confirmTerrainDone`.
+`board.js`'s paint logic was already budget-scoped per player — no
+changes needed there.
+
+**Item 2 — same-faction games (e.g. Eldar vs Eldar) were blocked.** Root
+cause: `players.guard`/`players.eldar` conflated two different things —
+the structural/positional SLOT (deployment side, turn order, unit
+ownership prefix) and the player's ARMY FACTION, derived via
+`FACTION_MAP[slot]`. Fixed at the source: `roster.js`'s
+`buildUnitsFromRoster` now derives `factionId` from the roster export's
+own `meta.factionId` (the export already knows its army), not from the
+slot — `FACTION_MAP` survives only as a defensive fallback for a roster
+missing `meta.factionId`. `state.js`'s `createGame`/`joinGame` no longer
+take a `faction` parameter at all; slot assignment is purely positional
+(creator = guard-slot, joiner = eldar-slot) and each player's
+`factionName`/`factionId` is stored from their own roster. `game.js` and
+`lobby.js`'s hardcoded "Astra Militarum"/"Craftworld Eldar" labels
+(game-over screen, initiative screen, player strip, waiting screen, join
+form) now read `players.{slot}.factionName` with a slot-keyed fallback
+for pre-fix games. Audited `board.js` and `shooting.js` — both already
+used `.faction` (slot) correctly for ownership/ally-vs-enemy detection
+and `.factionId` for gameData lookups, so neither needed changes; the
+`roster.js` fix alone corrects the whole downstream chain. Verified with
+a stubbed-Firebase smoke test: both players joining with the same Eldar
+roster get distinct slots, no `unitGroup` collisions, and
+`shooting.js`'s `findValidTargets` correctly treats the two same-army
+groups as enemies of each other, not friendlies.
+
+**Item 3 — roster list gated behind faction select.** Resolved as a
+direct consequence of item 2: the "Choose Your Faction" card selector is
+gone entirely from `lobby.js`'s create/join forms. The roster picker is
+now the first thing shown, loads all published rosters unfiltered
+(`loadRosterPicker(..., null, ...)`), and picking a roster is what sets
+the faction (per the brief's preferred approach). Pasted roster ID/URL
+fallback input is unchanged.
+
+**Item 4 — shooting "no one in range."** Investigated both suspects the
+brief flagged: (1) weapon range parsing — `roster.js`'s `tagWeapons`
+reads `profiles.RANGE`, and the export's Firebase-key sanitizer
+(`_FIREBASE_KEY_MAP` in `roster/index.html`) only remaps `BS/WS` → `bsws`;
+`RANGE` is untouched, so this reads correctly. (2) inches-to-board-units
+conversion — board `x`/`y` are inches directly (1:1), confirmed via
+`state.js`'s `GAME_PRESETS` (`boardWidth`/`boardHeight` match real 40k
+table sizes: 44×30/44×60/44×90) and `shooting.js`'s own range-check
+(`Math.hypot(...) <= weaponRange`, no scaling factor anywhere). No
+root-cause bug found in either place. Regardless, per the brief's
+legibility mandate: added `shooting.js`'s `explainNoTargets()`, wired
+into both `shootingTargetingHTML` render paths in `game.js`. When a
+shooter group has no valid targets, the phase bar now says why — nearest
+enemy's distance vs. the longest-ranged weapon's name and range (e.g.
+"Nearest enemy is 28.0\" away — Wraithcannon range is 18\"."), or "in
+range but blocked by terrain" if in range with no line of sight, or "no
+enemy units remain" — instead of a bare "No valid targets in range or
+line of sight." Verified with a stubbed smoke test covering all three
+cases.
+
+**Item 5 — port-worthy note only.** Logged in `killteam/DEVLOG.md`
+(2026-07-16 entry): 40k's deployment auto-advance-to-next-unit is wanted
+in KT's Firefight activation loop. Not built — note only, per the brief.
+
+**Testing:** two stubbed-Firebase Node smoke tests (terrain
+simultaneous-done ordering; same-faction game creation + enemy-detection)
+and one pure-function smoke test (`explainNoTargets`), all deleted after
+verification per the project's one-off-test convention — not committed.
+
+Files: `warhammer40k/js/state.js`, `warhammer40k/js/roster.js`,
+`warhammer40k/js/game.js`, `warhammer40k/js/lobby.js`,
+`warhammer40k/js/shooting.js`, `killteam/DEVLOG.md`.

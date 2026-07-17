@@ -28,6 +28,7 @@
  *
  *   terrain:      { "x,y": "rough"|"chestHigh"|"tall" },  // per-square map; key = top-left corner
    terrainOwner: { "x,y": "guard"|"eldar" },            // which faction painted each square
+   terrainDone:  { guard: bool, eldar: bool },          // per-player "Done with Terrain" confirmation (BUG-40K-PREGAME item 1) — phase advances once both are true. Simultaneous placement, not turn-alternating; painting itself is gated by budget/enemyOwned in board.js, not by turn.
  *
  *   startingStrength: {
  *     [groupId]: { models: number, wounds: number }  // set at game creation; used for Battle-shock threshold
@@ -63,26 +64,35 @@ window.GameState = (() => {
     return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
   }
 
-  async function createGame(playerName, faction, devMode, gameSize, rosterId, devRosterId) {
-    const gameId = generateGameId();
-    const token  = generateToken();
-    const other  = faction === 'guard' ? 'eldar' : 'guard';
+  // BUG-40K-PREGAME items 2+3: `guard`/`eldar` are now pure POSITIONAL
+  // slots (creator always `guard`-slot/north, joiner always `eldar`-slot/
+  // south) — NOT army-faction identity. The actual army each player plays
+  // is derived from their ROSTER's own `meta.factionId`/`factionName`
+  // (the export already knows this — no separate faction picker needed,
+  // and both players can bring the same army). `players[slot].factionId`/
+  // `.factionName` store this for display; `RosterLoader.FACTION_MAP` is
+  // no longer used to GUESS a faction from the slot anywhere in this
+  // function — see roster.js's `buildUnitsFromRoster`, which now reads
+  // `roster.meta.factionId` directly for the same reason.
+  async function createGame(playerName, devMode, gameSize, rosterId, devRosterId) {
+    const gameId    = generateGameId();
+    const token     = generateToken();
+    const mySlot    = 'guard';
+    const otherSlot = 'eldar';
     const preset = window.GAME_PRESETS[gameSize] || window.GAME_PRESETS['incursion'];
     const resolvedSize = window.GAME_PRESETS[gameSize] ? gameSize : 'incursion';
 
-    // Load roster + faction data for the creating player
-    const factionId = window.RosterLoader.FACTION_MAP[faction];
-    const [roster] = await Promise.all([
-      window.RosterLoader.fetchRoster(rosterId),
-      window.RosterLoader.loadFactionData(factionId),
-    ]);
-    const myUnits = window.RosterLoader.buildUnitsFromRoster(roster, faction, preset.boardHeight);
+    const roster = await window.RosterLoader.fetchRoster(rosterId);
+    const myFactionId   = roster.meta.factionId;
+    const myFactionName = roster.meta.factionName || myFactionId;
+    await window.RosterLoader.loadFactionData(myFactionId);
+    const myUnits = window.RosterLoader.buildUnitsFromRoster(roster, mySlot, preset.boardHeight);
 
     const players = {
-      guard: { name: '', token: '', cp: 0, joined: false, rosterId: '' },
-      eldar: { name: '', token: '', cp: 0, joined: false, rosterId: '' },
+      guard: { name: '', token: '', cp: 0, joined: false, rosterId: '', factionId: '', factionName: '' },
+      eldar: { name: '', token: '', cp: 0, joined: false, rosterId: '', factionId: '', factionName: '' },
     };
-    players[faction] = { name: playerName, token, cp: 0, joined: true, rosterId };
+    players[mySlot] = { name: playerName, token, cp: 0, joined: true, rosterId, factionId: myFactionId, factionName: myFactionName };
 
     let allUnits = { ...myUnits };
     const undeployedGroups = { guard: null, eldar: null };
@@ -95,17 +105,16 @@ window.GameState = (() => {
       startingStrength[u.unitGroup].models += 1;
       startingStrength[u.unitGroup].wounds += u.maxWounds;
     });
-    undeployedGroups[faction] = myGroups.length > 0 ? myGroups : null;
+    undeployedGroups[mySlot] = myGroups.length > 0 ? myGroups : null;
 
     if (devMode && devRosterId) {
-      const otherFactionId = window.RosterLoader.FACTION_MAP[other];
-      const [otherRoster] = await Promise.all([
-        window.RosterLoader.fetchRoster(devRosterId),
-        window.RosterLoader.loadFactionData(otherFactionId),
-      ]);
-      const otherUnits = window.RosterLoader.buildUnitsFromRoster(otherRoster, other, preset.boardHeight);
+      const otherRoster = await window.RosterLoader.fetchRoster(devRosterId);
+      const otherFactionId   = otherRoster.meta.factionId;
+      const otherFactionName = otherRoster.meta.factionName || otherFactionId;
+      await window.RosterLoader.loadFactionData(otherFactionId);
+      const otherUnits = window.RosterLoader.buildUnitsFromRoster(otherRoster, otherSlot, preset.boardHeight);
       Object.assign(allUnits, otherUnits);
-      players[other] = { name: 'Player 2 (Dev)', token: generateToken(), cp: 0, joined: true, rosterId: devRosterId };
+      players[otherSlot] = { name: 'Player 2 (Dev)', token: generateToken(), cp: 0, joined: true, rosterId: devRosterId, factionId: otherFactionId, factionName: otherFactionName };
       const otherGroups = [];
       Object.values(otherUnits).forEach(u => {
         if (!otherGroups.includes(u.unitGroup)) otherGroups.push(u.unitGroup);
@@ -113,7 +122,7 @@ window.GameState = (() => {
         startingStrength[u.unitGroup].models += 1;
         startingStrength[u.unitGroup].wounds += u.maxWounds;
       });
-      undeployedGroups[other] = otherGroups.length > 0 ? otherGroups : null;
+      undeployedGroups[otherSlot] = otherGroups.length > 0 ? otherGroups : null;
     }
 
     const doc = {
@@ -130,6 +139,7 @@ window.GameState = (() => {
       units: allUnits,
       terrain: resolvedSize === 'incursion' ? window.buildDefaultTerrain() : {},
       terrainOwner: {},
+      terrainDone: { guard: false, eldar: false }, // BUG-40K-PREGAME item 1: simultaneous placement, not turn-alternating
       undeployedGroups,
       startingStrength,
       lastTurnReplay: null,
@@ -137,11 +147,11 @@ window.GameState = (() => {
 
     await window.db.ref('games/' + gameId).set(doc);
 
-    localStorage.setItem(`w40k_faction_${gameId}`, faction);
+    localStorage.setItem(`w40k_faction_${gameId}`, mySlot);
     localStorage.setItem(`w40k_token_${gameId}`, token);
     if (devMode) localStorage.setItem(`w40k_dev_${gameId}`, '1');
 
-    return { gameId, faction, token };
+    return { gameId, faction: mySlot, factionName: myFactionName, token };
   }
 
   async function joinGame(gameId, playerName, rosterId) {
@@ -152,14 +162,17 @@ window.GameState = (() => {
     const game = snap.val();
     if (game.status !== 'waiting') throw new Error('This game has already started.');
 
-    const faction   = game.players.guard.joined ? 'eldar' : 'guard';
-    const factionId = window.RosterLoader.FACTION_MAP[faction];
-    const token     = generateToken();
+    // BUG-40K-PREGAME items 2+3: `faction` here is the open POSITIONAL
+    // slot, not an army choice — the joiner's actual army comes from
+    // their own roster's meta, same as createGame. Can be the same army
+    // the creator picked; nothing here assumes otherwise.
+    const faction = game.players.guard.joined ? 'eldar' : 'guard';
+    const token   = generateToken();
 
-    const [roster] = await Promise.all([
-      window.RosterLoader.fetchRoster(rosterId),
-      window.RosterLoader.loadFactionData(factionId),
-    ]);
+    const roster = await window.RosterLoader.fetchRoster(rosterId);
+    const myFactionId   = roster.meta.factionId;
+    const myFactionName = roster.meta.factionName || myFactionId;
+    await window.RosterLoader.loadFactionData(myFactionId);
     const myUnits = window.RosterLoader.buildUnitsFromRoster(roster, faction, game.boardHeight || 60);
 
     const unitsUpdate   = {};
@@ -179,10 +192,12 @@ window.GameState = (() => {
 
     await ref.update({
       status: 'active',
-      [`players/${faction}/name`]:     playerName,
-      [`players/${faction}/token`]:    token,
-      [`players/${faction}/joined`]:   true,
-      [`players/${faction}/rosterId`]: rosterId,
+      [`players/${faction}/name`]:        playerName,
+      [`players/${faction}/token`]:       token,
+      [`players/${faction}/joined`]:      true,
+      [`players/${faction}/rosterId`]:    rosterId,
+      [`players/${faction}/factionId`]:   myFactionId,
+      [`players/${faction}/factionName`]: myFactionName,
       [`undeployedGroups/${faction}`]: groupIds.length > 0 ? groupIds : null,
       startingStrength: mergedSS,
       ...unitsUpdate,
@@ -504,7 +519,10 @@ window.GameState = (() => {
   // Paint or erase terrain squares. Both maps written atomically so terrain/terrainOwner never desync.
   // paints: [{ x, y, tier }] — squares to set (or repaint with new tier)
   // erases: [{ x, y }]       — squares to remove
-  // No turn-advance here; caller passes turn explicitly via passTerrainTurn.
+  // Both players can call this at any time during the terrain phase —
+  // BUG-40K-PREGAME item 1 replaced turn-alternation with simultaneous
+  // placement; board.js already gated painting by budget/enemyOwned per
+  // faction, not by turn, so no change needed there.
   async function writeTerrain(gameId, paints, erases, faction) {
     const update = {};
     paints.forEach(({ x, y, tier }) => {
@@ -520,12 +538,20 @@ window.GameState = (() => {
     }
   }
 
-  // Passes without placing — used when active player is out of budget.
-  async function passTerrainTurn(gameId, nextPlayer) {
-    const update = {};
-    if (nextPlayer) {
-      update['turn/activePlayer'] = nextPlayer;
-    } else {
+  // BUG-40K-PREGAME item 1: replaces passTerrainTurn's alternating hand-off
+  // (the source of the "endless pass-turn cycle" bug — whichever player
+  // still had budget left after the other reached 0 had no way to end the
+  // phase except by manually re-passing back and forth). A player confirms
+  // done at any time, regardless of remaining budget; phase advances to
+  // deployment once BOTH have confirmed. Read-then-write (not atomic) —
+  // consistent with this app's existing no-auth, open-rules trust model;
+  // a genuine simultaneous double-click race here just means both writes
+  // land and the second one's "both done" check also passes, same result.
+  async function confirmTerrainDone(gameId, faction) {
+    const snap = await window.db.ref(`games/${gameId}/terrainDone`).once('value');
+    const done = { ...(snap.val() || {}), [faction]: true };
+    const update = { [`terrainDone/${faction}`]: true };
+    if (done.guard && done.eldar) {
       update['turn/phase']        = 'deployment';
       update['turn/activePlayer'] = 'guard';
     }
@@ -573,5 +599,5 @@ window.GameState = (() => {
     await window.db.ref('games/' + gameId).update(update);
   }
 
-  return { createGame, joinGame, subscribeToGame, getLocalFaction, setLocalFaction, isDevSession, advancePhase, confirmUnitMove, confirmUnitShoot, allocateCasualties, rollInitiative, clearInitiativeRolls, chooseInitiative, writeTerrain, passTerrainTurn, deployGroup, passDeploymentTurn, confirmCharge, failCharge, confirmMeleeAttack, devApplyPreset };
+  return { createGame, joinGame, subscribeToGame, getLocalFaction, setLocalFaction, isDevSession, advancePhase, confirmUnitMove, confirmUnitShoot, allocateCasualties, rollInitiative, clearInitiativeRolls, chooseInitiative, writeTerrain, confirmTerrainDone, deployGroup, passDeploymentTurn, confirmCharge, failCharge, confirmMeleeAttack, devApplyPreset };
 })();

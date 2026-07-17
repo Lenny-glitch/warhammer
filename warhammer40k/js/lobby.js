@@ -1,5 +1,4 @@
 window.Lobby = (() => {
-  let selectedFaction = 'guard';
   let unsubscribe     = null;
 
   // 40K-P3: roster IDs selected via the picker (replaces the old free-text
@@ -103,6 +102,12 @@ window.Lobby = (() => {
 
   // ---- Create flow ----
 
+  // BUG-40K-PREGAME items 2+3: no faction picker here at all anymore.
+  // Picking a roster SETS the army (the export already knows its own
+  // factionId/factionName — see state.js's createGame) — both players can
+  // bring the same faction, disambiguated by player name, not army choice.
+  // The roster picker shows ALL published rosters across every faction
+  // (fetchRosterList's factionId filter param is just omitted/null).
   function renderCreateForm(prefillRosterId) {
     createRosterId = null;
     devRosterId    = null;
@@ -113,25 +118,7 @@ window.Lobby = (() => {
       </div>
 
       <div class="form-group">
-        <span class="faction-select-label">Choose Your Faction</span>
-        <div class="faction-cards">
-          <div class="faction-card faction-guard selected" data-faction="guard" tabindex="0">
-            <div class="faction-icon">⚙</div>
-            <div class="faction-name">Astra Militarum</div>
-            <div class="faction-title">Infantry Squad</div>
-            <div class="faction-detail">Cadian 8th — Combat Patrol</div>
-          </div>
-          <div class="faction-card faction-eldar" data-faction="eldar" tabindex="0">
-            <div class="faction-icon">✦</div>
-            <div class="faction-name">Craftworld Eldar</div>
-            <div class="faction-title">Guardian Defenders</div>
-            <div class="faction-detail">Biel-Tan — Combat Patrol</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Roster</label>
+        <label class="form-label">Your Roster</label>
         <div id="roster-picker-create" class="roster-picker">
           <div class="roster-pick-sub" style="padding:8px 12px;">Loading rosters…</div>
         </div>
@@ -173,34 +160,17 @@ window.Lobby = (() => {
       </label>
     `);
 
-    document.querySelectorAll('.faction-card').forEach(card => {
-      card.addEventListener('click', () => {
-        document.querySelectorAll('.faction-card').forEach(c => c.classList.remove('selected'));
-        card.classList.add('selected');
-        selectedFaction = card.dataset.faction;
-        createRosterId = null;
-        loadRosterPicker('roster-picker-create', window.RosterLoader.FACTION_MAP[selectedFaction], id => { createRosterId = id; });
-        if (document.getElementById('dev-mode-check')?.checked) {
-          devRosterId = null;
-          const otherFaction = selectedFaction === 'guard' ? 'eldar' : 'guard';
-          loadRosterPicker('roster-picker-dev', window.RosterLoader.FACTION_MAP[otherFaction], id => { devRosterId = id; });
-        }
-      });
-      card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') card.click(); });
-    });
-
     document.getElementById('btn-create').addEventListener('click', handleCreate);
     document.getElementById('player-name').addEventListener('keydown', e => { if (e.key === 'Enter') handleCreate(); });
 
-    loadRosterPicker('roster-picker-create', window.RosterLoader.FACTION_MAP[selectedFaction], id => { createRosterId = id; });
+    loadRosterPicker('roster-picker-create', null, id => { createRosterId = id; });
 
     const devCheck = document.getElementById('dev-mode-check');
     devCheck.addEventListener('change', () => {
       const devGroup = document.getElementById('dev-roster-group');
       if (devGroup) devGroup.style.display = devCheck.checked ? '' : 'none';
       if (devCheck.checked && !devRosterId) {
-        const otherFaction = selectedFaction === 'guard' ? 'eldar' : 'guard';
-        loadRosterPicker('roster-picker-dev', window.RosterLoader.FACTION_MAP[otherFaction], id => { devRosterId = id; });
+        loadRosterPicker('roster-picker-dev', null, id => { devRosterId = id; });
       }
     });
 
@@ -240,13 +210,13 @@ window.Lobby = (() => {
     btn.innerHTML = '<span class="spinner"></span> Creating...';
 
     try {
-      const { gameId, faction } = await window.GameState.createGame(name, selectedFaction, devMode, gameSize, rosterId, resolvedDevRosterId);
+      const { gameId, faction, factionName } = await window.GameState.createGame(name, devMode, gameSize, rosterId, resolvedDevRosterId);
       history.pushState(null, '', '?game=' + gameId);
 
       if (devMode) {
         window.App.startGame(gameId, faction);
       } else {
-        renderWaitingScreen(gameId, faction, name);
+        renderWaitingScreen(gameId, faction, factionName, name);
       }
     } catch (err) {
       btn.disabled = false;
@@ -257,9 +227,9 @@ window.Lobby = (() => {
 
   // ---- Waiting screen ----
 
-  function renderWaitingScreen(gameId, faction, playerName) {
+  function renderWaitingScreen(gameId, faction, factionName, playerName) {
     const link = location.href;
-    const factionLabel = faction === 'guard' ? 'Astra Militarum' : 'Craftworld Eldar';
+    const factionLabel = factionName || (faction === 'guard' ? 'Astra Militarum' : 'Craftworld Eldar');
 
     setContent(`
       <div style="text-align:center;margin-bottom:1.5rem;">
@@ -327,7 +297,7 @@ window.Lobby = (() => {
             return;
           }
           if (game.status === 'waiting' && game.players[myFaction] && game.players[myFaction].joined) {
-            renderWaitingScreen(gameId, myFaction, game.players[myFaction].name);
+            renderWaitingScreen(gameId, myFaction, game.players[myFaction].factionName, game.players[myFaction].name);
             return;
           }
         }
@@ -360,46 +330,24 @@ window.Lobby = (() => {
     }
   }
 
+  // BUG-40K-PREGAME items 2+3: no faction lock on the joiner either. The
+  // taken SLOT is purely positional (deployment side) — the joiner brings
+  // whatever roster/army they want, same as the creator, including the
+  // same army the creator already picked. The info line is context, not a
+  // restriction.
   function renderJoinForm(gameId, game) {
-    const takenFaction = game.players.guard.joined ? 'guard' : 'eldar';
-    const openFaction  = takenFaction === 'guard' ? 'eldar' : 'guard';
-    const takenName    = escHtml(game.players[takenFaction].name);
-    const takenLabel   = takenFaction === 'guard' ? 'Astra Militarum' : 'Craftworld Eldar';
-    const openLabel    = openFaction  === 'guard' ? 'Astra Militarum' : 'Craftworld Eldar';
-    const openIcon     = openFaction  === 'guard' ? '⚙' : '✦';
-    const openDetail   = openFaction  === 'guard'
-      ? '10 Guardsmen + Sergeant<br>Lasgun · 5+ Save'
-      : '10 Guardians<br>Shuriken Catapult · 4+ Save';
-    const takenIcon    = takenFaction === 'guard' ? '⚙' : '✦';
-    const takenTitle   = takenFaction === 'guard' ? 'Infantry Squad' : 'Guardian Defenders';
-    const openTitle    = openFaction  === 'guard' ? 'Infantry Squad' : 'Guardian Defenders';
+    const takenSlot = game.players.guard.joined ? 'guard' : 'eldar';
+    const takenName  = escHtml(game.players[takenSlot].name);
+    const takenArmy  = escHtml(game.players[takenSlot].factionName || (takenSlot === 'guard' ? 'Astra Militarum' : 'Craftworld Eldar'));
 
     setContent(`
       <div class="notice notice-info" style="margin-bottom:1.5rem;">
-        <strong>${takenName}</strong> is playing <strong>${takenLabel}</strong>
+        <strong>${takenName}</strong> is playing <strong>${takenArmy}</strong>
       </div>
 
       <div class="form-group">
         <label class="form-label" for="player-name">Your Name</label>
         <input class="form-input" id="player-name" type="text" placeholder="Enter callsign..." maxlength="24" autocomplete="off">
-      </div>
-
-      <div class="form-group">
-        <span class="faction-select-label">Your Faction (auto-assigned)</span>
-        <div class="faction-cards">
-          <div class="faction-card faction-${takenFaction} taken">
-            <div class="faction-icon">${takenIcon}</div>
-            <div class="faction-name">${takenLabel}</div>
-            <div class="faction-title">${takenTitle}</div>
-            <div class="faction-taken-badge">Taken by ${takenName}</div>
-          </div>
-          <div class="faction-card faction-${openFaction} selected">
-            <div class="faction-icon">${openIcon}</div>
-            <div class="faction-name">${openLabel}</div>
-            <div class="faction-title">${openTitle}</div>
-            <div class="faction-detail">${openDetail}</div>
-          </div>
-        </div>
       </div>
 
       <div class="form-group">
@@ -418,7 +366,7 @@ window.Lobby = (() => {
     `);
 
     joinRosterId = null;
-    loadRosterPicker('roster-picker-join', window.RosterLoader.FACTION_MAP[openFaction], id => { joinRosterId = id; });
+    loadRosterPicker('roster-picker-join', null, id => { joinRosterId = id; });
     document.getElementById('btn-join').addEventListener('click', () => handleJoin(gameId));
     document.getElementById('player-name').addEventListener('keydown', e => { if (e.key === 'Enter') handleJoin(gameId); });
   }
