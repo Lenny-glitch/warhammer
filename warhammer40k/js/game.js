@@ -650,7 +650,7 @@ window.Game = (() => {
       : `
         <p style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:0.6rem;">Select a unit to move</p>
         <div>${queueGroups.map(g =>
-          `<button class="btn btn-gold" data-group="${escHtml(g)}" style="margin-right:0.5rem;margin-bottom:0.4rem;">${escHtml(groupLabel(g))}</button>`
+          `<button class="btn btn-gold" data-group="${escHtml(g)}" style="margin-right:0.5rem;margin-bottom:0.6rem;">${escHtml(groupLabel(g))}</button>`
         ).join('')}</div>`;
 
     // W40K-UX2 item 3: one-level undo per already-moved group, ported from
@@ -661,7 +661,7 @@ window.Game = (() => {
       <div style="margin-top:0.75rem;padding-top:0.6rem;border-top:1px solid var(--border);">
         <p style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.4rem;">Already moved — undo?</p>
         <div>${movedGroupIds.map(g =>
-          `<button class="btn btn-ghost" data-undo-move-group="${escHtml(g)}" style="margin-right:0.5rem;margin-bottom:0.4rem;">Undo ${escHtml(groupLabel(g))}</button>`
+          `<button class="btn btn-ghost" data-undo-move-group="${escHtml(g)}" style="margin-right:0.5rem;margin-bottom:0.6rem;">Undo ${escHtml(groupLabel(g))}</button>`
         ).join('')}</div>
       </div>` : '';
 
@@ -678,7 +678,7 @@ window.Game = (() => {
       return logHtml + `<p style="font-size:0.82rem;color:var(--text-dim);margin-bottom:0.75rem;">All units have shot.</p>`;
     }
     const btns = queue.map(g =>
-      `<button class="btn btn-gold" data-shoot-group="${escHtml(g)}" style="margin-right:0.5rem;margin-bottom:0.4rem;">${escHtml(groupLabel(g))}</button>`
+      `<button class="btn btn-gold" data-shoot-group="${escHtml(g)}" style="margin-right:0.5rem;margin-bottom:0.6rem;">${escHtml(groupLabel(g))}</button>`
     ).join('');
     return logHtml + `
       <p style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:0.6rem;">Select a unit to shoot</p>
@@ -737,7 +737,7 @@ window.Game = (() => {
       return `<p style="font-size:0.82rem;color:var(--text-dim);margin-bottom:0.75rem;">All units have charged (or declined).</p>`;
     }
     const btns = queueGroups.map(g =>
-      `<button class="btn btn-gold" data-charge-group="${escHtml(g)}" style="margin-right:0.5rem;margin-bottom:0.4rem;">${escHtml(groupLabel(g))}</button>`
+      `<button class="btn btn-gold" data-charge-group="${escHtml(g)}" style="margin-right:0.5rem;margin-bottom:0.6rem;">${escHtml(groupLabel(g))}</button>`
     ).join('');
     return `
       <p style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:0.6rem;">Select a unit to charge</p>
