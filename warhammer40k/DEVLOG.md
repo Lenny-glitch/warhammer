@@ -1406,3 +1406,57 @@ pattern invented.
 
 Files: `warhammer40k/js/board.js` (target-click handler for
 shooting/charge targeting).
+
+---
+
+## BUG-40K-BOARD-BATCH item 2 — units can stack on placement (2026-07-18)
+
+Brief's own item 2 (bug #1): during deployment, models could be dropped
+onto the same square as an existing unit, overlapping.
+
+**Investigated first, per the brief.** `deployValid()` (`board.js`'s
+`setupInteraction`, deployment-placement block) checked deployment-zone
+bounds and terrain (`modelOverlapsTerrain`) — **no check against other
+units at all**. Movement, by contrast, already has a real model-vs-model
+collision rule: `circleOverlapsCircle()` is used twice in the drag handler
+(live block-check during drag, and a final re-check at the snapped
+drop position), rejecting the move (snapping back) on overlap. Placement
+had no equivalent — confirmed by reading, not assumed.
+
+**Fix:** reused the exact same primitive rather than inventing a second
+rule. Built an `otherModels` list from `units` (already-deployed models
+only — `setupInteraction`'s own `units` param is `deployedUnits`, the
+undeployed-groups-filtered set `game.js`'s `renderDeployment` already
+constructs, so the group currently being placed was never in it to begin
+with — no "exclude my own models" logic needed the way movement's
+sync-drag has). `deployValid()` now also rejects if any computed cluster
+position would `circleOverlapsCircle` an existing model. Matches
+movement's own choice of behavior on overlap: **reject** (click is a
+no-op, `console.log`'s the existing "click blocked" message), not a
+nudge — brief allowed either, movement's precedent decided it.
+
+**Verify-first misstep worth recording:** my first reproduction attempt
+computed screen-pixel-to-board-inch scale as `rect.width / viewBox.width`
+directly and got it wrong — the SVG element's own box aspect ratio didn't
+match the viewBox's aspect ratio, so `preserveAspectRatio="xMidYMid meet"`
+was letterboxing one axis, and a naive per-axis ratio silently used the
+wrong (non-constraining) scale. Caught by cross-checking against the
+already-rendered token's own `getBoundingClientRect()` (ground truth,
+immune to the letterboxing math) instead of hand-deriving scale — a
+reminder that this project's boards are routinely non-square (44×30 /
+44×60 / 44×90, see MOBILE-2-40K) and any test math assuming uniform
+per-axis scale needs to check against a real rendered element first.
+
+### Test — both required checks, pass
+
+1. **Two models on the same square.** PASS — a synthetic fixture (already-
+   deployed Wraithguard at board (20,54), a second undeployed Eldar group
+   about to be placed) via Playwright/CDP: clicking exactly on the
+   deployed unit's own rendered screen position left `undeployedGroups`
+   unchanged (still queued) — the drop was rejected, not written.
+2. **Normal placement with space still works.** PASS — same session,
+   clicking 5 board-inches clear (still inside the eldar deployment zone)
+   placed the new unit correctly at that exact spot, `undeployedGroups`
+   cleared.
+
+Files: `warhammer40k/js/board.js` (deployment-placement `deployValid`).

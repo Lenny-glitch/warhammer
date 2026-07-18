@@ -876,6 +876,21 @@ window.Board = (() => {
       const cols   = Math.ceil(Math.sqrt(count));
       const nRows  = Math.ceil(count / cols);
 
+      // BUG-40K-BOARD-BATCH item 2: deployValid had zone-bounds and terrain
+      // checks but nothing against OTHER already-deployed models — a click
+      // could drop a whole new cluster right on top of an existing unit.
+      // Movement already has a real model-vs-model collision rule
+      // (circleOverlapsCircle, used in the pointerdown drag handler below);
+      // reused here rather than inventing a second, different rule. Only
+      // already-deployed models are in `units` (this function's own param)
+      // at this point (the caller passes `{ ...game, units: deployedUnits }`
+      // through to setupInteraction — see game.js's renderDeployment), so
+      // nothing needs excluding for "my own group" the way movement's
+      // sync-drag does.
+      const otherModels = Object.values(units || {})
+        .filter(u => u.alive)
+        .map(u => ({ x: u.x, y: u.y, r: ((window.UNIT_STATS || {})[u.type] || {}).baseRadius || 0.5 }));
+
       function computeCluster(cx, cy) {
         return models.map((m, i) => ({
           x: cx + ((i % cols) - (cols - 1) / 2) * SPACING,
@@ -888,6 +903,7 @@ window.Board = (() => {
         if (pos.some(p => p.y - R < zone.yMin || p.y + R > zone.yMax)) return false;
         if (pos.some(p => p.x - R < 0 || p.x + R > bW)) return false;
         if (pos.some(p => modelOverlapsTerrain(p.x, p.y, R, tallTerrain))) return false;
+        if (pos.some(p => otherModels.some(o => circleOverlapsCircle(p.x, p.y, R, o.x, o.y, o.r)))) return false;
         return true;
       }
 
