@@ -1460,3 +1460,71 @@ per-axis scale needs to check against a real rendered element first.
    cleared.
 
 Files: `warhammer40k/js/board.js` (deployment-placement `deployValid`).
+
+---
+
+## BUG-40K-BOARD-BATCH item 3 — individual moves snapping to formation (2026-07-18)
+
+Brief's own item 8: Nox moved a squad's models individually; after
+accepting the move, they re-formed as if shift-click/formation-moved —
+his actual per-model placements were lost.
+
+**Investigated first, per the brief.** Found it immediately in the
+`btn-confirm-move` handler (`game.js`): W40K-UX2 item 4 added an
+auto-arrange-into-a-clean-grid step on confirm, "so a squatter looks like
+a squad, not a scatter" — but it fires **unconditionally** whenever
+`groupModels.length > 1`, with no check for HOW the models got there. A
+plain drag (no shift held) is already the default, single-model move —
+dragging three models of a squad one at a time, the ordinary way, is
+"individual placement" in every meaningful sense, but the confirm handler
+couldn't tell that apart from a deliberate shift-held whole-group
+formation move. Both discarded the raw per-model positions in favor of a
+fresh centroid-centered grid. This is exactly the reported bug, not a
+guess — read directly off the code before touching anything.
+
+**Fix:** threaded a `sync` flag through the movement drag pipeline so the
+confirm handler can finally tell the two cases apart:
+- `board.js`: the drag object already computed `syncGroup = e.shiftKey`
+  at drag-start; now stored on `drag` itself and passed as a 5th argument
+  to `onModelMoved` at drop time.
+- `game.js`: `activateGroup` now seeds `moveState.usedSoloDrag = false`.
+  All three `onModelMoved` call sites (initial activation, board-only
+  re-render, and `renderBoard()`'s default branch — kept in sync
+  manually, matching this file's existing pattern of near-duplicated
+  board-opts builders) set `usedSoloDrag = true` the moment any drag
+  arrives with `sync` false. It's a sticky per-activation flag, not
+  per-model — one individual drag taints the whole activation, since a
+  player who deliberately placed even one model by hand clearly isn't
+  asking for the rest to be reformatted either.
+- The confirm handler's auto-arrange condition is now
+  `groupModels.length > 1 && !moveState.usedSoloDrag` — a lockstep
+  shift-drag (the deliberate "form up" path) still tidies exactly as
+  before; any activation containing a plain per-model drag now keeps
+  every model's actual placed position, snapToGrid rounding aside.
+
+**Verify-first note:** confirming this against a synthetic fixture
+surfaced a real "spread-out squad fails coherency" prompt
+(`btn-confirm-move-yes`) as an expected side effect of spreading models
+far apart individually — not a bug, the existing coherency-warning gate
+working as designed; the test had to click through it like a real player
+would.
+
+### Test — both required checks, pass
+
+1. **3+ individual, non-formation moves.** PASS — three separate plain
+   (no-shift) drags on a 3-model squad, each to a distinct, deliberately
+   far-apart spot (>5" from each other, avoiding any inter-model
+   collision from the still-live BUG-40K-BOARD-BATCH-item-2-adjacent
+   movement collision rule), confirmed through the resulting coherency
+   prompt. Final Firebase positions matched each individually-placed spot
+   (within `snapToGrid` rounding) — no formation grid, no
+   centroid-recentering.
+2. **Deliberate formation move still works.** PASS — same fixture,
+   fresh reseed, ONE shift-held drag on a single model (moves the whole
+   group in lockstep, per the existing sync-drag mechanic) — confirm
+   produced the exact expected 2"-spaced grid centered on the new
+   centroid, unchanged from pre-fix behavior.
+
+Files: `warhammer40k/js/board.js` (drag state gains `syncGroup`, passed
+to `onModelMoved`), `warhammer40k/js/game.js` (`activateGroup`,
+three `onModelMoved` call sites, `btn-confirm-move` auto-arrange gate).

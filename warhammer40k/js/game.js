@@ -300,7 +300,10 @@ window.Game = (() => {
         snapshots[u.id] = { x: u.x, y: u.y };
       }
     });
-    moveState = { mode: 'active', groupId, snapshots, pending: {} };
+    // BUG-40K-BOARD-BATCH item 3: usedSoloDrag tracks whether ANY plain
+    // (non-shift) single-model drag happened during this activation — see
+    // the confirm handler below for why that matters.
+    moveState = { mode: 'active', groupId, snapshots, pending: {}, usedSoloDrag: false };
   }
 
   // ---- Shooting phase helpers ----
@@ -1748,7 +1751,12 @@ window.Game = (() => {
         activeGroup:  moveState.groupId,
         snapshots:    moveState.snapshots,
         pending:      moveState.pending,
-        onModelMoved: (unitId, x, y, allPositions) => {
+        // BUG-40K-BOARD-BATCH item 3: sync is only true for a shift-held
+        // whole-group drag; any plain solo drag marks usedSoloDrag so
+        // Confirm Movement below knows to preserve exact placed positions
+        // instead of auto-arranging into a formation.
+        onModelMoved: (unitId, x, y, allPositions, sync) => {
+          if (!sync) moveState.usedSoloDrag = true;
           if (allPositions) Object.assign(moveState.pending, allPositions);
           else moveState.pending[unitId] = { x, y };
           renderBoard(game);
@@ -1824,7 +1832,8 @@ window.Game = (() => {
           activeGroup:  moveState.groupId,
           snapshots:    moveState.snapshots,
           pending:      moveState.pending,
-          onModelMoved: (unitId, x, y, allPositions) => {
+          onModelMoved: (unitId, x, y, allPositions, sync) => {
+            if (!sync) moveState.usedSoloDrag = true;
             if (allPositions) Object.assign(moveState.pending, allPositions);
             else moveState.pending[unitId] = { x, y };
             renderBoard(game);
@@ -1958,7 +1967,8 @@ window.Game = (() => {
               activeGroup:  moveState.groupId,
               snapshots:    moveState.snapshots,
               pending:      moveState.pending,
-              onModelMoved: (unitId, x, y, allPositions) => {
+              onModelMoved: (unitId, x, y, allPositions, sync) => {
+                if (!sync) moveState.usedSoloDrag = true;
                 if (allPositions) Object.assign(moveState.pending, allPositions);
                 else moveState.pending[unitId] = { x, y };
                 renderBoard(game);
@@ -2002,8 +2012,20 @@ window.Game = (() => {
             // here on confirm instead of on every intermediate drag frame —
             // single-model groups are trivially already "arranged," so this
             // only matters for groupModels.length > 1.
+            //
+            // BUG-40K-BOARD-BATCH item 3: this used to fire unconditionally,
+            // which meant moving models ONE AT A TIME to deliberately
+            // distinct spots (the default, non-shift drag) still got
+            // overwritten by a formation grid on confirm — the auto-tidy
+            // was meant for a shift-held whole-group move, not individual
+            // per-model placement. moveState.usedSoloDrag (set by
+            // onModelMoved above) is true the moment any plain drag
+            // happens this activation; skip the grid entirely in that
+            // case and keep whatever the player actually placed. A
+            // shift-only activation (usedSoloDrag stays false) still gets
+            // tidied exactly as before.
             let positions = rawPositions;
-            if (groupModels.length > 1) {
+            if (groupModels.length > 1 && !moveState.usedSoloDrag) {
               const cx = groupModels.reduce((s, u) => s + rawPositions[u.id].x, 0) / groupModels.length;
               const cy = groupModels.reduce((s, u) => s + rawPositions[u.id].y, 0) / groupModels.length;
               const SPACING = 2;

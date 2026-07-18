@@ -1087,7 +1087,7 @@ window.Board = (() => {
         moved: false, blocked: false, onModelMoved,
         losLabel, enemies, terrain: terrainFr, weaponRange,
         tallTerrain, baseRadius, normalStroke, otherModels, groupMembers,
-        pointerId: e.pointerId
+        pointerId: e.pointerId, syncGroup
       };
 
       // MOBILE-2-40K: pointerId-scoped — a second concurrent pointer
@@ -1170,7 +1170,11 @@ window.Board = (() => {
               allPositions[m.id] = snapBlocked ? { x: m.displayX, y: m.displayY } : final;
             });
           }
-          d.onModelMoved(d.unitId, allPositions[d.unitId].x, allPositions[d.unitId].y, allPositions);
+          // BUG-40K-BOARD-BATCH item 3: pass along whether THIS drag was a
+          // shift-held sync (whole-group-in-lockstep) move or a plain solo
+          // (single-model) one — the confirm handler needs to know so it
+          // can tell "individual placement" apart from "formation move."
+          d.onModelMoved(d.unitId, allPositions[d.unitId].x, allPositions[d.unitId].y, allPositions, d.syncGroup);
         } else {
           const c = d.tokenG.querySelector('.token-circle');
           if (c) {
