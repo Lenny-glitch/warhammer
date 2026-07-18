@@ -800,3 +800,224 @@ hatch/label rendering, `my-zone-hatch` pattern), `warhammer40k/js/game.js`
 deploy button + handler, `movedGroups`/undo-move UI, move-confirm
 auto-arrangement), `warhammer40k/js/state.js` (`undoDeployment`,
 `movementSnapshot` write in `advancePhase`, `undoMove`).
+
+---
+
+## MOBILE-1-40K — Make a phone turn possible in 40k (2026-07-17)
+
+Brief: `briefs/MOBILE_1_40K_BRIEF.md`. Written by a planner with no repo
+access from `MOBILE_AUDIT_REPORT.md` — verify-first mattered here more
+than usual. Success condition: Aaron can take a complete turn on his
+phone. Commits: `1c5a3ef` (item 1), `cd55c99` (item 2), `47eae19`
+(item 3).
+
+### Item 0 — housekeeping
+
+Confirmed clean: W40K-UX1 landed (`a88019d`) and both things the audit
+flagged as in-progress at the moment it ran (`_tmp_scroll_repro.js`, an
+uncommitted `clamp()`/hover-cursor styles.css diff) are gone — no stray
+temp files anywhere in `warhammer40k/`, `git status` clean before this
+brief's own work started. The audit's snapshot was accurate for the
+moment it was taken, mid-session, before that session's own cleanup and
+commit; nothing to report beyond that.
+
+### Item 1 — layout: the board must be visible
+
+**Verified the audit's root-cause claim directly, and it diverged from
+killteam's diagnosis exactly as the brief warned it might — but in this
+codebase it was correct.** The Shooting phase's `shootingQueueHTML()`
+(and, found while auditing the same shape elsewhere per the brief's
+instruction, `movementQueueHTML()`/`chargeQueueHTML()` too) renders one
+button per unit-group with no cap, inside `.phase-bar`, which had no
+`max-height`/`overflow`. Since `.game-main` (the board row) is the
+`flex:1` element and `.phase-bar` isn't, an uncapped list just grows
+`.phase-bar` and evicts the board — a class of bug (three renderers
+share the exact same unbounded shape), not one instance.
+
+**Fix, two parts, exactly as scoped:**
+- (a) `.phase-bar { max-height: 25vh; overflow-y: auto; }` — a container-
+  level fix rather than patching each queue list individually, so any
+  future unbounded content inside the phase-bar is contained for free.
+- (b) A mobile breakpoint (`@media (max-width:600px), (max-height:500px)`
+  — same trigger the parallel killteam session used, confirmed via its
+  own brief so the two apps don't diverge) hides `.side-panel-left`/
+  `.side-panel-right` behind a tap-to-open drawer (`mobilePanelTogglesHTML()`/
+  `bindMobilePanelToggles()`, shared across all three phase renderers —
+  terrain/deployment/main turn loop — rather than each building its own).
+  Even the existing `clamp(130px,...)` floor left the board only ~130px
+  wide out of 390px; the audit was right that this specific floor isn't
+  the vertical-collapse culprit, but it's still a real width problem this
+  brief's own "Done when" (board dominant) implicitly covers.
+
+**Measured before/after, both orientations, real 13-unit-group roster
+(Jon-2000), Shooting phase active** — reverted the CSS via `git stash`
+first to get a genuine "before" number rather than trusting the audit's
+possibly-stale one:
+
+| | before | after |
+|---|---|---|
+| portrait 390×844 | board 130×0 | board 390×390, phase-bar 211 |
+| landscape 844×390 | board 584×0 | board 844×143, phase-bar 98 |
+
+Board is dominant over the phase-bar in both orientations post-fix.
+Landscape is tighter (as the brief predicted — less vertical room to
+spare), but still clearly usable, not collapsed.
+
+### Item 2 — gestures: the core item
+
+**Verify-first divergence, reported as instructed rather than built
+around silently:** the brief lists 3 drag flows (movement, casualty
+allocation, terrain paint). Reading `board.js` end to end (every
+`mousedown`/`mousemove`/`mouseup`/`document.addEventListener` site) found
+only **2 genuine drag flows** — movement and terrain paint, both driving
+continuous position updates across `mousedown→mousemove→mouseup`.
+Casualty allocation (`onModelToggled`) is a single `mousedown`-click
+toggle with no drag state at all — the *same* shape as shooting/charge
+target selection, which the brief itself already calls out as "good
+news, already touch-shaped." It isn't one of the 3 flows; it just reads
+like it might be from the brief's own description.
+
+**Converted the 2 real flows, movement first per the brief's stated
+priority:** `mousedown`/`mousemove`/`mouseup` → `pointerdown`/
+`pointermove`/`pointerup`, as a straight **replacement** (the old mouse
+listeners are gone, not left running alongside — both firing on a real
+touch tap would double-write to Firebase, an actual desync given
+determinism between clients is non-negotiable here). Terrain paint's
+listeners are scoped to the SVG element itself (unlike movement's, which
+already tracks via `document`), so added `svg.setPointerCapture(e.pointerId)`
+on its `pointerdown` — without it a fast finger-drag that strays outside
+the SVG's screen bounds mid-stroke would silently stop receiving
+`pointermove`/`pointerup`. Added `touch-action: none` on `.board-svg` —
+JS `preventDefault()` alone isn't reliable across browsers for
+suppressing the default scroll/pan gesture claim; some decide
+touch-action from CSS before the handler runs at all. Board pan/zoom is
+explicitly out of scope, so disabling every default touch gesture on the
+board costs nothing.
+
+**Verified with real CDP touch events (`Input.dispatchTouchEvent`), not
+`.click()`, per the brief's explicit requirement**, then re-verified
+with a real desktop mouse drag on both flows to confirm no regression:
+- Movement: a genuine touch-drag on a token registers the move, shows
+  Confirm Movement, and writes the new position + `movedThisTurn` to
+  Firebase on confirm. Desktop mouse drag re-verified identically after.
+- Terrain paint: a genuine touch-drag paints squares owned by the
+  correct faction, written to Firebase. Desktop mouse re-verified after.
+- Casualty allocation and shooting/charge target selection (not
+  converted, per the finding above) were touch-tap-verified anyway,
+  matching the brief's own instruction to "verify under real touch and
+  leave it alone otherwise" for already-touch-shaped flows — both
+  genuinely work via a real CDP touch tap once positioned in a realistic
+  in-range scenario (the first attempt at this used a scenario where
+  units were still ~83" apart, correctly showing "no valid targets" —
+  not a bug, a test-setup gap, caught and fixed before trusting the
+  result).
+
+### Item 3 — touch targets
+
+Shooting-queue "select a unit" buttons measured 235×35px against actual
+source (confirmed the audit's number) — under the 44px minimum. Bumped
+`.btn`'s vertical padding globally (0.6rem → 0.9rem; iterated from 0.8
+through 0.85 to 0.9rem, measuring the real rendered height each step
+rather than trusting arithmetic — browser font-metric rounding meant the
+first two guesses landed at 42px and 43px) rather than only touching the
+flagged queue buttons, so every button in the app meets the minimum
+consistently instead of leaving the same undersized shape everywhere
+else once one instance got fixed. Also widened the gap between stacked
+queue buttons (movement/shooting/charge/undo-move — 4 sites) from
+0.4rem to 0.6rem margin-bottom. Measured post-fix: buttons 45px tall,
+10px gap between wrapped rows.
+
+Unit cards left untouched, per the brief (already fine at 108×116–133px).
+
+**Board tokens — measured post-item-1-fix, not resized from the audit's
+non-reading, across all three game-size presets** (board aspect ratio
+varies a lot: 44×30 / 44×60 / 44×90):
+
+| preset | board-svg (390×844 viewport) | smallest-tier token |
+|---|---|---|
+| combat-patrol | 374×387px | 9×9px |
+| incursion | 374×387px | 6×6px |
+| strike-force | 374×387px | 4×4px |
+
+Genuine finding, not a layout bug: even at the best case (combat-patrol,
+the squattest board), a small-tier token is only 9×9px on a 390px-wide
+phone — the SVG's own `preserveAspectRatio="xMidYMid meet"` scales by
+whichever axis is more constrained, and a 44"-wide board only gets ~4.3–8.5
+px/inch depending on preset when fit into a roughly-square screen area.
+The invisible hit-area circle board.js already draws is meaningfully
+bigger than the visual token (`Math.max(r, 0.7)` vs the visual `r`), so
+actual tap-ability is better than the visual size alone suggests, but
+this is a real, worth-flagging concern for a future brief (larger unit
+counts and/or a portrait-oriented board rendering, not something to
+guess a fix for here) — not something this brief's scope covers fixing.
+
+### Item 4 — forward-looking hover-label audit
+
+Confirmed the audit's baseline: exactly 3 `title=` attributes exist,
+all on dev-only preset buttons (`DEV_PRESETS` rows) — unchanged, still
+dev-only. 40k does not have killteam's "disabled-reason exists only on
+hover" disease and this pass didn't introduce it.
+
+**Flagged, as instructed:** W40K-UX1's token hover tooltip (an SVG
+`<title>` element reading `"{label} — {wounds}/{maxWounds}W"`) has no
+tap-reachable fallback on mobile — SVG `<title>` is a pure hover
+tooltip, and touch devices have no hover state at all, so it will never
+show on a real phone. Mitigating factor: the same unit name (though not
+live per-model wounds) is already visible without hovering, in the
+always-present unit-cards side panel — now reachable via item 1b's
+drawer toggle on mobile, so the information isn't fully lost, just not
+available at a glance on the token itself. Not retrofitted in this
+pass — the rule this brief establishes ("any NEW hover label ships with
+a tap fallback") postdates that addition; flagging it is what the brief
+asked for, not a mandate to go back and rebuild it.
+
+Also checked my own new additions from this session: the mobile-panel-
+toggle buttons (`‹`/`›`) carry `title="Show left/right panel"`. Judged
+this is not the same failure class — these are real, always-tappable
+`<button>` elements whose function doesn't depend on reading the
+tooltip (tap it, the panel opens), unlike killteam's actual disease
+(a *disabled* control whose only explanation for being disabled was
+hover-only text). Left as-is; noted here for transparency rather than
+silently deciding it was fine without saying so.
+
+### Testing
+
+Real headless Chromium (`.playwright-libs` workaround, borrowed from
+`roster/`) against live Firebase throughout — `createGame`/`joinGame`/
+`advancePhase`/`confirmUnitMove`/`writeTerrain` real calls, no fixture.
+Real CDP touch events (`Input.dispatchTouchEvent` — `touchStart`/
+`touchMove`×N/`touchEnd`) for every touch-drag and touch-tap claim in
+this report, never `.click()` standing in for touch. Every fix
+re-verified with real desktop mouse interaction after the touch pass, to
+satisfy the brief's explicit no-regression requirement. Two real browser
+contexts were not needed for this brief specifically (no cross-client
+state-race concern in any of these 4 items — unlike W40K-UX1/UX2's
+deployment-undo and action-log work, which did need it), but the
+mandate is noted and was already the working pattern for anything that
+does need it. All Playwright scripts one-off, not committed, per this
+project's established convention.
+
+### Anything this brief failed to anticipate
+
+- Item 2's premise (3 drag flows) was one flow short of accurate —
+  casualty allocation isn't a drag. Worth correcting in
+  `MOBILE_AUDIT_REPORT.md` if that document gets reused for the
+  killteam-side brief or a future pass here.
+- Constructing a genuine touch-testable "target in range" scenario in
+  dev mode took real iteration (dev-mode units start ~83" apart on a
+  strike-force board, and a naive teleport-one-model-closer approach hit
+  a second, unrelated snag: the teleported model landed underneath a
+  much larger vehicle token's z-order at that exact screen point, so
+  even a real *mouse* click missed it). Neither was a product bug; both
+  cost debugging time before the test scenario was trustworthy.
+- Item 3's token-size finding (9×9 to 4×4px across presets) is real and
+  worth a future brief's attention if Aaron reports mis-taps on tokens
+  specifically, but doing anything about it (larger base-relative token
+  minimums? a different board aspect ratio at mobile sizes?) is a real
+  design question, not a bug fix, and wasn't attempted here.
+
+Files: `warhammer40k/css/styles.css` (`.phase-bar` cap, mobile
+breakpoint + drawer CSS, `.board-svg` touch-action, `.btn` padding),
+`warhammer40k/js/board.js` (pointerdown/move/up conversion + pointer
+capture for movement and terrain paint), `warhammer40k/js/game.js`
+(`mobilePanelTogglesHTML`/`bindMobilePanelToggles`, queue-button gap).
