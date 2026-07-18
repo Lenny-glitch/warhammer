@@ -325,6 +325,44 @@
       .op-token.token-selectable { cursor: pointer; }
     }
 
+    /* ── MOBILE BREAKPOINT (MOBILE-1-KT item 1) ──
+       KT-5's clamp() fix solved the ~960px half-tiled-desktop squeeze but
+       has a floor: 2 sidebars (clamp floor 120px) + 2 side panels (clamp
+       floor 130px) sum to 500px, more than a real phone viewport (390px)
+       outright — flex-shrink:0 means they refuse to yield below that
+       floor, so .board-wrap's flex:1 gets the negative remainder and
+       .game-main{overflow:hidden} hides the failure with no scrollbar and
+       no visual cue. clamp() cannot fix a floor bigger than the viewport;
+       tuning the floors down further is the same failed strategy at a
+       smaller number. Hiding the panels behind a toggle instead.
+       Width-only wouldn't fire in landscape (844x390 is 844px WIDE) —
+       max-height also catches that; verified both 390x844 and 844x390
+       actually trigger this block before building on it. */
+    .mobile-panel-toggle { display: none; }
+    @media (max-width: 600px), (max-height: 500px) {
+      .sidebar, .side-panel { display: none; }
+      .mobile-panel-toggle {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: var(--surface2); border: 1px solid var(--border-hi);
+        border-radius: 4px; padding: 5px 10px; color: var(--text);
+        font: inherit; font-size: 11px; cursor: pointer; min-height: 30px;
+      }
+      /* Long faction names are what wraps the CP strip onto its own line
+         at 390px, costing .game-main vertical space it never gets back —
+         drop the name, keep the CP number (secondary fix, cheap). */
+      .topbar-cp-name { display: none; }
+
+      #screen-game.mobile-panels-open .board-wrap { display: none; }
+      #screen-game.mobile-panels-open .game-main {
+        flex-direction: column; overflow-y: auto;
+      }
+      #screen-game.mobile-panels-open .sidebar,
+      #screen-game.mobile-panels-open .side-panel {
+        display: flex; width: 100%; flex-shrink: 0; max-height: none;
+        border-left: none; border-right: none; border-bottom: 1px solid var(--border);
+      }
+    }
+
     /* ── ACTION LOG ──
        KT-3 item 4 introduced this as a collapsible bottom strip; KT-5 item
        2 moved it into the persistent .log-panel side panel (see side-panel
@@ -834,6 +872,7 @@ let radialSlot    = null;  // playerSlot whose radial is currently showing
 // Shoot/Fight radial buttons and drag-to-shoot's multi-weapon case.
 let radialWeaponPick = null;
 let expandedOps   = new Set(); // op IDs whose sidebar cards are expanded
+let mobilePanelsOpen = false; // MOBILE-1-KT item 1: sidebars/dice/log panels shown as a full-screen drawer instead of the (invisible below the mobile breakpoint) side-by-side layout
 let splatData     = []; // { x, y, pathIdx, rotation, scale, color, bornAt } — permanent death stains
 let diceAnimState = null; // { atkRolls, defRolls, atkStopAt, defStopAt, t0, totalDur, displayAtk, displayDef, _timer }
 let fightDiceAnimState = null; // KT-2 Part 2 — same shape as diceAnimState, Fight's own tumble
@@ -1597,10 +1636,11 @@ function renderGame(playerSlot, devContainer) {
       <span class="topbar-sep">·</span>
       <span class="topbar-phase">${phaseLabel(status, phase)}</span>
       <span class="topbar-sep">·</span>
-      <span class="topbar-cp-p1">${escHtml(p1info.factionName || 'P1')} ${turn.cp?.player1 ?? 0}CP</span>
+      <span class="topbar-cp-p1"><span class="topbar-cp-name">${escHtml(p1info.factionName || 'P1')}</span> ${turn.cp?.player1 ?? 0}CP</span>
       <span class="topbar-sep">·</span>
-      <span class="topbar-cp-p2">${escHtml(p2info.factionName || 'P2')} ${turn.cp?.player2 ?? 0}CP</span>
+      <span class="topbar-cp-p2"><span class="topbar-cp-name">${escHtml(p2info.factionName || 'P2')}</span> ${turn.cp?.player2 ?? 0}CP</span>
       <span class="topbar-spacer"></span>
+      <button class="mobile-panel-toggle" onclick="toggleMobilePanels()">${mobilePanelsOpen ? '✕ Close' : '☰ Info'}</button>
       ${devMode ? `<button class="btn btn-ghost" onclick="devNewGame()" style="font-size:10px;padding:3px 8px;">New Dev Game</button>` : ''}
     </div>
   `;
@@ -1610,6 +1650,7 @@ function renderGame(playerSlot, devContainer) {
   // the board's horizontal gutters carry the roll instead of dead space.
   const barResult = renderPhaseBar(status, phase, playerSlot, turn);
 
+  container.classList.toggle('mobile-panels-open', mobilePanelsOpen);
   container.innerHTML = topbar + `
     <div class="game-main">
       <div class="sidebar sidebar-p1" id="sidebar-p1-${playerSlot}">
@@ -1669,6 +1710,14 @@ function renderOpList(opArr, opPlayer, viewerSlot, status, phase, turn) {
 function toggleOpExpand(opId) {
   if (expandedOps.has(opId)) expandedOps.delete(opId);
   else expandedOps.add(opId);
+  reRender();
+}
+
+// MOBILE-1-KT item 1: shows/hides the sidebars+dice+log as a full-screen
+// drawer in place of the board — only reachable/visible below the mobile
+// breakpoint (see .mobile-panel-toggle's display:none default in CSS).
+function toggleMobilePanels() {
+  mobilePanelsOpen = !mobilePanelsOpen;
   reRender();
 }
 
