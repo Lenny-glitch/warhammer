@@ -1,5 +1,7 @@
 # BUG-40K-CASUALTY-LOCK — Game hard-locks in casualty allocation
 
+CLAIMED: 2026-07-18
+
 ## Orientation
 Monorepo, ~/projects/warhammer, branch master. CLAIM FIRST.
 Touch ONLY warhammer40k/. Parallel session owns killteam/.
