@@ -2896,3 +2896,79 @@ bases.
 Files: `killteam/index.html` only, three commits (one per item, hashes
 in each commit's own message per the brief's ask) — no other files
 touched.
+
+---
+
+## 2026-07-18 — BUG_KT_UNLIMITED_RANGE: re-verified, one adjacent gap found
+
+Nox asked to double-check whether this brief (claimed 2026-07-11, code
+committed as `83ad935` that same day) was actually done. It was — but
+the 2026-07-11 session's own DEVLOG entry flagged real Playwright/
+Chromium as blocked in that sandbox and fell back to a jsdom pure-
+function pass, explicitly noting live-browser verification was the one
+thing it couldn't do. Chromium works fine in this session (used all
+day), so did the real thing instead of re-trusting the jsdom pass.
+
+**Code re-audit — all five fix sites confirmed intact, unregressed by
+the many sessions since (KT-3 through KT-5, BON-2b through BON-3b,
+MOBILE-1-KT):** `parseRng` returns `null` not `0` for absent input;
+`getRangedWeapons`/`getMeleeWeapons` discriminate on `w.type`, not
+range; `getShootValidity` skips the out-of-range check when
+`weaponRange(w) === null`; `getMaxSightRange` returns `Infinity` for an
+unlimited weapon; `computeHalfRangeFact` returns `false` for null range;
+both display sites (unit-card weapon row, weapon-picker badge) show `∞`.
+
+**Live browser test** (real disposable `games-kt/` fixture built from
+the actual live `gameData/kill-team/factions/legionary` catalog data —
+Legionary Balefire Acolyte's real Fireblast/Life siphon/Fell dagger/
+Bolt pistol, not synthetic stand-ins, plus the real bonus catalog):
+Fireblast and Life siphon both appear in the weapon picker with `∞`
+badges (the original reported symptom, directly un-reproduced); fired
+Fireblast at a target 32.4" away (impossible for any real weapon) —
+accepted, shot resolved to `phase:'rolled'`, no error; `getShootValidity`
+control comparison at the same 19" distance: Bolt pistol (real 8" range)
+correctly `Out of range`, Fireblast correctly valid; unit-card row shows
+`∞` for the two psychic weapons and the real `8"` for Bolt pistol. 11/13
+checks, 0 console/page errors. (Two of the fixture's own weapon objects
+needed the same top-level-`rng`→`profiles.RNG` normalization
+`buildOperatives` applies at real game-creation time — copied directly
+from the RNG-fallback comment at index.html:1057 rather than re-deriving
+it, since a first pass that skipped this step produced a misleading
+"Bolt pistol reads as unlimited too" result that was a fixture gap, not
+a real bug — caught by comparing against a real game's actual operative
+shape before trusting the result.)
+
+**One real, adjacent gap found — not a regression of this fix, a
+pre-existing limitation this brief's own acceptance criterion didn't
+anticipate:** the bonus readout for Fireblast's shot came back **empty**
+— no Blast/Devastating/Saturate text. Root cause: `getWeaponBonuses()`
+reads `weapon.bonuses` (a pre-compiled array BON-2a's keyword-to-bonus
+pipeline attaches per-weapon), not `weapon.keywords` directly — and
+Legionary's weapons carry `keywords` but **zero of Legionary's 43
+weapons have a populated `bonuses` array** in `gameData/kill-team/
+factions/legionary` (checked live). Not faction-specific to Legionary
+either: `tau-pathfinders` (0/33) and `warpcoven` (0/32) are the same;
+`nemesis-claw` is partial (18/32). This is the compile-keywords pipeline
+having been run incrementally, faction-by-faction, as each bonus brief
+needed it (BON-1 through BON-3b) — not a uniform one-shot pass — and
+Legionary never got its turn. BON-2a's own comment already named this
+as an accepted, expected state for "older exports" (`empty array, no
+bonuses resolve, zero errors`), so this isn't a surprise so much as a
+gap nobody had connected to THIS brief's acceptance text before now.
+
+**Net: the actual bug (absent rng = unshootable) is fully fixed and
+freshly re-verified live — the range/eligibility/targeting half of the
+brief's "Done when" holds completely.** The bundled "dev readout lists
+Fireblast's bonuses in plain English" sub-clause will not currently
+show anything, through no fault of the range fix — it needs Legionary's
+weapons run through the keyword-to-bonus compiler, a data-pipeline task
+outside this brief's actual scope (range handling), not attempted here
+to avoid silent scope creep into a separate, potentially multi-faction
+piece of work. Flagging for Nox to decide whether that's worth its own
+brief. Nox's own live-game click-through (`?dev=true`) remains the
+final acceptance step this session can't substitute for, per the
+brief's own text — but it's now backed by a real, not jsdom, browser
+repro showing the shot itself works correctly end to end.
+
+Files: none this pass (verification only, no code changed — the fix was
+already correct).
