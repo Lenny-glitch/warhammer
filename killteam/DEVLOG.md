@@ -2728,3 +2728,171 @@ pattern.
 
 Files: `firebase.json` (item 1), `killteam/index.html` (item 3,
 `passTerrainTurn`).
+
+---
+
+## 2026-07-17 — MOBILE-1-KT: a phone turn is now real, not theoretical
+
+Brief: `briefs/MOBILE_1_KT_BRIEF.md`, written by a planner (no repo
+access) from `MOBILE_AUDIT_REPORT.md`. Success condition per the brief:
+**Aaron can take a complete turn on his phone** — select, move, shoot,
+end activation. Verified end-to-end with real touch events at the very
+end of this session (see "Final capstone" below) — not just per-item,
+the whole thing together.
+
+### Audit-claims verification (brief's report item 1)
+
+Both root-cause claims from `MOBILE_AUDIT_REPORT.md` checked out exactly
+as written: `.board-wrap` really did render 24×732 at 390×844 (measured
+fresh, matches the audit's own number), and `killteam/index.html`
+really did have zero touch/pointer listeners anywhere — confirmed via
+grep before touching anything, only mouse events existed. The 6-flow
+drag list was accurate and complete once cross-checked against source
+(no 7th flow found, none of the 6 were already dead code). One thing
+the *brief* (not the audit) got structurally right that was worth
+double-checking rather than assuming: "drag-to-shoot" is actually two
+separate listener sites sharing one downstream pipeline — the
+document-level token-press shortcut (`ktDragShootArm`/`ktDragShootMove`)
+and the button-armed `beginShootDrag`, which the shortcut hands off to.
+Converted both; brief's grouping of them as one named flow was correct.
+
+### Item 1 — breakpoint
+
+Trigger used: `@media (max-width: 600px), (max-height: 500px)`, exactly
+as the brief suggested. Verified live it fires at both shapes (a
+width-only rule would have missed landscape's 844px width entirely):
+
+| | before | after |
+|---|---|---|
+| `.board-wrap` @ 390×844 (portrait) | 24×732 | **390×743** |
+| `.board-wrap` @ 844×390 (landscape) | 344×323 | **844×310** |
+| `.board-wrap` @ 1900×1000 (desktop) | — | 1060×933, unchanged |
+
+Desktop sanity-checked separately: toggle button stays `display:none`,
+board-wrap unaffected — the breakpoint doesn't leak into normal use.
+Side panels (2 sidebars + dice + log) hide entirely below the
+breakpoint; a topbar toggle (`☰ Info` / `✕ Close`) opens them as a
+full-screen scrollable drawer reusing `.game-main`'s existing flex
+space (just switches `flex-direction` row→column and swaps which
+children show — no `position:fixed`/manual inset math needed, since
+`.game-main{flex:1}` already fills exactly the right area between
+topbar and phase-bar). Secondary fix (topbar CP-strip wrap): cheap,
+done — the long faction name is dropped at the same breakpoint,
+leaving just the CP number.
+
+### Item 2 — six drag flows, Pointer Events
+
+All six replaced (not doubled up): Move/Dash/Fall Back, drag-to-shoot
+(both listener sites), fight-drag, markerlight-drag, cast-drag, terrain
+paint. `mousedown/mousemove/mouseup` → `pointerdown/pointermove/
+pointerup`, plus `pointercancel` handling added everywhere a touch
+gesture can be interrupted (no mouse equivalent existed to model this
+on — a stuck `dragState`/`shootState`/etc. with no cleanup path would
+strand the activation on a real phone in a way a desktop mouse user
+would never hit).
+
+**Real bug found during verification, not anticipated by the brief’s
+own two warnings:** `svg.style.touchAction = 'none'` set *reactively*
+inside a `pointerdown` handler is too late for drag-to-shoot's
+token-press shortcut specifically. A browser decides whether a gesture
+is a native scroll/pan at the moment the touch starts, before any JS
+handler runs, and doesn't retroactively honor a style set after the
+fact from inside that same handler. Confirmed live: real CDP touch
+events stopped arriving after ~2 `pointermove`s (the browser had
+already started treating it as a scroll, `pointerup` never fired at
+all). The other five flows never hit this because each has a button
+click *before* the drag's own touch contact, giving JS a moment to set
+`touch-action` ahead of time — this shortcut's whole point is that its
+own first touch IS the arming signal, so there's no earlier moment.
+Fixed with a permanent `.board-svg { touch-action: none }` CSS rule
+instead of a JS toggle — the board has no legitimate native scroll/pinch
+need during play regardless of which flow is active, so static is both
+simpler and actually correct where reactive wasn't.
+
+**Verification, per flow — all real CDP touch events at 390×844
+(`Input.dispatchTouchEvent`, not `.click()`, not synthetic mouse), each
+also re-verified with real mouse events at desktop size:**
+
+| Flow | Converted | Touch-verified | Mouse-verified |
+|---|---|---|---|
+| Move/Dash/Fall Back | ✅ | ✅ | ✅ |
+| drag-to-shoot | ✅ | ✅ | ✅ |
+| fight-drag | ✅ | ✅ | ✅ |
+| markerlight-drag | ✅ | ✅ | ✅ |
+| cast-drag | ✅ | ✅ | ✅ |
+| terrain paint | ✅ | ✅ | ✅ |
+
+6/6, zero console/page errors either direction. Two live-test-script
+bugs surfaced and fixed *in the test*, not the app, worth recording
+since they cost real debugging time: (a) a touch point computed from
+`.board-wrap`'s bounding box instead of the actual `<svg>`'s — the
+portrait viewBox is letterboxed inside a wider/shorter wrapper, so a
+corner-ish point landed in the empty letterbox margin and mapped to a
+negative, out-of-bounds board coordinate; (b) terrain paint's board
+click needs a tier selected first, same as a real player would do.
+
+### Item 3 — radial edge-clamping
+
+`clampRadialAnchor(x, y, offsets)`: computes the ring's full bounding
+box from the same offset math that already positions each button, then
+shifts the *shared anchor point* (not individual buttons, which would
+break the ring's spacing) just enough that the whole ring's rect stays
+inside the viewport. Shared by both `showRadialMenu` (6-action ring)
+and `renderRadialWeaponPicker` (weapon submenu) — the latter now
+returns `{ html, offsets }` instead of a bare string so the anchor can
+be clamped before positioning. Weapon submenu's "Back" button bumped
+40×40 → 44×44 (the 50×50 ring buttons and 54×54 weapon buttons were
+already fine, left alone per the brief).
+
+**Verification:** activated an operative at each of the 4 board corners
+and 4 edge midpoints (8 positions) at 390×844, opened both the main
+ring and the weapon submenu at each — 8 positions × 2 menus, every
+button's `getBoundingClientRect()` checked against `[0,390]×[0,844]`.
+0 off-screen across all of it, Back button confirmed 44×44 throughout,
+0 console errors.
+
+### Final capstone: one continuous real-touch turn
+
+Built one more fixture and drove SELECT (tap token) → MOVE (tap Move
+button, touch-drag on board) → SHOOT (touch-drag token→target, arms
+`pendingShot`) → END ACTIVATION (tap), all with real CDP touch events,
+zero mouse, at 390×844 with an iPhone Safari user-agent. Every step
+succeeded, `.board-wrap` stayed full-width (390px) throughout, zero
+page errors across the whole sequence. This is the brief's actual
+success condition, not a proxy for it.
+
+### Unanticipated findings (brief's report item 6)
+
+- The `touch-action` timing bug above — the brief's own two warnings
+  (replace-don't-add, and touch-action-per-flow) didn't anticipate that
+  *reactive* touch-action inside the drag's own first touch handler is
+  structurally too late for exactly one flow's shape.
+- `getSVGPos`'s pre-existing `e.touches ? e.touches[0] : e` fallback
+  (terrain paint) was dead weight from an old, never-actually-wired
+  attempt at the legacy TouchEvent API — removed as part of the Pointer
+  Events conversion since PointerEvent always carries `clientX`/
+  `clientY` directly.
+- The portrait board's SVG-vs-wrapper letterboxing (noted above under
+  item 2 testing) is itself a real thing worth flagging for anyone
+  writing future mobile tests here: click/tap targeting code should
+  measure `.board-svg`, not `.board-wrap`, whenever the two could
+  differ — they will, on almost any real phone aspect ratio.
+
+**Real-device caveat, per the brief's own instruction:** every
+verification above is Chromium touch emulation (`hasTouch`/`isMobile`
+context options + CDP `Input.dispatchTouchEvent`) — never real iOS
+Safari, which has its own `touch-action` and viewport-unit quirks not
+exercised here. This is **ready for Nox's phone**, not called "mobile
+done."
+
+### Not in scope (per the brief, not touched)
+
+`title=`-only disabled-reason debt, board pan/zoom, any mobile-first/
+second-UI redesign, anything in `warhammer40k/` (a parallel session,
+`MOBILE_1_40K_BRIEF.md`, owns that — confirmed via `git log`/`git
+status` before starting and periodically during, no collision), oval
+bases.
+
+Files: `killteam/index.html` only, three commits (one per item, hashes
+in each commit's own message per the brief's ask) — no other files
+touched.
