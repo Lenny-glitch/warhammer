@@ -3119,6 +3119,30 @@ if (!window._ktDragShootBound) {
 //  RADIAL ACTION MENU
 // ═══════════════════════════════════════════════════════════
 
+// MOBILE-1-KT item 3: the ring's angle math has no idea where the
+// viewport ends — a token near any board edge can put buttons off-screen
+// (measured live: a "Conceal" button at y=-14, a weapon-submenu option at
+// y=-27). Shifts the shared anchor point (not each button individually,
+// which would break the ring's spacing/shape) just enough that every
+// button's rect stays fully inside the viewport, small margin included.
+function clampRadialAnchor(x, y, offsets) {
+  const MARGIN = 4;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let minL = Infinity, maxR = -Infinity, minT = Infinity, maxB = -Infinity;
+  offsets.forEach(({ left, top, width, height }) => {
+    minL = Math.min(minL, left);
+    maxR = Math.max(maxR, left + width);
+    minT = Math.min(minT, top);
+    maxB = Math.max(maxB, top + height);
+  });
+  let cx = x, cy = y;
+  if (x + minL < MARGIN)      cx = MARGIN - minL;
+  if (x + maxR > vw - MARGIN) cx = vw - MARGIN - maxR;
+  if (y + minT < MARGIN)      cy = MARGIN - minT;
+  if (y + maxB > vh - MARGIN) cy = vh - MARGIN - maxB;
+  return { x: cx, y: cy };
+}
+
 function showRadialMenu(opId, playerSlot) {
   const op = (gameData.operatives || {})[opId];
   if (!op || op.x < 0) { hideRadialMenu(); return; }
@@ -3137,9 +3161,11 @@ function showRadialMenu(opId, playerSlot) {
   // KT-3 item 2: weapon choice for multi-weapon operatives takes over the
   // ring entirely instead of the normal 6-action layout.
   if (radialWeaponPick && radialWeaponPick.playerSlot === playerSlot) {
-    menu.innerHTML = renderRadialWeaponPicker(radialWeaponPick);
-    menu.style.left = screen.x + 'px';
-    menu.style.top  = screen.y + 'px';
+    const { html, offsets } = renderRadialWeaponPicker(radialWeaponPick);
+    menu.innerHTML = html;
+    const anchor = clampRadialAnchor(screen.x, screen.y, offsets);
+    menu.style.left = anchor.x + 'px';
+    menu.style.top  = anchor.y + 'px';
     menu.classList.add('visible');
     return;
   }
@@ -3205,10 +3231,12 @@ function showRadialMenu(opId, playerSlot) {
       title: conceal ? 'Locked: Conceal order' : 'Coming in KT-3' },
   ];
 
+  const offsets = [];
   const items = actions.map(a => {
     const rad = a.angle * Math.PI / 180;
     const ix  = Math.round(R * Math.cos(rad)) + bOff;
     const iy  = Math.round(R * Math.sin(rad)) + bOff;
+    offsets.push({ left: ix, top: iy, width: bSz, height: bSz });
     const handler = !a.disabled && a.fn ? `onclick="${a.fn}"` : '';
     const titleAttr = a.title ? `title="${a.title}"` : '';
     return `<button class="radial-item ${a.cls}" style="left:${ix}px;top:${iy}px;" ${a.disabled ? 'disabled' : ''} ${handler} data-action="${a.id}" data-locks="${a.locks}" ${titleAttr}>
@@ -3237,8 +3265,9 @@ function showRadialMenu(opId, playerSlot) {
     });
   });
 
-  menu.style.left = screen.x + 'px';
-  menu.style.top  = screen.y + 'px';
+  const anchor = clampRadialAnchor(screen.x, screen.y, offsets);
+  menu.style.left = anchor.x + 'px';
+  menu.style.top  = anchor.y + 'px';
   menu.classList.add('visible');
 }
 
@@ -3255,13 +3284,17 @@ function hideRadialMenu() {
 function renderRadialWeaponPicker(pick) {
   const { kind, weapons } = pick;
   const R = 72, bSz = 54, bOff = -Math.round(bSz / 2);
-  const backSz = 40, backOff = -Math.round(backSz / 2);
+  // MOBILE-1-KT item 3: was 40px — below the 44px touch-target minimum.
+  // Ring buttons (50px) and weapon buttons (54px) were already fine.
+  const backSz = 44, backOff = -Math.round(backSz / 2);
   const n = weapons.length;
+  const offsets = [{ left: backOff, top: backOff, width: backSz, height: backSz }];
 
   const items = weapons.map((w, i) => {
     const angle = (-90 + (360 / n) * i) * Math.PI / 180;
     const ix = Math.round(R * Math.cos(angle)) + bOff;
     const iy = Math.round(R * Math.sin(angle)) + bOff;
+    offsets.push({ left: ix, top: iy, width: bSz, height: bSz });
     // KT-4 item 2: a multi-weapon operative can carry one Heavy option and
     // one non-Heavy option (e.g. a dual-profile mobile/stationary gun) —
     // show every weapon so the player sees why one's greyed, but only the
@@ -3277,10 +3310,11 @@ function renderRadialWeaponPicker(pick) {
     </button>`;
   }).join('');
 
-  return `
+  const html = `
     <button class="radial-item r-back" style="left:${backOff}px;top:${backOff}px;width:${backSz}px;height:${backSz}px;" onclick="cancelRadialWeaponPick()">Back</button>
     ${items}
   `;
+  return { html, offsets };
 }
 
 function pickRadialWeapon(idx) {
