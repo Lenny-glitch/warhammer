@@ -1,5 +1,7 @@
 # KT-ELIMINATION-MODE — Remove turn limit, win by wiping the enemy
 
+CLAIMED: 2026-07-18
+
 ## Orientation
 Monorepo, ~/projects/warhammer, branch master. CLAIM FIRST.
 Touch ONLY killteam/. Parallel session owns warhammer40k/.
