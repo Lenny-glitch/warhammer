@@ -389,6 +389,7 @@ body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  position: relative; /* MOBILE-1-40K item 1b: containing block for the mobile drawer overlay */
 }
 
 /* ---- Side panels ---- */
@@ -410,6 +411,41 @@ body {
 }
 .side-panel-left  { border-right: 1px solid var(--border); }
 .side-panel-right { border-left:  1px solid var(--border); }
+
+/* MOBILE-1-40K item 1b: at phone size the clamp() floor (130px each,
+   both panels) still leaves the board only ~130px wide out of a 390px
+   viewport — not the reported vertical-collapse bug (item 1a is), but
+   still unusable. Same breakpoint trigger as the parallel killteam
+   session (see W40K_UX2/MOBILE briefs) — a width-only query misses
+   landscape phones (844px wide), so both dimensions are checked. */
+.mobile-panel-toggles { display: none; gap: 0.35rem; margin-left: 0.5rem; }
+.mobile-panel-toggle-btn {
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0.3rem 0.55rem;
+  border-radius: 3px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+@media (max-width: 600px), (max-height: 500px) {
+  .mobile-panel-toggles { display: flex; }
+  .side-panel { display: none; }
+  .side-panel.mobile-panel-open {
+    display: flex;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 20;
+    width: 75vw;
+    max-width: 280px;
+    box-shadow: 2px 0 16px rgba(0,0,0,0.55);
+  }
+  .side-panel-left.mobile-panel-open  { left: 0; }
+  .side-panel-right.mobile-panel-open { right: 0; }
+}
+
 .side-panel-title {
   font-size: 0.58rem;
   letter-spacing: 0.18em;
@@ -575,12 +611,24 @@ body {
   height: calc(100% - 1rem);
 }
 
+/* MOBILE-1-40K item 1a: was unbounded — a "select a unit" list renders
+   one button per unit-group with no cap, and since .phase-bar isn't the
+   flex:1 element (.game-main is), an uncapped list just grows this box
+   and evicts the board down to single-digit px instead of scrolling.
+   This is a container-level fix rather than capping each queue list
+   individually (movementQueueHTML/shootingQueueHTML/chargeQueueHTML all
+   have the same unbounded shape — a class of bug, not one instance).
+   max-height is a straight vh cap, not relative to available space,
+   which matters most in landscape (390px tall) where there's much less
+   room to spare than portrait (844px tall). */
 .phase-bar {
   padding: 0.5rem 1rem 0.75rem;
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: center;
+  max-height: 25vh;
+  overflow-y: auto;
 }
 
 .phase-bar .phase-card {

@@ -240,6 +240,28 @@ window.Game = (() => {
     return groups;
   }
 
+  // MOBILE-1-40K item 1b: at phone size, side panels are hidden by default
+  // (see styles.css's mobile breakpoint) — these toggle buttons open one
+  // as an overlay drawer instead of permanently eating board width. Shared
+  // across all three phase renderers (terrain/deployment/main turn loop)
+  // rather than each building its own — same toggle behavior everywhere.
+  function mobilePanelTogglesHTML() {
+    return `
+      <span class="mobile-panel-toggles">
+        <button class="mobile-panel-toggle-btn" data-toggle-panel="left"  title="Show left panel">&#8249;</button>
+        <button class="mobile-panel-toggle-btn" data-toggle-panel="right" title="Show right panel">&#8250;</button>
+      </span>`;
+  }
+
+  function bindMobilePanelToggles() {
+    document.querySelectorAll('[data-toggle-panel]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const panel = document.querySelector(`.side-panel-${btn.dataset.togglePanel}`);
+        if (panel) panel.classList.toggle('mobile-panel-open');
+      });
+    });
+  }
+
   // Human-readable label for a unit group
   function groupLabel(groupId) {
     if (groupLabelCache[groupId]) return groupLabelCache[groupId];
@@ -936,6 +958,7 @@ window.Game = (() => {
         <span class="topbar-sep">·</span>
         <span class="phase-badge">Terrain Placement</span>
         <span class="game-topbar-spacer"></span>
+        ${mobilePanelTogglesHTML()}
         ${isDev ? `<button class="btn btn-ghost" id="btn-switch" style="margin-left:0.5rem;font-size:0.65rem;padding:0.2rem 0.6rem;">Switch → ${myFac === 'guard' ? 'Eldar' : 'Guard'}</button>` : ''}
       </div>
 
@@ -1013,6 +1036,8 @@ window.Game = (() => {
 
     // Render board without units (pre-deployment)
     window.Board.render({ ...game, units: {} }, document.getElementById('board-wrap'), buildBoardOpts());
+
+    bindMobilePanelToggles();
 
     // Listeners
     if (isDev) {
@@ -1158,6 +1183,7 @@ window.Game = (() => {
         <span class="topbar-sep">·</span>
         <span class="phase-badge">Deployment</span>
         <span class="game-topbar-spacer"></span>
+        ${mobilePanelTogglesHTML()}
       </div>
 
       <div class="game-main">
@@ -1249,6 +1275,8 @@ window.Game = (() => {
     };
 
     window.Board.render({ ...game, units: deployedUnits }, document.getElementById('board-wrap'), boardOpts);
+
+    bindMobilePanelToggles();
 
     const undoDeployBtnEl = document.getElementById('btn-undo-deploy');
     if (undoDeployBtnEl) {
@@ -1663,6 +1691,7 @@ window.Game = (() => {
         <span class="game-topbar-spacer"></span>
         <span class="cp-display">Guard CP: <span class="cp-value">${players.guard.cp}</span></span>
         <span class="cp-display" style="margin-left:0.75rem;">Eldar CP: <span class="cp-value">${players.eldar.cp}</span></span>
+        ${mobilePanelTogglesHTML()}
         ${isDev ? `<button class="btn btn-ghost" id="btn-switch" style="margin-left:0.5rem;font-size:0.65rem;padding:0.2rem 0.6rem;">Switch → ${localFaction === 'guard' ? 'Eldar' : 'Guard'}</button>` : ''}
       </div>
 
@@ -1781,6 +1810,7 @@ window.Game = (() => {
       }
     }
 
+    bindMobilePanelToggles();
     attachListeners(game, units, turn, isDev, isActive, inMovement, inShooting, inCharge, inFight, isFightActive, currentFightEntry);
   }
 
