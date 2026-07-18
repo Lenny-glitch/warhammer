@@ -579,3 +579,124 @@ just in local output.
 Files: `data-pipeline/parsers/parse-kt.js` (buildWeapon, collectWeapons,
 buildSharedMaps, main — all four changes above). No changes to
 `patches.json`, `compile-keywords.js`, or any other faction system.
+
+---
+
+## BUG_KT_MISSING_RANGE — investigated, stopped per the brief's own large-list rule (2026-07-18)
+
+Brief: `briefs/BUG_KT_MISSING_RANGE_BRIEF.md`. First confirmed the brief
+itself hadn't been done yet (Nox asked to double-check) — no commits
+reference it, and the prior session's own report it cites
+(`BUG_CRITICAL_ROUND6`, item 4) explicitly left "root cause not fully
+closed." This session closes item 1 and runs item 2, then stops exactly
+where the brief says to.
+
+### Item 1 — ROOT CAUSE: confirmed SOURCE GAP, not a parser gap
+
+Read the actual BSData XML for Nemesis Claw's 8 affected weapons
+directly (`~/projects/bsdata-killteam/2024 - Nemesis Claw.cat`) and
+compared against a working weapon in the same file:
+
+- **Meltagun** (correctly `rng:"6\""` in gameData): its `WR`
+  characteristic reads `"Range 6\", Devastating 4, Piercing 2"`, plus an
+  `infoLink name="Range x"`. The parser's `extractRange()` pulls the
+  `Range N"` phrase straight out of that text — this is the only
+  mechanism KT 2024 uses for stating a weapon's range at all; there is
+  no separate "RNG" characteristic column anywhere in this catalogue
+  format.
+- **Missile launcher (frag/krak), Heavy bolter (focused/sweeping),
+  Plasma gun (standard/supercharge), Boltgun, Scoped bolt pistol (long
+  range)** — Nemesis Claw's 8 flagged weapons: none of their `WR` text
+  contains the phrase `Range N"` anywhere. Boltgun's `WR` is literally
+  `"-"` (no rules at all). The parser (`buildWeapon()` in
+  `parse-kt.js`) is doing exactly what it should: extracting
+  `Range N"` when present, returning `null` when it genuinely isn't
+  there — matching this project's own `rng`-sentinel design and the
+  parser's own precedent for this exact situation (its "Phosphor
+  blaster" comment: "that weapon's missing range value is a separate
+  BSData gap, not fixed here — inventing the number would violate
+  'never invent weapon stats'").
+- **Sanity-checked against a completely different faction/weapon**
+  before trusting this as a general pattern, not a Nemesis-Claw
+  coincidence: Angels of Death's **Bolt rifle** — one of the single
+  most common weapons in the whole game — has `WR="Piercing Crits 1"`,
+  also no `Range` phrase anywhere. Same shape, different faction,
+  different weapon family. This directly triggered item 2's wider audit
+  before assuming the Nemesis Claw list was the whole problem.
+
+**Verdict: SOURCE GAP.** The parser is correct and was not touched.
+
+### Item 2 — full 47-faction audit: the gap is catalogue-wide, not faction-specific
+
+Rule per the brief: a RANGED weapon with `rng === null` and no PSYCHIC
+keyword is a bug (melee weapons excluded by `type`, not by rng
+presence, per the brief's own warning). Ran against every
+`data-pipeline/output/kt-*.json`:
+
+- **874** ranged weapon instances scanned across all 47 factions.
+- **470** have `rng === null`. Of those, **11 are PSYCHIC** (the
+  legitimate, intentional case — Fireblast, Life siphon, etc., exactly
+  as `BUG_KT_UNLIMITED_RANGE` intends).
+- **459 are the bug** — non-psychic ranged weapons with no range.
+  That's **52.5% of every ranged weapon in the entire catalogue.**
+- **42 of 47 factions** have at least one affected weapon. Only 5
+  (chaos-cult, fellgor-ravagers, gellerpox-infected, goremonger,
+  raveners) are fully clean, and all 5 have small ranged-weapon counts
+  to begin with (6–13 each) rather than being meaningfully more
+  complete.
+- Worst-affected: inquisitorial-agents (68/107 ranged weapons missing
+  range), ratlings (21/23), death-korps (20/28), hunter-clade (20/28).
+- **138 distinct weapon names** affected once per-faction variant
+  suffixes (`(frag)`/`(mobile)`/etc.) are collapsed — this is the
+  number that actually matters for "how much work is fixing this,"
+  since the 459 count inflates with every operative that carries the
+  same weapon. It includes some of the most iconic, common weapons in
+  the game: Bolt rifle, Boltgun, Lasgun, Autogun, Shuriken catapult,
+  Wraithcannon, Missile launcher, Heavy bolter, Plasma gun.
+- **False-positive check (the brief's own explicit ask):** spot-checked
+  whether the audit rule (ranged + no rng + not PSYCHIC = bug) might be
+  wrongly flagging some OTHER legitimately-unlimited, non-psychic
+  weapon category. Found none — every one of the 138 distinct names is
+  an ordinary, real-world-limited-range weapon with no thematic or
+  rules reason to be unlimited (no keyword pattern resembling a second
+  "this is intentionally rangeless" marker exists anywhere in the
+  dataset besides the PSYCHIC tag). Assessed false-positive rate: ~0%.
+  The audit rule itself is sound — the problem is the source data's
+  completeness, not the rule.
+- Of the 459: 126 have a completely empty `WR`/keyword set (the whole
+  weapon-rules field is blank, not just Range), 333 have other real
+  rules populated (Piercing, Devastating, etc.) but no Range
+  specifically — i.e., most of these aren't blank placeholder entries,
+  someone entered SOME of the card's data and skipped the range.
+
+### Stopped here, per the brief's own instruction
+
+*"If item 2's list is big, STOP after items 1-2 and report. A large
+list is a scope decision for Nox, not something to unilaterally grind
+through."* 459 instances / 138 distinct weapons / 42 of 47 factions is
+unambiguously that case. **Items 3 and 4 were not attempted this
+pass** — no `patches.json` changes, no parser changes, no gameData
+writes. Real range values for 138 weapons would mean either inventing
+numbers (this project's own standing rule: never invent weapon stats)
+or a genuine research pass cross-referencing real card data
+faction-by-faction — that's a scope decision, not a quick patch, and
+not something to start grinding through unilaterally on the strength of
+a "go check this" ask.
+
+**What this means for play right now, unchanged by this session:** all
+459 weapons remain shootable at any range (permissive, not blocking —
+the sentinel's existing behavior), same as before this investigation.
+Nothing regressed; nothing was fixed either.
+
+**Recommendation for Nox's actual scope decision:** given the size and
+that ~73% of instances (333/459) already have SOME real rules
+populated (just not Range), this reads as an unfinished BSData 2024
+community port rather than a systematically-absent field — a real
+research pass (matching weapon names against official datacards/PDFs,
+faction by faction) is the honest fix, not a quick patch. Worth asking
+whether this is worth doing at all before the next real playtest
+surfaces it as a live complaint, versus leaving it as a known,
+documented permissive gap (same posture as the already-accepted
+Phosphor blaster case).
+
+Files: none (investigation only, per the brief's own stop condition).
