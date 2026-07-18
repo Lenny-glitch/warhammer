@@ -1272,3 +1272,93 @@ Files: `warhammer40k/js/board.js` (pan/zoom state + math, gesture
 wiring in `setupInteraction`, `pointerId` scoping fix for movement drag,
 `GRID_SQUARE_INCHES`), `warhammer40k/css/styles.css`
 (`.board-scale-indicator`, `.board-svg` touch-action comment update).
+
+---
+
+## BUG-40K-CASUALTY-LOCK — one root cause for both symptoms (2026-07-18)
+
+Brief: `briefs/BUG_40K_CASUALTY_LOCK_BRIEF.md`. From Nox's live playtest:
+#12 (5 Wraithguard, 1 wounded, needs 4 removed, only some models clickable,
+hard lock) and #5 ("can't click units to remove, can't confirm removal —
+rejoin fixed it").
+
+**Root cause, confirmed by reproduction, not guessed:** `board.js`'s
+casualty-allocation click handler resolved the clicked model with
+`e.target.closest('[data-unit-id]')` — that only ever returns the
+**topmost** element at that screen pixel. Two things routinely put a
+different, ineligible token in that same pixel: a dead model keeps its
+board position (skull icon still paint-hit-testable, no z-index concept in
+SVG — paint order is DOM/`Object.values(units)` order) and any other
+group's models can sit within the 0.7"-radius hit-area of an alive
+in-group model (melee engagement range is ~1", comfortably inside 2×0.7").
+Whichever token happened to be later in DOM order silently absorbed the
+click; the handler's own eligibility check (`unit.unitGroup ===
+allocationGroup && unit.alive`) then just `return`ed with no fallback,
+leaving the actually-intended model untouched. Once a player got capped
+below the required count this way, `Confirm Removal` stayed permanently
+disabled — matching both symptoms from the same mechanism (#12's "2
+un-clickable models" and #5's "can't confirm removal"). The brief's other
+suspicion — stale local state needing a real transaction, per the
+terrain-deadlock precedent — was checked and ruled out: `subscribeToGame`
+uses `ref.on('value', ...)`, which always delivers the complete current
+node, not a partial/stale merge, so there's no read-then-write race in
+this particular flow to fix with a transaction. **One bug, not two.**
+
+**Reproduced before fixing:** built synthetic Firebase game fixtures (raw
+REST `PUT` to `games/{id}`, no client code involved) with a 5-model
+Wraithguard unit and `pendingCasualties: 4`, then drove real Chromium
+clicks via Playwright (`.playwright-libs` workaround, same as prior 40k
+sessions) at each token's exact center. With two other tokens (one dead
+ally, one enemy) placed at the same coordinates as 2 of the 5 Wraithguard,
+clicking those 2 tokens' centers registered nothing — selection capped at
+3/4, Confirm stayed disabled — the exact hard lock #12 describes.
+
+**Fix** (`js/board.js`, casualty-allocation `mousedown` handler only):
+replaced the single-element `closest()` lookup with
+`document.elementsFromPoint(e.clientX, e.clientY)`, which returns every
+element stacked at that pixel in paint order, then takes the first one
+that resolves to an eligible (alive, in-group) token. Re-ran the exact
+reproduction fixture post-fix: all 4 previously-blocked clicks now
+register, count reaches 4/4, Confirm enables and writes correctly.
+
+**Scope note, flagged not fixed:** the shooting/charge target-click
+handler right below the fixed one (`onTargetSelected`/`validTargetGroups`)
+uses the identical single-`closest()` pattern and is exposed to the same
+occlusion risk (a token from an ineligible group sitting on top of a valid
+target). Not touched — no symptom reported against it yet and the brief's
+own scope is casualty allocation specifically; worth a fast follow-up if
+Aaron ever reports a target he "can't click."
+
+### Test — 4 required checks, all pass
+
+Real headless Chromium via Playwright/CDP against live Firebase (synthetic
+fixtures, not a full played-out game — the exact click-occlusion mechanic
+doesn't depend on how the units got there). All four disposable test
+games deleted from Firebase after verification.
+
+1. **5-model unit, 1 wounded, needs 4 removed, 2 forced-occluded (repro of
+   #12's exact shape).** PASS — pre-fix: 2 clicks silently no-op, capped
+   at 3/4, Confirm disabled forever. Post-fix: all 4 register, Confirm
+   enables, confirming writes exactly 4 dead + 1 alive to Firebase,
+   `pendingCasualties` cleared to `null`.
+2. **Full-wipe (all 5 die, `pendingCasualties: 5`).** PASS — auto-wipe
+   branch (`isAutoWipe`) shows "Remove All Models", one click removes all
+   5, `pendingCasualties` cleared. This path never depended on per-model
+   click resolution to begin with, confirmed still correct.
+3. **#5's reload-fixes-it path.** Root cause is the SAME occlusion bug
+   (confirmed above, not a separate stale-state issue) — with clicking now
+   correctly resolving through occluding tokens, Confirm no longer gets
+   stuck below the required count, so no reload is needed. Did not find a
+   second, independent stale-state bug to fix on top of this.
+4. **Other client sees the same result — no desync.** PASS — two real
+   separate browser *contexts* (not dev-mode single-tab perspective
+   switch), eldar client resolves the allocation, guard client's own
+   independent Firebase subscription shows the identical post-allocation
+   model count with no extra propagation delay beyond the write itself.
+
+**The game can no longer dead-end in casualty allocation from this
+mechanism** — every model that must be selectable to reach the required
+count now resolves correctly regardless of what else is occupying that
+pixel.
+
+Files: `warhammer40k/js/board.js` (casualty-allocation click handler).

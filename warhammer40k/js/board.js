@@ -942,15 +942,30 @@ window.Board = (() => {
       });
     }
 
-    // Casualty allocation: click a model in the group to toggle selection
+    // Casualty allocation: click a model in the group to toggle selection.
+    // BUG-40K-CASUALTY-LOCK root cause: e.target is only the TOPMOST element
+    // at that pixel. Dead models keep their board position (skull icon, no
+    // enlarged hit-area but still paint-hit-testable) and models from other
+    // groups routinely end up within the 0.7" hit-radius of each other (melee
+    // engagement range is ~1", well inside 2x0.7) — whichever token happens
+    // to paint later in DOM order silently swallows the click, and a plain
+    // .closest() lookup never looks past it. elementsFromPoint returns every
+    // element stacked at that pixel in paint order, so this walks the whole
+    // stack for the first eligible (alive, in-group) token instead of only
+    // ever considering the topmost one.
     if (onModelToggled && allocationGroup) {
       svg.addEventListener('mousedown', e => {
-        const tokenG = e.target.closest('[data-unit-id]');
-        if (!tokenG) return;
-        const unit = units[tokenG.dataset.unitId];
-        if (!unit || unit.unitGroup !== allocationGroup || !unit.alive) return;
+        const stack = document.elementsFromPoint(e.clientX, e.clientY);
+        const hit = stack
+          .map(el => el.closest && el.closest('[data-unit-id]'))
+          .find(tokenG => {
+            if (!tokenG) return false;
+            const unit = units[tokenG.dataset.unitId];
+            return unit && unit.unitGroup === allocationGroup && unit.alive;
+          });
+        if (!hit) return;
         e.preventDefault();
-        onModelToggled(tokenG.dataset.unitId);
+        onModelToggled(hit.dataset.unitId);
       });
     }
 
