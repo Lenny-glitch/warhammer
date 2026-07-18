@@ -1,5 +1,7 @@
 # BUG-40K-BOARD-BATCH — Three board interaction fixes
 
+CLAIMED: 2026-07-18
+
 ## Orientation
 Monorepo, ~/projects/warhammer, branch master. CLAIM FIRST.
 Touch ONLY warhammer40k/. Parallel session may own killteam/.
