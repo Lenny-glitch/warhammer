@@ -2972,3 +2972,97 @@ repro showing the shot itself works correctly end to end.
 
 Files: none this pass (verification only, no code changed — the fix was
 already correct).
+
+---
+
+## 2026-07-18 — KT_ELIMINATION_MODE: turn limit disabled, one live bug found and fixed
+
+**Verify-first finding: most of this brief was already shipped.** The
+win/lose/draw screen (`gameOver: { winner, reason }`, `checkForWipeout`,
+`renderGameOver`) already exists — built in KT-3 (`0bf46fa`), well before
+this brief was written. Reading the code first (per standing rule) instead
+of re-implementing found this immediately: `checkForWipeout` already runs
+after every damage write, already handles the mutual-double-wipe case
+(`winner: null`), already writes a shape both clients read identically.
+The only real gap was item 1 — `endTurningPoint()` still had `if (tp >= 4)
+{ meta/status: 'ended' }`, and that `'ended'` status had no render()
+handler, so hitting TP4 dropped the game into a dead `phase-bar-label`
+reading literally "ended" — the exact "tiny ENDED" complaint in
+PROJECT_STATE's backlog.
+
+**What changed (`killteam/index.html`):**
+1. `endTurningPoint()` (~line 2785): the `tp >= 4` block is commented out,
+   not deleted — TP now counts past 4 indefinitely, game only ends via
+   wipeout. Re-enabling for a future "Take and Hold" mode is uncommenting
+   this one block.
+2. `renderGameOver()` (~line 1527): wording swapped from generic
+   "VICTORY"/"DEFEAT"/"DRAW" to Nox's requested grimdark flavor —
+   "YOU HAVE SLAYED THE ENEMY" / "YOU HAVE BEEN MURDERED" /
+   "MUTUAL ANNIHILATION" (draw sub-text played for laughs per the brief).
+3. **Bug found live, not in the brief:** the radial action menu (a
+   fixed-position DOM node outside the screen-swap containers) was never
+   hidden when `gameData.gameOver` set — `render()`'s gameOver branch
+   returns before reaching the `refreshRadialIfActive()` call the normal
+   game path relies on, and dev mode's *unconditional* call to that same
+   function didn't check `gameOver` either, so local `activation` state
+   from the killing blow kept it showing. Ghosted directly on top of the
+   win/lose/draw screen in both single-player and dev-mode rendering.
+   Fixed at both sites: explicit `hideRadialMenu()` in `render()`'s
+   gameOver branch, plus a `gameData?.gameOver` early-out inside
+   `refreshRadialIfActive()` itself (root-caused there since ~15 call
+   sites share it, per its own comment — covers dev mode and any future
+   caller for free).
+
+**Live two-browser-context testing (mandatory per project rule) — real
+Firebase, real Playwright, headless Chromium, `libasound2` extracted
+locally since it wasn't preinstalled this session:** hand-seeded
+`games-kt/` fixtures directly via the REST API (full valid schema, not
+routed through the roster export pipeline) rather than playing a full
+4-round game out, since the only code path under test was the end-game
+trigger and the win/lose render — not Shoot/Fight mechanics themselves
+(unchanged, already covered by KT-2/KT-3's own tests).
+
+1. **Turn limit removed:** seeded TP4, both operatives `apl:1`, ended
+   both activations for real through the UI (`.op-row.clickable` →
+   `Fight`/`End Activation`) → `advanceActivatingPlayer` → real
+   `endTurningPoint()` call. **PASS** — TP incremented to 5, phase moved
+   to Strategy Phase, no `"ended"` label, both clients agreed.
+2. **Wipeout win/lose:** seeded a real 1-wound defender vs. an
+   overwhelming attacker, played an actual drag-to-Fight through the UI
+   (`board-wrap-player1` SVG, `getScreenCTM()`-computed target coords),
+   clicked **Apply Damage** for real. **PASS** — attacker's client:
+   "YOU HAVE SLAYED THE ENEMY"; defender's client: "YOU HAVE BEEN
+   MURDERED" + attacker's faction name; both derived from the same
+   Firebase `gameOver.winner`, confirmed via `textContent` on both pages
+   (not full-page-source regex — first pass falsely "passed" by matching
+   the literal `${title}` template-literal source inside the `<script>`
+   tag, not rendered DOM; caught and fixed before trusting the result).
+3. **Mutual wipe:** both operatives at 1 wound, symmetric weapons.
+   Discovered live that the block algorithm (`confirmFightTarget`:
+   defender's crits block attacker's crits then normals; defender's
+   *normals* only ever block attacker's *normals*, never crits) makes a
+   true simultaneous double-kill impossible from a same-type dice split —
+   three unforced live attempts produced two one-sided wins and a no-op,
+   never both sides damaged. This is correct KT RAW (a normal save can't
+   stop a crit), not a bug. Forced the case deterministically by pinning
+   `Math.random()` in the attacker's browser context only (test-harness
+   override, no product code touched: first 6 rolls → value 6/crit, next
+   6 → value 2/normal-hit, so the attacker's crits are unblockable by the
+   defender's crit-less normals while the defender's normals go
+   completely unspent). **PASS** — both operatives hit 0 simultaneously,
+   both clients rendered "MUTUAL ANNIHILATION" with identical title/sub
+   text, confirmed byte-identical across the two contexts.
+4. **Dead ops don't linger:** `renderGame`'s `p1ops`/`p2ops` (live
+   sidebar/count) and `checkForWipeout`'s `p1Alive`/`p2Alive` both filter
+   on the same `wounds > 0` predicate — a wiped operative moves to the
+   separate "Incapacitated" list, never lingers in the live count. Not a
+   fresh bug site (KT-3-era code, unchanged here) — confirmed by reading
+   both call sites and by the fact tests 2–3 triggered game-end at the
+   exact instant the last living operative's wounds hit 0, no delay.
+
+Screenshots confirm clean, ghost-free win/lose/draw screens post-fix
+(pre-fix screenshots showed the radial ring overlaid on the title text).
+Test fixtures (`elimtest1/2/3`) deleted from live Firebase after
+verification — nothing left behind in `games-kt/`.
+
+Files: `killteam/index.html`.

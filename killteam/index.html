@@ -1315,11 +1315,15 @@ function render() {
   // `gameOver: { winner, reason }` field/convention (games-kt's schema
   // already had a dormant `gameOver: null` scaffolded for exactly this) —
   // checked directly rather than via a new meta/status enum value, same
-  // as 40k's own render() dispatch. TP4 end stays on the existing
-  // (currently unhandled) 'ended' status per the brief — scoring is
-  // future work, this only covers the wipe-out case that actually
-  // happened at the table.
+  // as 40k's own render() dispatch. KT_ELIMINATION_MODE: this is now the
+  // ONLY game-end trigger — the TP4 turn limit in endTurningPoint() is
+  // disabled (commented, not deleted) until a future scoring mode needs it.
   if (gameData.gameOver) {
+    // KT_ELIMINATION_MODE: found live — this branch returns before the
+    // normal renderGame() path's refreshRadialIfActive() call, so a radial
+    // menu left showing from the killing blow's activation never got
+    // hidden and ghosted on top of the win/lose/draw screen.
+    hideRadialMenu();
     showScreen('gameover');
     renderGameOver(myPlayer);
     return;
@@ -1523,10 +1527,12 @@ function renderGameOver(playerSlot, devContainer) {
   const p2info     = gameData.players?.player2 || {};
   const winnerInfo = winner === 'player1' ? p1info : winner === 'player2' ? p2info : null;
 
-  const title = isDraw ? 'DRAW' : won ? 'VICTORY' : 'DEFEAT';
+  // KT_ELIMINATION_MODE: wording per Nox's brief — grimdark flavor over a
+  // dry "VICTORY"/"DEFEAT" label, mutual wipe played for laughs.
+  const title = isDraw ? 'MUTUAL ANNIHILATION' : won ? 'YOU HAVE SLAYED THE ENEMY' : 'YOU HAVE BEEN MURDERED';
   const cls   = isDraw ? 'draw' : won ? 'win' : 'lose';
   const sub   = isDraw
-    ? 'Both kill teams wiped out — no one left standing.'
+    ? 'Both kill teams wiped out in the same instant. Nobody wins. Everybody dies. Very grimdark of you both.'
     : won
       ? 'Your kill team stands. The enemy is wiped out.'
       : `${escHtml(winnerInfo?.factionName || 'The enemy')}'s kill team stands. Yours is wiped out.`;
@@ -2779,10 +2785,16 @@ async function endTurningPoint() {
   const tp           = gameData.turn?.turningPoint || 1;
   const activePlayer = gameData.turn?.activePlayer || 'player1';
 
-  if (tp >= 4) {
-    await db.ref(`games-kt/${gameId}`).update({ 'meta/status': 'ended' });
-    return;
-  }
+  // KT_ELIMINATION_MODE: the only mode right now is Elimination (last team
+  // standing, see checkForWipeout) — a turn limit has nothing to score
+  // without objectives/VP, so it's disabled as a game-end trigger. TP just
+  // keeps counting past 4. Left in place, not deleted: a future "Take and
+  // Hold" mode reintroduces this exact check behind a mode picker once
+  // scoring exists — re-enable by uncommenting.
+  // if (tp >= 4) {
+  //   await db.ref(`games-kt/${gameId}`).update({ 'meta/status': 'ended' });
+  //   return;
+  // }
 
   // Single atomic update: TP increment + strategy phase reset in one write.
   await startStrategyPhase(activePlayer, { 'turn/turningPoint': tp + 1 });
@@ -3339,6 +3351,12 @@ function cancelRadialWeaponPick() {
 }
 
 function refreshRadialIfActive() {
+  // KT_ELIMINATION_MODE: found live — dev mode's render() dispatch calls
+  // this unconditionally (even when gameData.gameOver), and local
+  // `activation` state from the killing blow's activation is still
+  // truthy at that point, so without this check the radial menu ghosts
+  // on top of the win/lose/draw screen in dev mode too.
+  if (gameData?.gameOver) { hideRadialMenu(); return; }
   if (activation && !dragState && !shootState && !fightState) {
     showRadialMenu(activation.opId, activation.playerSlot);
   } else {
