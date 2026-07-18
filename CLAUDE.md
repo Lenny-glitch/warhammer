@@ -47,6 +47,46 @@ subproject's `DEVLOG.md` are meant to be everything a fresh session needs.
   for KT, proven live, promoted once WHF had a real need for its
   condition machinery.
 
+## Pointer / touch / pan-zoom canon (hard-won, MOBILE-1 + MOBILE-2, 2026-07-18)
+Three landmines two sessions already stepped on. They exist so the next
+session doesn't rediscover them.
+
+- **`touch-action: none` must be a permanent CSS rule** on the drag
+  element, never set reactively inside a `pointerdown` handler. Setting
+  it reactively is too late — the browser decides scroll-vs-drag before
+  your JS runs, so the first gesture is lost. Applies to every drag flow
+  in all three games.
+- **Do not call `preventDefault()` on `pointerdown` indiscriminately.**
+  It breaks tap-to-place interactions (40k deployment placement, and any
+  "click empty space to put something there" flow). If a flow needs both
+  drag and tap-to-place, gate the `preventDefault` on actual drag
+  movement, not on the initial press.
+- **Convert drag flows by REPLACING mouse listeners with pointer
+  events, never by ADDING pointer listeners beside the mouse ones.**
+  Both firing is a double-fire — a duplicate Firebase write, a client
+  desync. Determinism between clients is non-negotiable. Pointer events
+  fire for mouse, touch, and pen through one code path, so desktop keeps
+  working through the same handlers unchanged — this is why pointer
+  events, not a parallel touch-listener set, and not Hammer.js (native
+  pointer events made those obsolete).
+- **Board pan/zoom is SVG `viewBox` mutation, never a CSS transform.**
+  A CSS transform risks divergence between visual position and the
+  coordinate math the engine uses; `viewBox` keeps all coord/LOS/range
+  math in board units, untouched, regardless of zoom level.
+- **Zoom range is derived per board size + screen size, never
+  hardcoded.** 40k has 3 map sizes, all 44" wide: combat-patrol 44x30,
+  incursion 44x60, strike-force 44x90. A fixed zoom max is wrong because
+  more board in the same screen means smaller tokens. Grid scale itself
+  is a flat constant across all three — 1 square = 2 inches, does not
+  vary per map (also the permanent answer to "how many inches is a
+  square?").
+
+**Known mobile papercut, not yet fixed (flagged 2026-07-18):** after
+MOBILE-1 capped `.phase-bar` with an internal scroll, 40k's "End Phase"
+button can sit below the fold on a phone — the most-pressed control now
+requires scrolling a side panel every phase. Candidate fix: pin
+phase-advance controls outside the scroll region. Not yet briefed.
+
 ## Parallel sessions
 More than one session may be working here at once. Before starting work on
 a brief in `briefs/`, check its file for a `CLAIMED: <date>` line near the

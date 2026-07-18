@@ -11,3 +11,7 @@ warhammerstuff
 warhammerstuff.pub
 node_modules/
 .playwright-libs/
+
+# Firebase CLI deploy artifact (hosting..cache etc.) — local cache state,
+# not repo content. Kept showing up staged/modified across sessions.
+.firebase/
