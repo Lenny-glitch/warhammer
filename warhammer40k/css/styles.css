@@ -616,14 +616,33 @@ body {
   inset: 0.5rem;
   width: calc(100% - 1rem);
   height: calc(100% - 1rem);
-  /* MOBILE-1-40K item 2: without this, a touch-drag on the board gets
-     claimed by the browser as a scroll/pan gesture before board.js's
-     pointer handlers ever see it (JS preventDefault() alone isn't
-     reliable — some browsers decide touch-action from CSS before the
-     event handler runs at all). Board pan/zoom is explicitly out of
-     scope for this brief, so disabling every default touch gesture here
-     costs nothing. */
+  /* MOBILE-1-40K item 2 / MOBILE-2-40K item 3: must be a PERMANENT CSS
+     rule, not set reactively inside a pointerdown handler — the browser
+     decides "is this a scroll/pinch gesture?" before any JS runs, so a
+     reactive touch-action set too late never has any effect (found the
+     hard way in the parallel killteam session). Board pan/zoom (incl.
+     two-finger pinch) is now a real feature of this app, not out of
+     scope — disabling the browser's OWN default touch gestures here is
+     what lets board.js's own pointer handlers own them instead. */
   touch-action: none;
+}
+
+/* MOBILE-2-40K item 4: persistent, unobtrusive — answers "how many
+   inches is a square" without needing a tap/hover, and stays a fixed
+   on-screen size regardless of the current pan/zoom level (plain HTML
+   overlay, not inside the SVG's own coordinate space). */
+.board-scale-indicator {
+  position: absolute;
+  right: 0.6rem;
+  bottom: 0.6rem;
+  z-index: 5;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.5rem;
+  border-radius: 3px;
+  background: rgba(10,10,12,0.55);
+  color: var(--text-dim);
+  pointer-events: none;
 }
 
 /* MOBILE-1-40K item 1a: was unbounded — a "select a unit" list renders

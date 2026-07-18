@@ -1021,3 +1021,254 @@ breakpoint + drawer CSS, `.board-svg` touch-action, `.btn` padding),
 `warhammer40k/js/board.js` (pointerdown/move/up conversion + pointer
 capture for movement and terrain paint), `warhammer40k/js/game.js`
 (`mobilePanelTogglesHTML`/`bindMobilePanelToggles`, queue-button gap).
+
+---
+
+## MOBILE-2-40K — Pan/zoom the board (2026-07-18)
+
+Brief: `briefs/MOBILE_2_40K_PANZOOM_BRIEF.md`. Exists because of
+MOBILE-1's own item-3 finding (tokens as small as 4×4px). Success
+condition: Aaron can take a complete turn on his phone. Commit: (this
+DEVLOG entry's own commit — see hash below).
+
+### FIRST TASK — map size list
+
+`window.GAME_PRESETS` (state.js): exactly 3 sizes, all 44" wide —
+**combat-patrol** 44×30, **incursion** 44×60, **strike-force** 44×90
+(the largest, used as the capstone's worst case). Everything below was
+checked against all three, not one.
+
+### Verified vs diverged
+
+- **Verified**: the board is a fixed SVG `viewBox` with zero gesture
+  handling anywhere in `board.js` (`grep` for `wheel`/`gesture`/
+  `touchstart`/`pinch` — one hit total, the static `viewBox` string at
+  SVG creation). viewBox mutation was the right mechanism, exactly as
+  the brief said.
+- **Verified**: `render()` fully rebuilds the `<svg>` element from
+  scratch (`container.innerHTML = ''`) on every single Firebase update
+  — meaning zoom/pan state has to live in a module-level variable
+  outside `render()`'s own scope, or it silently resets to default on
+  every opponent action. Designed for from the start, not discovered as
+  a bug afterward.
+- **Diverged (minor)**: the brief's item 4 framed "1 square = X inches"
+  as possibly varying per map size ("the answer may differ per map").
+  Checked `drawGrid()` directly: the grid step is a flat constant (2"),
+  not derived from `bW`/`bH` — all three map sizes use the same square
+  size, they just fit different numbers of squares. Still sourced the
+  indicator from that one real constant (`GRID_SQUARE_INCHES`, now
+  shared with `drawGrid()` itself) rather than hardcoding a second "2"
+  independently, in case that ever changes.
+- **Latent gap found and fixed while implementing pinch**: MOBILE-1's
+  movement-drag `docMove`/`docUp` (document-level pointermove/pointerup)
+  never checked `pointerId` — harmless before pinch existed (nothing
+  ever had a second live pointer mid-drag), but a real hazard now that a
+  second finger touching down for a pinch could otherwise feed into an
+  in-progress single-token drag. Added `pointerId` scoping to both.
+
+### Item 1 — pan/zoom via viewBox
+
+State: `{ bW, bH, scale, cx, cy }`, module-level in `board.js`, keyed by
+board size (a differently-sized board starts fresh at default — same
+game, size never changes mid-game, so this only matters across
+different games). `MIN_SCALE = 1` (today's default: the whole board).
+`computeMaxScale()` is **dynamic, never hardcoded** per the brief's own
+explicit warning: reads the SVG's actual on-screen size right now via
+`getBoundingClientRect()`, and derives whatever scale makes a
+`SMALLEST_TOKEN_DIAMETER` (1.0 board-unit, the "small" tier's 0.5
+radius — the worst case) reach 44 screen px. Self-corrects across
+orientation change/resize since it's recomputed, not cached. Zoom
+centers on the gesture (`zoomAt()` holds a board-space point visually
+fixed across a scale change — standard "zoom to point" formula, derived
+and written out, not copied from anywhere). Pan (`panByBoardDelta()`)
+converts a screen-pixel delta to board-units using the live `scale`,
+not `toSVG()` re-derivation (which would drift once panning starts
+moving the very viewBox `toSVG()` reads from). Everything funnels
+through `clampState()` before ever touching the DOM.
+
+**Measured, every map size, 390×844, default AND max zoom** (max-zoom
+number should read exactly 44.0 — that's the point of the dynamic
+derivation, not a coincidence):
+
+| map | default zoom | max zoom |
+|---|---|---|
+| combat-patrol (44×30) | 8.5×8.5px | 44.0×44.0px |
+| incursion (44×60) | 6.5×6.5px | 44.0×44.0px |
+| strike-force (44×90) | 4.3×4.3px | 44.0×44.0px |
+
+Pan clamping verified separately (zoomed in, then dragged an extreme
+distance repeatedly in both directions): viewBox stayed within `[0,44]`
+×`[0,90]` (strike-force) in every case — board never goes fully
+off-screen.
+
+### Item 2 — gesture disambiguation (the core risk)
+
+Resolution, verified to fit this app rather than assumed:
+- **One finger on a token** — untouched. Pan/zoom's `pointerdown`
+  handler is a genuinely separate listener (not a replacement), added
+  first but never calling `stopPropagation()` — it only acts on
+  empty-board touches, so movement's own `pointerdown` (which already
+  no-ops if the target isn't a token) never sees any interference.
+- **One finger on empty board** — pans, but **only for touch/pen**
+  (`e.pointerType !== 'mouse'`). Desktop's left button is completely
+  excluded from this path on purpose — every existing left-drag
+  behavior (movement, terrain paint, deployment's click) had to keep
+  working unchanged, and the brief's own desktop section names a
+  *different* trigger for desktop pan anyway.
+- **Two fingers** — pinch-zoom + pan combined (`pinchPrev` tracks the
+  previous frame's distance + midpoint; scale change and midpoint
+  translation are applied as two composed steps, both centered through
+  the same-frame `toSVG()` conversion so they stay consistent with each
+  other). Available in every phase/mode — no flow in this app uses 2
+  concurrent pointers for anything else, so there's nothing to collide
+  with.
+- **Real bug caught before it shipped**: my first draft called
+  `e.preventDefault()` unconditionally on the touch-empty-board
+  pan-start branch. That suppresses the browser's synthetic `click`
+  event that deployment's placement handler depends on (deployment was
+  never converted to pointer events — it's click-based, not a drag).
+  Fixed by only calling `preventDefault()` once real movement is
+  detected in `pointermove`, not on `pointerdown` itself — a bare tap
+  (pointerdown → pointerup with no real movement) now leaves the native
+  click untouched, so deployment placement, casualty allocation, and
+  target selection all still fire correctly through their existing
+  paths. Caught by re-reading my own draft against the deployment code
+  before testing, not by a failing test — worth flagging since it would
+  have been a real regression if shipped.
+
+**Item 2's terrain-paint collision, resolved exactly as the brief
+suggested**: paint mode is modal. One-finger-drag-on-empty-board already
+means "paint" in that phase (pre-existing), so one-finger pan is
+disabled while `opts.terrainPlacement` is active — checked with a
+`paintModeActive` flag before ever starting a pan. Two-finger pinch is
+unaffected (no collision to resolve there) and still works during
+terrain placement.
+
+**Verified with real CDP touch events** (`Input.dispatchTouchEvent`,
+multi-point for pinch — never `.click()`), each proven independently
+and proven not to trigger the others:
+- Two-finger pinch zoomed a token from ~4px to 22px with **zero**
+  Firebase writes (confirmed no unit's `x`/`y` changed).
+- One-finger drag on a token still triggered Movement's Confirm UI
+  (pan wiring doesn't interfere).
+- One-finger drag on empty board changed the viewBox, wrote **no**
+  Firebase state, and did **not** open the move-confirm UI.
+- Terrain phase: one-finger drag on empty board still painted squares
+  (existing behavior, unchanged) and did **not** also pan the view;
+  two-finger pinch still zoomed during terrain placement.
+
+### Item 3 — touch-action, permanently
+
+Already satisfied — MOBILE-1 already added `.board-svg { touch-action:
+none; }` as a static CSS rule (not set reactively inside a handler).
+Confirmed still in place, updated its comment (previously said "pan/zoom
+is out of scope for this brief," now stale) and confirmed it also
+correctly blocks the browser's own pinch-to-zoom-the-page gesture from
+hijacking two-finger touches before board.js's own pinch handler sees
+them (verified as part of the pinch tests above — they wouldn't have
+registered at all otherwise).
+
+### Item 4 — scale indicator
+
+Persistent HTML overlay (`.board-scale-indicator`, bottom-right of
+`.board-wrap`) reading `1 square = 2"` — plain HTML, not an SVG
+element, so its on-screen size stays fixed regardless of the current
+zoom (an SVG text element would need its own counter-scaling to avoid
+visibly growing/shrinking with every pinch, extra complexity for no
+benefit). Sourced from `GRID_SQUARE_INCHES`, the same constant
+`drawGrid()` itself now reads, not a second hardcoded "2" — see the
+verify-first divergence above re: this not actually varying per map.
+
+### Desktop mouse — re-verified, no regressions
+
+- **Wheel = zoom**, `{ passive: false }` + `preventDefault()` so it
+  never scrolls the page (verified directly: `scrollHeight` stayed at
+  `innerHeight` through 10+ wheel notches). Verified it zooms toward the
+  cursor position, not the board origin — wheeled near the board's
+  right/top edge and confirmed the post-zoom viewBox shifted toward that
+  side rather than staying anchored at the old top-left.
+- **Middle-drag = desktop pan** (the brief's "pick one, report which" —
+  chose middle-drag over space+drag: no keyboard-modifier state to
+  track, and it doesn't require excluding the left button from
+  anything it wasn't already excluded from). Verified: panned the
+  viewBox with zero interference from anything else.
+- **Left-drag on a token still moves it** — re-verified end to end
+  (drag → Confirm Movement appears → confirm → position written to
+  Firebase) after the wheel/middle-pan tests ran first, to make sure
+  those didn't leave any state that would break it. No regression.
+- **Left-click target selection still works** — re-verified end to
+  end (select shooter → click target → phase-bar shows the target
+  name). No regression. (Needed a fresh game + reload to test cleanly:
+  the earlier wheel/pan tests left the view zoomed into an arbitrary
+  spot, and SVG's default `overflow:hidden` clips content outside the
+  current viewBox — a teleported-for-testing unit at a fixed board
+  coordinate can end up genuinely off-screen if the view is still
+  zoomed/panned from an unrelated earlier interaction. Not a bug: a
+  real player who zoomed away from their army would have the same
+  “can’t click what isn’t visible” experience, and would pan back
+  first — exactly what this test had to do too.)
+
+### Library vs hand-rolled
+
+**Hand-rolled**, kept in one section of `board.js` (a `---- Pan/Zoom
+----` block, not a separate file — no build step in this project, and
+this is tightly coupled to the same SVG/render lifecycle already
+living in this file). Reasoning: no build step means a library is a
+vendored file either way, so there's no integration-cost win over
+hand-rolling; general-purpose pan/zoom libraries (panzoom,
+svg-pan-zoom) default to CSS-transform-based implementations
+internally, which is exactly what this brief forbids for the
+coordinate-math-must-stay-untouched reason — using one would mean
+fighting its own defaults, not being handed anything for free. The
+actual math (~180 lines including comments) is well-understood and
+small. Did not consider Hammer.js or similar touch-gesture libraries,
+per the brief's explicit instruction (pointer events are native and
+made them obsolete).
+
+### CAPSTONE — one continuous real-touch turn, 390×844, strike-force (largest map)
+
+Real ~13-unit-group Astra Militarum roster (`Jon-2000`). All steps via
+`Input.dispatchTouchEvent`, never `.click()`:
+
+1. Selected a unit from the movement queue (real button tap).
+2. Token measured 4.2px on-screen (strike-force default zoom) —
+   pinch-zoomed in, centered on the token itself, to 33.3px.
+3. Real touch-drag on the now-tappable token → Confirm Movement
+   appeared → tapped it → position + `movedThisTurn` actually written
+   to Firebase.
+4. Fresh game/reload for a clean Shooting scenario (same reasoning as
+   the desktop target-selection re-test above), selected a shooter,
+   pinch-zoomed onto the target, tapped it → selected as target →
+   tapped Confirm Shooting → shot actually resolved and written to
+   `turn/shotLog`.
+5. **End Phase required scrolling `.phase-bar`'s own internal scroll
+   area to reach** — 12 of 13 groups hadn't shot yet, so the unshot
+   queue plus the shot-result summary pushed the button below the
+   25vh cap MOBILE-1 set. Not a bug — the exact "scroll instead of
+   evicting the board" behavior that fix was built for, and exactly
+   the tradeoff flagged (not fixed) in MOBILE-1's own report. Scrolled
+   `.phase-bar` (same as a real player would), tapped End Phase — phase
+   advanced from Shooting to Charge.
+
+**9/9 checks passed. The capstone succeeds on the largest, worst-case
+map.** Nothing blocks a complete turn.
+
+### Testing
+
+Real headless Chromium (`.playwright-libs` workaround) against live
+Firebase throughout, real `createGame`/`advancePhase`/`confirmUnitMove`/
+`confirmUnitShoot` calls. Real CDP touch events for every touch claim —
+single-point drags via `Input.dispatchTouchEvent` `touchStart`/
+`touchMove`×N/`touchEnd`, genuine two-point pinch via two simultaneous
+`touchPoints` per event (not two separate one-finger sequences). No
+Firebase writes came from this brief's own pan/zoom code at any point
+(confirmed directly — pinch-zoom test asserted zero unit position
+change) — this brief didn't need two-browser-context testing per its
+own "if you find yourself writing to Firebase, stop and report" rule,
+and that check came back clean. All Playwright scripts one-off, not
+committed.
+
+Files: `warhammer40k/js/board.js` (pan/zoom state + math, gesture
+wiring in `setupInteraction`, `pointerId` scoping fix for movement drag,
+`GRID_SQUARE_INCHES`), `warhammer40k/css/styles.css`
+(`.board-scale-indicator`, `.board-svg` touch-action comment update).

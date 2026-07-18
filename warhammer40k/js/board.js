@@ -23,6 +23,93 @@ window.Board = (() => {
     return pt.matrixTransform(svg.getScreenCTM().inverse());
   }
 
+  // ---- Pan/Zoom (MOBILE-2-40K) ----
+  //
+  // viewBox mutation ONLY — never a CSS transform on the SVG. Every
+  // coordinate the game engine reads (drag positions, LOS, range,
+  // toSVG() itself) stays in real board units regardless of zoom level;
+  // pan/zoom is purely a local rendering concern, no game state, no
+  // Firebase writes, and nothing the other player's client ever sees.
+  //
+  // Hand-rolled rather than a library: no build step in this project (a
+  // dependency still means vendoring a file, so there's no integration-
+  // cost win over hand-rolling), and general-purpose pan/zoom libraries
+  // (panzoom, svg-pan-zoom, etc.) default to CSS-transform-based
+  // implementations internally — exactly what this brief forbids for
+  // coordinate-math-must-stay-untouched reasons, so using one would mean
+  // fighting its own defaults rather than being handed anything for
+  // free. viewBox pan/zoom is well-understood, small math, kept in this
+  // one section rather than spread across the file.
+  //
+  // State persists per board SIZE across re-renders (render() rebuilds
+  // the whole SVG element from scratch on every single Firebase update —
+  // resetting to a fresh element would otherwise silently reset the
+  // player's zoom/pan on every opponent action). Keyed by {bW,bH}; a
+  // differently-sized board (different game) starts fresh at default.
+  let viewBoxState = null; // { bW, bH, scale, cx, cy } | null
+
+  const MIN_SCALE = 1; // fully zoomed out = the whole board (today's default view)
+  const SMALLEST_TOKEN_DIAMETER = 1.0; // board units — "small" tier (0.5 radius), the worst case that must reach 44px
+
+  function defaultViewBoxState(bW, bH) {
+    return { bW, bH, scale: MIN_SCALE, cx: bW / 2, cy: bH / 2 };
+  }
+
+  function getViewBoxState(bW, bH) {
+    if (!viewBoxState || viewBoxState.bW !== bW || viewBoxState.bH !== bH) {
+      viewBoxState = defaultViewBoxState(bW, bH);
+    }
+    return viewBoxState;
+  }
+
+  // Dynamic max zoom — never a hardcoded number (the brief is explicit:
+  // board dimensions vary 44x30 to 44x90, and a fixed cap is either too
+  // shallow on big maps or pointlessly deep on small ones). Computed from
+  // the SVG's actual on-screen size right now, so it also self-corrects
+  // across an orientation change/resize.
+  function computeMaxScale(svg, bW, bH) {
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return MIN_SCALE * 4; // not laid out yet — conservative fallback, corrected next render
+    const defaultPxPerUnit = Math.min(rect.width / bW, rect.height / bH);
+    const neededPxPerUnit  = 44 / SMALLEST_TOKEN_DIAMETER;
+    return Math.max(MIN_SCALE, neededPxPerUnit / defaultPxPerUnit);
+  }
+
+  function viewBoxRect(state) {
+    const w = state.bW / state.scale;
+    const h = state.bH / state.scale;
+    return { x: state.cx - w / 2, y: state.cy - h / 2, w, h };
+  }
+
+  function clampState(state, maxScale) {
+    const scale = Math.max(MIN_SCALE, Math.min(maxScale, state.scale));
+    const w = state.bW / scale, h = state.bH / scale;
+    const minCx = w / 2, maxCx = state.bW - w / 2;
+    const minCy = h / 2, maxCy = state.bH - h / 2;
+    const cx = minCx > maxCx ? state.bW / 2 : Math.max(minCx, Math.min(maxCx, state.cx));
+    const cy = minCy > maxCy ? state.bH / 2 : Math.max(minCy, Math.min(maxCy, state.cy));
+    return { bW: state.bW, bH: state.bH, scale, cx, cy };
+  }
+
+  function applyViewBox(svg, state) {
+    const r = viewBoxRect(state);
+    svg.setAttribute('viewBox', `${r.x} ${r.y} ${r.w} ${r.h}`);
+  }
+
+  // Zoom by `factor` (>1 = in, <1 = out) holding board-space point
+  // (bx,by) visually fixed — the "zoom centers on the gesture" requirement.
+  function zoomAt(state, factor, bx, by, maxScale) {
+    const newScale = state.scale * factor;
+    const ratio = state.scale / newScale;
+    const newCx = bx + (state.cx - bx) * ratio;
+    const newCy = by + (state.cy - by) * ratio;
+    return clampState({ bW: state.bW, bH: state.bH, scale: newScale, cx: newCx, cy: newCy }, maxScale);
+  }
+
+  function panByBoardDelta(state, dxBoard, dyBoard, maxScale) {
+    return clampState({ ...state, cx: state.cx - dxBoard, cy: state.cy - dyBoard }, maxScale);
+  }
+
   // Clamp tx/ty to within `max` inches of fx/fy along the same vector
   function clampVec(fx, fy, tx, ty, max) {
     const dx = tx - fx, dy = ty - fy;
@@ -156,13 +243,23 @@ window.Board = (() => {
     svg.appendChild(defs);
   }
 
+  // MOBILE-2-40K item 4: the ONE source of truth for grid square size —
+  // the scale indicator reads this same constant rather than a second,
+  // independently-hardcoded "2". Verified against source: this is a flat
+  // constant, not derived per board size, so — divergence from the
+  // brief's own expectation — "1 square = X inches" does NOT actually
+  // vary across combat-patrol/incursion/strike-force; all three just
+  // differ in how many squares fit, not square size. Still sourced from
+  // this real constant rather than assumed, in case that ever changes.
+  const GRID_SQUARE_INCHES = 2;
+
   function drawGrid(parent, bW, bH) {
     bW = bW || 44; bH = bH || 60;
     const g = svgEl('g');
-    for (let x = 0; x <= bW; x += 2) {
+    for (let x = 0; x <= bW; x += GRID_SQUARE_INCHES) {
       g.appendChild(svgEl('line', { x1: x, y1: 0, x2: x, y2: bH, stroke: 'rgba(255,255,255,0.04)', 'stroke-width': 0.12 }));
     }
-    for (let y = 0; y <= bH; y += 2) {
+    for (let y = 0; y <= bH; y += GRID_SQUARE_INCHES) {
       g.appendChild(svgEl('line', { x1: 0, y1: y, x2: bW, y2: y, stroke: 'rgba(255,255,255,0.04)', 'stroke-width': 0.12 }));
     }
     g.appendChild(svgEl('line', {
@@ -515,6 +612,120 @@ window.Board = (() => {
             validTargetGroups, onTargetSelected, terrain,
             allocationGroup, onModelToggled } = opts;
 
+    // ---- Pan/Zoom gestures (MOBILE-2-40K) ----
+    // Always wired, in every phase/mode — this is a SEPARATE listener set
+    // from the mode-specific ones below, not a replacement, and the two
+    // are designed not to fight: one-finger-on-a-token is left alone
+    // entirely here (movement's own pointerdown already owns that, and
+    // simply returns early if the target isn't a token it cares about),
+    // and one-finger-on-empty-board only starts a pan for TOUCH input —
+    // desktop's left button is untouched everywhere (movement drag,
+    // terrain paint, deployment click, casualty/target click all still
+    // fire exactly as before) precisely so none of those regress.
+    // Pinch (2 fingers) has no collision with anything in this app and is
+    // always available. Terrain paint is the one deliberate exception:
+    // one-finger-drag-on-empty-board already means "paint" there, so
+    // one-finger pan is disabled while paint mode is armed (matches the
+    // brief's own suggested resolution) — pinch-zoom still works.
+    {
+      const paintModeActive = !!(opts.terrainPlacement && opts.onTerrainStroke);
+      const activePointers  = new Map(); // pointerId -> {x,y}
+      let pinchPrev = null;              // { dist, midX, midY } | null
+      let panState  = null;              // { pointerId, lastX, lastY } | null
+
+      const currentMaxScale = () => computeMaxScale(svg, bW, bH);
+
+      svg.addEventListener('pointerdown', e => {
+        activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (activePointers.size === 2) {
+          panState = null; // a pinch starting always wins over a single-finger pan
+          const pts  = [...activePointers.values()];
+          const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+          pinchPrev  = { dist, midX: (pts[0].x + pts[1].x) / 2, midY: (pts[0].y + pts[1].y) / 2 };
+          e.preventDefault();
+          return;
+        }
+        if (activePointers.size > 2) return; // ignore a 3rd+ finger entirely
+
+        if (e.pointerType === 'mouse') {
+          if (e.button === 1) { // middle-drag = desktop pan (brief: pick one, report which)
+            panState = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
+            e.preventDefault();
+          }
+          return; // left/right button: untouched, existing mode-specific handlers own it
+        }
+
+        // Touch (or pen): one finger on EMPTY board pans, unless paint mode
+        // has first claim on empty-board drags.
+        const onToken = !!e.target.closest('[data-unit-id]');
+        if (!paintModeActive && !onToken) {
+          panState = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
+        }
+      });
+
+      svg.addEventListener('pointermove', e => {
+        if (activePointers.has(e.pointerId)) activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (activePointers.size >= 2 && pinchPrev) {
+          const pts  = [...activePointers.values()].slice(0, 2);
+          const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+          const midX = (pts[0].x + pts[1].x) / 2, midY = (pts[0].y + pts[1].y) / 2;
+          if (dist > 0 && pinchPrev.dist > 0) {
+            const factor = dist / pinchPrev.dist;
+            const state  = getViewBoxState(bW, bH);
+            // Both midpoints converted through the SAME (current, not-yet-
+            // updated) viewBox — their difference is a valid board-space
+            // delta regardless of the scale change also happening this frame.
+            const oldMid = toSVG(svg, pinchPrev.midX, pinchPrev.midY);
+            const newMid = toSVG(svg, midX, midY);
+            let next = zoomAt(state, factor, oldMid.x, oldMid.y, currentMaxScale());
+            next = clampState({ ...next, cx: next.cx - (newMid.x - oldMid.x), cy: next.cy - (newMid.y - oldMid.y) }, currentMaxScale());
+            viewBoxState = next;
+            applyViewBox(svg, next);
+          }
+          pinchPrev = { dist, midX, midY };
+          e.preventDefault();
+          return;
+        }
+
+        if (panState && e.pointerId === panState.pointerId) {
+          const dxScreen = e.clientX - panState.lastX;
+          const dyScreen = e.clientY - panState.lastY;
+          panState.lastX = e.clientX;
+          panState.lastY = e.clientY;
+          const rect  = svg.getBoundingClientRect();
+          const state = getViewBoxState(bW, bH);
+          const pxPerUnit = Math.min(rect.width / bW, rect.height / bH) * state.scale;
+          if (pxPerUnit > 0) {
+            const next = panByBoardDelta(state, dxScreen / pxPerUnit, dyScreen / pxPerUnit, currentMaxScale());
+            viewBoxState = next;
+            applyViewBox(svg, next);
+          }
+          e.preventDefault();
+        }
+      });
+
+      const releasePointer = e => {
+        activePointers.delete(e.pointerId);
+        if (activePointers.size < 2) pinchPrev = null;
+        if (panState && e.pointerId === panState.pointerId) panState = null;
+      };
+      svg.addEventListener('pointerup',     releasePointer);
+      svg.addEventListener('pointercancel', releasePointer);
+
+      // Desktop: wheel = zoom, centered on the cursor, must not scroll the page.
+      svg.addEventListener('wheel', e => {
+        e.preventDefault();
+        const state   = getViewBoxState(bW, bH);
+        const boardPt = toSVG(svg, e.clientX, e.clientY);
+        const factor  = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        const next = zoomAt(state, factor, boardPt.x, boardPt.y, currentMaxScale());
+        viewBoxState = next;
+        applyViewBox(svg, next);
+      }, { passive: false });
+    }
+
     // Terrain placement: paint-mode — hover shows 1×1 ghost, drag paints/erases squares.
     // Batch fires opts.onTerrainStroke(paints, erases) on mouseup for a single Firebase write.
     if (opts.terrainPlacement && opts.onTerrainStroke) {
@@ -838,11 +1049,17 @@ window.Board = (() => {
         curX: curPos.x, curY: curPos.y,
         moved: false, blocked: false, onModelMoved,
         losLabel, enemies, terrain: terrainFr, weaponRange,
-        tallTerrain, baseRadius, normalStroke, otherModels, groupMembers
+        tallTerrain, baseRadius, normalStroke, otherModels, groupMembers,
+        pointerId: e.pointerId
       };
 
+      // MOBILE-2-40K: pointerId-scoped — a second concurrent pointer
+      // (pinch-zoom's second finger, now that 2-finger gestures are a
+      // real thing this app supports) must not feed into an in-progress
+      // single-token drag. Latent gap before pinch existed: nothing ever
+      // had a second live pointer during a drag, so this never mattered.
       docMove = ev => {
-        if (!drag) return;
+        if (!drag || ev.pointerId !== drag.pointerId) return;
         const pos     = toSVG(drag.svg, ev.clientX, ev.clientY);
         // Clamp from the snapshot origin, not the current display position
         const clamped = clampVec(drag.origin.x, drag.origin.y, pos.x, pos.y, drag.moveMax);
@@ -879,7 +1096,8 @@ window.Board = (() => {
         }
       };
 
-      docUp = () => {
+      docUp = ev => {
+        if (drag && ev && ev.pointerId !== drag.pointerId) return; // a second pointer lifting shouldn't end this drag
         document.removeEventListener('pointermove', docMove);
         document.removeEventListener('pointerup',   docUp);
         if (!drag) return;
@@ -945,8 +1163,14 @@ window.Board = (() => {
 
     container.innerHTML = '';
 
+    // MOBILE-2-40K: render() rebuilds this element from scratch on every
+    // Firebase update, so the current zoom/pan has to be read back from
+    // the persisted module-level state rather than always starting at
+    // "whole board" — otherwise the opponent's next action would reset
+    // the player's zoom.
+    const vb = viewBoxRect(getViewBoxState(bW, bH));
     const svg = svgEl('svg', {
-      viewBox: `0 0 ${bW} ${bH}`,
+      viewBox: `${vb.x} ${vb.y} ${vb.w} ${vb.h}`,
       class: 'board-svg',
       preserveAspectRatio: 'xMidYMid meet'
     });
@@ -1050,6 +1274,18 @@ window.Board = (() => {
     }));
 
     container.appendChild(svg);
+
+    // MOBILE-2-40K item 4: persistent, unobtrusive scale readout — plain
+    // HTML overlay, not an SVG element, so its on-screen size stays
+    // constant regardless of the current zoom level (an SVG text element
+    // would need its own counter-scaling to avoid growing/shrinking with
+    // every pinch). Rebuilt every render along with everything else in
+    // this container.
+    const scaleLabel = document.createElement('div');
+    scaleLabel.className = 'board-scale-indicator';
+    scaleLabel.textContent = `1 square = ${GRID_SQUARE_INCHES}"`;
+    container.appendChild(scaleLabel);
+
     setupInteraction(svg, game.units || {}, { ...opts, terrain: game.terrain || {}, bW, bH });
   }
 
