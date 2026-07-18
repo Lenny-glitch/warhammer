@@ -291,7 +291,19 @@
 
     /* ── BOARD WRAP ── */
     .board-wrap { flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 12px; }
-    .board-svg  { display: block; max-height: 100%; }
+    /* MOBILE-1-KT item 2: touch-action must be in place BEFORE a touch
+       sequence starts — a browser decides whether a gesture is a native
+       scroll/pan at touchstart time and won't retroactively honor
+       svg.style.touchAction set reactively inside a pointerdown handler,
+       which is exactly what drag-to-shoot's token-press shortcut needs
+       (its own "arm" IS the first touch contact, there's no earlier
+       button-click to set it ahead of time like the other five flows
+       have). Confirmed live: without this, real touch events stopped
+       arriving after ~2 pointermoves — the browser had already started
+       treating it as a scroll. Static and permanent rather than
+       JS-toggled per flow: the board has no legitimate native scroll/
+       pinch use during play regardless of which drag flow is active. */
+    .board-svg  { display: block; max-height: 100%; touch-action: none; }
 
     /* ── SIDE PANELS (KT-5 item 2) ──
        The portrait-aspect board (22x30) leaves horizontal gutters on wide
@@ -2448,10 +2460,12 @@ function setupTerrainPaint(svg, playerSlot) {
     }
   }
 
+  // MOBILE-1-KT item 2: pointer events carry clientX/clientY directly for
+  // mouse, touch, and pen alike — the e.touches fallback was for the old,
+  // never-actually-wired TouchEvent API and isn't needed here.
   function getSVGPos(e) {
     const pt = svg.createSVGPoint();
-    const touch = e.touches ? e.touches[0] : e;
-    pt.x = touch.clientX; pt.y = touch.clientY;
+    pt.x = e.clientX; pt.y = e.clientY;
     return pt.matrixTransform(svg.getScreenCTM().inverse());
   }
 
@@ -2482,7 +2496,12 @@ function setupTerrainPaint(svg, playerSlot) {
     }
   }
 
-  svg.addEventListener('mousedown', e => {
+  // MOBILE-1-KT item 2: touch-action:none for the whole terrain phase —
+  // painting is the svg's only job while it's active, so there's nothing
+  // else on it a scroll/pinch gesture would need to reach.
+  svg.style.touchAction = 'none';
+
+  svg.addEventListener('pointerdown', e => {
     const { gx, gy } = getSq(e);
     const key = `${gx},${gy}`;
     // Erase mode if clicking own existing square with same tier
@@ -2495,15 +2514,16 @@ function setupTerrainPaint(svg, playerSlot) {
     e.preventDefault();
   });
 
-  svg.addEventListener('mousemove', e => {
+  svg.addEventListener('pointermove', e => {
     if (!painting) return;
     const { gx, gy } = getSq(e);
     tryPaint(gx, gy);
   });
 
   const finish = () => { if (painting) { painting = false; commitStroke(); } };
-  svg.addEventListener('mouseup',    finish);
-  svg.addEventListener('mouseleave', finish);
+  svg.addEventListener('pointerup',     finish);
+  svg.addEventListener('pointercancel', finish);
+  svg.addEventListener('pointerleave',  finish);
 }
 
 // BUG_CRITICAL_ROUND6 item 3: was checking gameData.terrainPassed — the
@@ -2816,8 +2836,12 @@ function startMove(playerSlot, mode) {
   }));
 
   svg.style.cursor = 'crosshair';
+  // MOBILE-1-KT item 2: touch-action:none stops the browser from treating
+  // this drag as a page-scroll/pan gesture, which would otherwise eat the
+  // pointermove events before this handler ever sees them.
+  svg.style.touchAction = 'none';
 
-  function onMouseMove(e) {
+  function onPointerMove(e) {
     if (!dragState) return;
     const pt = svg.createSVGPoint();
     pt.x = e.clientX; pt.y = e.clientY;
@@ -2828,11 +2852,13 @@ function startMove(playerSlot, mode) {
     updateDragOverlay(resolved.x, resolved.y);
   }
 
-  function onMouseUp(e) {
+  function onPointerUp(e) {
     if (!dragState) return;
-    svg.removeEventListener('mousemove', onMouseMove);
-    svg.removeEventListener('mouseup',   onMouseUp);
+    svg.removeEventListener('pointermove',  onPointerMove);
+    svg.removeEventListener('pointerup',    onPointerUp);
+    svg.removeEventListener('pointercancel', onPointerCancel);
     svg.style.cursor = '';
+    svg.style.touchAction = '';
 
     const pt = svg.createSVGPoint();
     pt.x = e.clientX; pt.y = e.clientY;
@@ -2855,8 +2881,23 @@ function startMove(playerSlot, mode) {
     dragState = null;
   }
 
-  svg.addEventListener('mousemove', onMouseMove);
-  svg.addEventListener('mouseup',   onMouseUp);
+  // A touch drag can be interrupted by the OS (e.g. an incoming call) —
+  // mouse has no equivalent failure mode, but leaving dragState stuck
+  // with no way to clear it would strand the activation on touch.
+  function onPointerCancel() {
+    svg.removeEventListener('pointermove',  onPointerMove);
+    svg.removeEventListener('pointerup',    onPointerUp);
+    svg.removeEventListener('pointercancel', onPointerCancel);
+    svg.style.cursor = '';
+    svg.style.touchAction = '';
+    clearEl(overlay);
+    dragState = null;
+    reRenderPhaseBar();
+  }
+
+  svg.addEventListener('pointermove',   onPointerMove);
+  svg.addEventListener('pointerup',     onPointerUp);
+  svg.addEventListener('pointercancel', onPointerCancel);
 }
 
 function updateDragOverlay(tx, ty) {
@@ -3030,7 +3071,12 @@ if (!window._ktDragShootBound) {
     const screen = pt.matrixTransform(svg.getScreenCTM());
     if (Math.hypot(e.clientX - screen.x, e.clientY - screen.y) > ARM_RADIUS) return;
 
-    candidate = { startX: e.clientX, startY: e.clientY, ranged, playerSlot };
+    // MOBILE-1-KT item 2: touch-action:none from the moment a candidate
+    // arms, not just once beginShootDrag takes over — the pre-threshold
+    // "is this a real drag" window is short but still touch, and the
+    // browser's own scroll gesture would otherwise get first refusal.
+    svg.style.touchAction = 'none';
+    candidate = { startX: e.clientX, startY: e.clientY, ranged, playerSlot, svg };
   }
 
   function ktDragShootMove(e) {
@@ -3054,9 +3100,19 @@ if (!window._ktDragShootBound) {
     }
   }
 
-  document.addEventListener('mousedown', ktDragShootArm);
-  document.addEventListener('mousemove', ktDragShootMove);
-  document.addEventListener('mouseup',   () => { candidate = null; });
+  function ktDragShootEnd() {
+    if (candidate?.svg) candidate.svg.style.touchAction = '';
+    candidate = null;
+  }
+
+  // MOBILE-1-KT item 2: pointer events replace mouse — one code path for
+  // mouse, touch, and pen. Document-level (not svg-scoped) like the mouse
+  // version was, for the same reason its own comment above already gives
+  // (the radial End button sits on top of the token as a plain HTML div).
+  document.addEventListener('pointerdown',   ktDragShootArm);
+  document.addEventListener('pointermove',   ktDragShootMove);
+  document.addEventListener('pointerup',     ktDragShootEnd);
+  document.addEventListener('pointercancel', ktDragShootEnd);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3823,18 +3879,20 @@ function beginShootDrag(playerSlot, weapon) {
   clearEl(overlay);
   shootState = { opId: op.id, weapon, svg, overlay, playerSlot };
   svg.style.cursor = 'crosshair';
+  svg.style.touchAction = 'none'; // MOBILE-1-KT item 2
 
-  function onMouseMove(e) {
+  function onPointerMove(e) {
     if (!shootState) return;
     const pt = svg.createSVGPoint();
     pt.x = e.clientX; pt.y = e.clientY;
     updateShootOverlay(pt.matrixTransform(svg.getScreenCTM().inverse()));
   }
 
-  function onMouseUp(e) {
+  function onPointerUp(e) {
     if (!shootState) return;
-    svg.removeEventListener('mousemove', onMouseMove);
-    svg.removeEventListener('mouseup',   onMouseUp);
+    svg.removeEventListener('pointermove',  onPointerMove);
+    svg.removeEventListener('pointerup',    onPointerUp);
+    svg.removeEventListener('pointercancel', onPointerCancel);
 
     const pt = svg.createSVGPoint();
     pt.x = e.clientX; pt.y = e.clientY;
@@ -3850,6 +3908,7 @@ function beginShootDrag(playerSlot, weapon) {
     shootState = null;
     clearEl(ss.overlay);
     ss.svg.style.cursor = '';
+    ss.svg.style.touchAction = '';
 
     if (target && attacker) {
       const v = getShootValidity(attacker, target, weapon);
@@ -3859,8 +3918,21 @@ function beginShootDrag(playerSlot, weapon) {
     reRenderPhaseBar();
   }
 
-  svg.addEventListener('mousemove', onMouseMove);
-  svg.addEventListener('mouseup',   onMouseUp);
+  function onPointerCancel() {
+    svg.removeEventListener('pointermove',  onPointerMove);
+    svg.removeEventListener('pointerup',    onPointerUp);
+    svg.removeEventListener('pointercancel', onPointerCancel);
+    svg.style.cursor = '';
+    svg.style.touchAction = '';
+    clearEl(overlay);
+    shootState = null;
+    shootWeapon = null;
+    reRenderPhaseBar();
+  }
+
+  svg.addEventListener('pointermove',   onPointerMove);
+  svg.addEventListener('pointerup',     onPointerUp);
+  svg.addEventListener('pointercancel', onPointerCancel);
 }
 
 function updateShootOverlay(p) {
@@ -4645,18 +4717,20 @@ function beginFightDrag(playerSlot, weapon) {
   clearEl(overlay);
   fightState = { opId: op.id, weapon, svg, overlay, playerSlot };
   svg.style.cursor = 'crosshair';
+  svg.style.touchAction = 'none'; // MOBILE-1-KT item 2
 
-  function onMouseMove(e) {
+  function onPointerMove(e) {
     if (!fightState) return;
     const pt = svg.createSVGPoint();
     pt.x = e.clientX; pt.y = e.clientY;
     updateFightOverlay(pt.matrixTransform(svg.getScreenCTM().inverse()));
   }
 
-  function onMouseUp(e) {
+  function onPointerUp(e) {
     if (!fightState) return;
-    svg.removeEventListener('mousemove', onMouseMove);
-    svg.removeEventListener('mouseup', onMouseUp);
+    svg.removeEventListener('pointermove', onPointerMove);
+    svg.removeEventListener('pointerup', onPointerUp);
+    svg.removeEventListener('pointercancel', onPointerCancel);
 
     const pt = svg.createSVGPoint();
     pt.x = e.clientX; pt.y = e.clientY;
@@ -4672,6 +4746,7 @@ function beginFightDrag(playerSlot, weapon) {
     fightState = null;
     clearEl(fs.overlay);
     fs.svg.style.cursor = '';
+    fs.svg.style.touchAction = '';
 
     if (target && attacker && Math.hypot(target.x - attacker.x, target.y - attacker.y) <= 1) {
       confirmFightTarget(attacker, target, weapon, playerSlot);
@@ -4682,8 +4757,22 @@ function beginFightDrag(playerSlot, weapon) {
     reRender();
   }
 
-  svg.addEventListener('mousemove', onMouseMove);
-  svg.addEventListener('mouseup', onMouseUp);
+  function onPointerCancel() {
+    svg.removeEventListener('pointermove', onPointerMove);
+    svg.removeEventListener('pointerup', onPointerUp);
+    svg.removeEventListener('pointercancel', onPointerCancel);
+    svg.style.cursor = '';
+    svg.style.touchAction = '';
+    clearEl(overlay);
+    fightState = null;
+    fightWeapon = null;
+    reRenderPhaseBar();
+    reRender();
+  }
+
+  svg.addEventListener('pointermove', onPointerMove);
+  svg.addEventListener('pointerup', onPointerUp);
+  svg.addEventListener('pointercancel', onPointerCancel);
 }
 
 function updateFightOverlay(p) {
@@ -4878,18 +4967,20 @@ function startMarkerlight(playerSlot) {
   clearEl(overlay);
   markerlightState = { opId: op.id, svg, overlay, playerSlot };
   svg.style.cursor = 'crosshair';
+  svg.style.touchAction = 'none'; // MOBILE-1-KT item 2
 
-  function onMouseMove(e) {
+  function onPointerMove(e) {
     if (!markerlightState) return;
     const pt = svg.createSVGPoint();
     pt.x = e.clientX; pt.y = e.clientY;
     updateMarkerlightOverlay(pt.matrixTransform(svg.getScreenCTM().inverse()));
   }
 
-  function onMouseUp(e) {
+  function onPointerUp(e) {
     if (!markerlightState) return;
-    svg.removeEventListener('mousemove', onMouseMove);
-    svg.removeEventListener('mouseup', onMouseUp);
+    svg.removeEventListener('pointermove', onPointerMove);
+    svg.removeEventListener('pointerup', onPointerUp);
+    svg.removeEventListener('pointercancel', onPointerCancel);
 
     const pt = svg.createSVGPoint();
     pt.x = e.clientX; pt.y = e.clientY;
@@ -4908,6 +4999,7 @@ function startMarkerlight(playerSlot) {
     markerlightState = null;
     clearEl(ms.overlay);
     ms.svg.style.cursor = '';
+    ms.svg.style.touchAction = '';
 
     if (target && attacker && rayResult(attacker.x, attacker.y, target.x, target.y, gameData.terrain || {}) !== 'blocked') {
       confirmMarkerlight(attacker, target, playerSlot);
@@ -4917,8 +5009,21 @@ function startMarkerlight(playerSlot) {
     reRender();
   }
 
-  svg.addEventListener('mousemove', onMouseMove);
-  svg.addEventListener('mouseup', onMouseUp);
+  function onPointerCancel() {
+    svg.removeEventListener('pointermove', onPointerMove);
+    svg.removeEventListener('pointerup', onPointerUp);
+    svg.removeEventListener('pointercancel', onPointerCancel);
+    svg.style.cursor = '';
+    svg.style.touchAction = '';
+    clearEl(overlay);
+    markerlightState = null;
+    reRenderPhaseBar();
+    reRender();
+  }
+
+  svg.addEventListener('pointermove', onPointerMove);
+  svg.addEventListener('pointerup', onPointerUp);
+  svg.addEventListener('pointercancel', onPointerCancel);
 }
 
 function updateMarkerlightOverlay(p) {
@@ -5028,6 +5133,7 @@ function beginCastDrag(playerSlot, power) {
   clearEl(overlay);
   castState = { opId: op.id, power, svg, overlay, playerSlot };
   svg.style.cursor = 'crosshair';
+  svg.style.touchAction = 'none'; // MOBILE-1-KT item 2
 
   function findCastTarget(caster, p) {
     const wantEnemy = power.scope.target === 'enemy';
@@ -5038,17 +5144,18 @@ function beginCastDrag(playerSlot, power) {
     });
   }
 
-  function onMouseMove(e) {
+  function onPointerMove(e) {
     if (!castState) return;
     const pt = svg.createSVGPoint();
     pt.x = e.clientX; pt.y = e.clientY;
     updateCastOverlay(pt.matrixTransform(svg.getScreenCTM().inverse()));
   }
 
-  function onMouseUp(e) {
+  function onPointerUp(e) {
     if (!castState) return;
-    svg.removeEventListener('mousemove', onMouseMove);
-    svg.removeEventListener('mouseup', onMouseUp);
+    svg.removeEventListener('pointermove', onPointerMove);
+    svg.removeEventListener('pointerup', onPointerUp);
+    svg.removeEventListener('pointercancel', onPointerCancel);
 
     const pt = svg.createSVGPoint();
     pt.x = e.clientX; pt.y = e.clientY;
@@ -5061,6 +5168,7 @@ function beginCastDrag(playerSlot, power) {
     castState = null;
     clearEl(cs.overlay);
     cs.svg.style.cursor = '';
+    cs.svg.style.touchAction = '';
 
     if (target && attacker) {
       const dist = Math.hypot(target.x - attacker.x, target.y - attacker.y);
@@ -5072,8 +5180,21 @@ function beginCastDrag(playerSlot, power) {
     reRender();
   }
 
-  svg.addEventListener('mousemove', onMouseMove);
-  svg.addEventListener('mouseup', onMouseUp);
+  function onPointerCancel() {
+    svg.removeEventListener('pointermove', onPointerMove);
+    svg.removeEventListener('pointerup', onPointerUp);
+    svg.removeEventListener('pointercancel', onPointerCancel);
+    svg.style.cursor = '';
+    svg.style.touchAction = '';
+    clearEl(overlay);
+    castState = null;
+    reRenderPhaseBar();
+    reRender();
+  }
+
+  svg.addEventListener('pointermove', onPointerMove);
+  svg.addEventListener('pointerup', onPointerUp);
+  svg.addEventListener('pointercancel', onPointerCancel);
 }
 
 function updateCastOverlay(p) {
