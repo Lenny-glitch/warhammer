@@ -1362,3 +1362,47 @@ count now resolves correctly regardless of what else is occupying that
 pixel.
 
 Files: `warhammer40k/js/board.js` (casualty-allocation click handler).
+
+---
+
+## BUG-40K-BOARD-BATCH item 1 — target-click occlusion (2026-07-18)
+
+Brief: `briefs/BUG_40K_BOARD_BATCH_BRIEF.md`. Pre-emptive fix for the exact
+landmine BUG-40K-CASUALTY-LOCK flagged: the shooting/charge target-click
+handler right next to the casualty-allocation one used the identical
+single-`e.target.closest()` lookup, so a valid target token sitting behind
+an ineligible one (wrong faction, out of range, a corpse) at the same
+screen pixel could never be clicked — the ineligible token silently wins
+paint order and the click resolves to nothing.
+
+**Fix:** same pattern as the casualty fix, applied to this handler too —
+`document.elementsFromPoint(e.clientX, e.clientY)` walks the full z-stack
+for the first `[data-unit-group]` whose group is actually in
+`validTargetGroups`, instead of only ever considering the topmost element.
+
+**Reproduced before fixing** (synthetic Firebase fixture, real
+Playwright/CDP clicks, `.playwright-libs` workaround): a guard shooter, a
+valid eldar target, and a friendly guard "occluder" token placed at the
+exact same board coordinates as the target (key-ordered to paint later,
+same trick BUG-40K-CASUALTY-LOCK's repro used). Confirmed the friendly
+occluder is never itself a valid target (different `unitGroup`, and
+`validTargetGroups` only ever contains enemy groups per
+`findValidTargets`), so pre-fix this was a hard "can't click it" case, not
+just imprecision.
+
+### Test — both required checks, pass
+
+1. **Stacked target (the back one).** PASS — clicking the exact screen
+   spot shared by the occluder and the real target resolved shooting
+   targeting to "Wraithguard (target)" (the actually-intended, occluded
+   group), reaching the resolved/Confirm-Shooting state.
+2. **Normal, un-stacked targeting.** PASS — a second, unoccluded enemy
+   group at a different spot on the same board resolved correctly to
+   itself when clicked, same session, no regression.
+
+No corresponding symptom had been reported for this path — fixed
+pre-emptively per the brief, same mechanism, same fix shape, no new
+pattern invented.
+
+Files: `warhammer40k/js/board.js` (target-click handler for
+shooting/charge targeting).

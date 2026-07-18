@@ -969,16 +969,22 @@ window.Board = (() => {
       });
     }
 
-    // Target-click for shooting and charge targeting (fires on mousedown; no drag needed)
+    // Target-click for shooting and charge targeting (fires on mousedown; no
+    // drag needed). BUG-40K-BOARD-BATCH item 1: same z-stack walk as the
+    // casualty-allocation handler above (BUG-40K-CASUALTY-LOCK) — a plain
+    // .closest() only sees the topmost token at that pixel, so a valid
+    // target sitting behind an ineligible token (out of range, wrong
+    // faction, a corpse) could never be clicked. elementsFromPoint walks
+    // the whole stack for the first token whose group is actually valid.
     if (onTargetSelected && validTargetGroups && validTargetGroups.size > 0) {
       svg.addEventListener('mousedown', e => {
-        const tokenG = e.target.closest('[data-unit-group]');
-        if (!tokenG) return;
-        const groupId = tokenG.dataset.unitGroup;
-        if (validTargetGroups.has(groupId)) {
-          e.preventDefault();
-          onTargetSelected(groupId);
-        }
+        const stack = document.elementsFromPoint(e.clientX, e.clientY);
+        const hit = stack
+          .map(el => el.closest && el.closest('[data-unit-group]'))
+          .find(tokenG => tokenG && validTargetGroups.has(tokenG.dataset.unitGroup));
+        if (!hit) return;
+        e.preventDefault();
+        onTargetSelected(hit.dataset.unitGroup);
       });
     }
 
