@@ -576,7 +576,9 @@ window.Board = (() => {
         }
       }
 
-      svg.addEventListener('mousemove', e => {
+      // MOBILE-1-40K item 2: pointer events (mouse+touch+pen, one path) —
+      // REPLACES the mouse* listeners below, doesn't run alongside them.
+      svg.addEventListener('pointermove', e => {
         const pos = toSVG(svg, e.clientX, e.clientY);
         const { gx, gy } = snapSq(pos.x, pos.y);
         ghost.setAttribute('x', gx);
@@ -601,7 +603,7 @@ window.Board = (() => {
         }
       });
 
-      svg.addEventListener('mouseleave', () => {
+      svg.addEventListener('pointerleave', () => {
         ghost.setAttribute('opacity', '0');
         svg.style.cursor = '';
       });
@@ -623,9 +625,14 @@ window.Board = (() => {
         if (paints.length || erases.length) opts.onTerrainStroke(paints, erases);
       }
 
-      svg.addEventListener('mousedown', e => {
+      svg.addEventListener('pointerdown', e => {
         if (e.button !== 0) return;
         e.preventDefault();
+        // Pointer capture: this listener is scoped to the SVG element (not
+        // document, unlike the movement drag above), so without capture a
+        // fast finger-drag that strays outside the SVG's bounds mid-stroke
+        // would silently stop delivering pointermove/pointerup here.
+        svg.setPointerCapture(e.pointerId);
         const pos = toSVG(svg, e.clientX, e.clientY);
         const { gx, gy } = snapSq(pos.x, pos.y);
         const key     = sqKey(gx, gy);
@@ -637,10 +644,10 @@ window.Board = (() => {
         sNetCost  = 0;
         lastGX = gx; lastGY = gy;
         if (!enemyOwned(gx, gy)) applySquare(gx, gy);
-        document.addEventListener('mouseup', commitStroke, { once: true });
+        document.addEventListener('pointerup', commitStroke, { once: true });
       });
 
-      svg.addEventListener('mouseup', commitStroke);
+      svg.addEventListener('pointerup', commitStroke);
     }
 
     // Deployment placement: ghost cluster follows mouse, click to place
@@ -751,7 +758,14 @@ window.Board = (() => {
 
     if (!activeGroup) return;
 
-    svg.addEventListener('mousedown', e => {
+    // MOBILE-1-40K item 2: pointerdown/move/up instead of mouse* — pointer
+    // events fire for mouse, touch, and pen through the SAME code path, so
+    // desktop keeps working unchanged through these same handlers. This is
+    // a REPLACE, not an add-alongside: the old mousedown listener below is
+    // gone entirely, not left running next to this one (both firing on a
+    // real touch tap would double-write to Firebase — a desync risk this
+    // project treats as non-negotiable).
+    svg.addEventListener('pointerdown', e => {
       const tokenG = e.target.closest('[data-unit-id]');
       if (!tokenG) return;
 
@@ -866,8 +880,8 @@ window.Board = (() => {
       };
 
       docUp = () => {
-        document.removeEventListener('mousemove', docMove);
-        document.removeEventListener('mouseup',   docUp);
+        document.removeEventListener('pointermove', docMove);
+        document.removeEventListener('pointerup',   docUp);
         if (!drag) return;
 
         const d = drag;
@@ -911,8 +925,8 @@ window.Board = (() => {
         }
       };
 
-      document.addEventListener('mousemove', docMove);
-      document.addEventListener('mouseup',   docUp);
+      document.addEventListener('pointermove', docMove);
+      document.addEventListener('pointerup',   docUp);
     });
   }
 
@@ -920,8 +934,8 @@ window.Board = (() => {
 
   function render(game, container, opts = {}) {
     if (drag) {
-      document.removeEventListener('mousemove', docMove);
-      document.removeEventListener('mouseup',   docUp);
+      document.removeEventListener('pointermove', docMove);
+      document.removeEventListener('pointerup',   docUp);
       drag = null;
     }
 

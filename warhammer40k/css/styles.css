@@ -176,6 +176,13 @@ body {
 .faction-taken-badge { font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-top: 0.4rem; }
 
 /* ---- Buttons ---- */
+/* MOBILE-1-40K item 3: was padding 0.6rem vertical (~35px total button
+   height, measured by the audit on the shooting queue's "select a unit"
+   buttons) — under the 44px touch-target minimum, and stacked with only
+   a small margin between them, a real mis-tap risk. Bumped globally
+   (not just the queue buttons) so every button in the app meets the
+   minimum consistently, rather than fixing one flagged instance and
+   leaving the same undersized shape everywhere else. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -609,6 +616,14 @@ body {
   inset: 0.5rem;
   width: calc(100% - 1rem);
   height: calc(100% - 1rem);
+  /* MOBILE-1-40K item 2: without this, a touch-drag on the board gets
+     claimed by the browser as a scroll/pan gesture before board.js's
+     pointer handlers ever see it (JS preventDefault() alone isn't
+     reliable — some browsers decide touch-action from CSS before the
+     event handler runs at all). Board pan/zoom is explicitly out of
+     scope for this brief, so disabling every default touch gesture here
+     costs nothing. */
+  touch-action: none;
 }
 
 /* MOBILE-1-40K item 1a: was unbounded — a "select a unit" list renders
