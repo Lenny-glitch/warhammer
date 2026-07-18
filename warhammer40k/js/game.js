@@ -623,6 +623,30 @@ window.Game = (() => {
       .map(([groupId, count]) => ({ groupId, count }));
   }
 
+  // 40K-AUTO-ALLOCATE: picks which `count` alive models take the pending
+  // wounds, in the RAW-mandatory order (already-wounded models must finish
+  // dying before a fresh one starts) plus a sensible default beyond that.
+  // Verified before writing this: real roster-built model instances carry
+  // NO per-model leader/special-weapon signal at all — `equippedRanged`/
+  // `equippedMelee` (including the perModel:false "fires once for the
+  // squad" tag for a chosen/replaced special weapon, see roster.js's
+  // resolveLoadout/tagWeapons) are assigned IDENTICALLY to every model in
+  // a squad at build time; WHICH specific model actually fires a
+  // once-per-squad weapon is resolved dynamically at shooting time
+  // (shooting.js's firingInstances picks any eligible alive one), never
+  // stored back onto a model id. `units.js`'s UNIT_STATS has a hardcoded
+  // 'sergeant' type, but that's the legacy dev-preset table only — real
+  // roster units are never built from it. Confirmed the same conclusion
+  // KL-1's retirement note already reached (killteam/warhammer40k
+  // DEVLOG, Phase 18): "no per-model role data, only per-squad." So this
+  // is a 2-tier order, not 3 — wounded-first (RAW-mandatory), then any
+  // (no leader/special tier exists to sort by).
+  function computeAutoAllocation(aliveModels, count) {
+    const wounded = aliveModels.filter(u => u.wounds < u.maxWounds);
+    const fresh   = aliveModels.filter(u => u.wounds >= u.maxWounds);
+    return [...wounded, ...fresh].slice(0, count).map(u => u.id);
+  }
+
   function buildAllocationBarContent(group, aliveModels, isAutoWipe) {
     const name  = escHtml(groupLabel(group.groupId));
     const count = group.count;
@@ -642,7 +666,10 @@ window.Game = (() => {
         Select <strong>${count}</strong> model${count !== 1 ? 's' : ''} to remove from the board.
         (<span id="allocation-selected-count">0</span>/${count} selected)
       </p>
-      <button class="btn btn-primary" id="btn-confirm-allocation" disabled>Confirm Removal</button>`;
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="btn-confirm-allocation" disabled>Confirm Removal</button>
+        <button class="btn btn-ghost" id="btn-auto-allocate">Auto-Allocate</button>
+      </div>`;
   }
 
   // ---- Phase-bar HTML builders ----
@@ -2112,6 +2139,36 @@ window.Game = (() => {
           allocationState = null;
         } catch (_) {
           if (allocBtn) { allocBtn.disabled = false; allocBtn.textContent = isAutoWipe ? 'Remove All Models' : 'Confirm Removal'; }
+        }
+      });
+    }
+
+    // 40K-AUTO-ALLOCATE: one-click shortcut, not a replacement — only
+    // rendered in the non-wipe branch (buildAllocationBarContent), so it
+    // never appears alongside "Remove All Models" (already a one-click
+    // whole-unit removal). Computes the same deadIds a manual player
+    // would have picked (computeAutoAllocation's wounded-first order) and
+    // routes through the EXACT same allocateCasualties write the manual
+    // Confirm Removal button uses — no parallel removal path.
+    const autoAllocBtn = document.getElementById('btn-auto-allocate');
+    if (autoAllocBtn && allocationState) {
+      autoAllocBtn.addEventListener('click', async () => {
+        autoAllocBtn.disabled = true;
+        if (allocBtn) allocBtn.disabled = true;
+        autoAllocBtn.innerHTML = '<span class="spinner"></span>';
+        const { groupId }  = allocationState;
+        const allocFaction = isDev ? turn.activePlayer : localFaction;
+        const pg           = getPendingCasGroups(game, allocFaction).find(g => g.groupId === groupId);
+        if (!pg) return;
+        const aliveInGroup = Object.values(units).filter(u => u.unitGroup === groupId && u.alive);
+        const deadIds       = computeAutoAllocation(aliveInGroup, pg.count);
+        try {
+          await window.GameState.allocateCasualties(currentGameId, groupId, deadIds, units);
+          allocationState = null;
+        } catch (_) {
+          autoAllocBtn.disabled = false;
+          autoAllocBtn.textContent = 'Auto-Allocate';
+          if (allocBtn) allocBtn.disabled = allocationState.selected.size !== pg.count;
         }
       });
     }

@@ -1528,3 +1528,74 @@ would.
 Files: `warhammer40k/js/board.js` (drag state gains `syncGroup`, passed
 to `onModelMoved`), `warhammer40k/js/game.js` (`activateGroup`,
 three `onModelMoved` call sites, `btn-confirm-move` auto-arrange gate).
+
+---
+
+## 40K-AUTO-ALLOCATE — one-click wound allocation (2026-07-18)
+
+Brief: `briefs/40K_AUTO_ALLOCATE_BRIEF.md`. Manual casualty allocation
+works (6981b0b), but clicking models one at a time is tedious for big
+units — adds an optional "Auto-Allocate" shortcut alongside it.
+
+**Leader/special-model signal: verified none exists, fell back as
+instructed.** Checked `roster.js`'s `buildUnitsFromRoster` directly: a
+squad's `equippedRanged`/`equippedMelee` (including the `perModel:false`
+tag `resolveLoadout`/`tagWeapons` attach to a chosen/replaced special
+weapon — see 40K-P3) are computed ONCE per roster unit and assigned
+IDENTICALLY to every model instance in that squad's build loop — WHICH
+specific model actually carries a once-per-squad weapon is resolved
+dynamically at fire time (`shooting.js`'s `firingInstances` just picks
+any eligible alive model), never written back onto a model id. `units.js`
+has a hardcoded `sergeant` type, but that's the legacy dev-preset table
+only (`grep` confirmed `sergeant`/`leader`/`role` appear nowhere in
+`roster.js`) — real roster-built games never touch it. This matches KL-1's
+own retirement note (Phase 18, this same DEVLOG): "no per-model role
+data, only per-squad." **Conclusion: no clean signal, so the RAW-mandatory
+tier (already-wounded models finish first) is the only tier that exists —
+plain-vs-leader-vs-special ordering was not invented.**
+
+**Implementation** (`js/game.js`): `computeAutoAllocation(aliveModels,
+count)` sorts wounded-first (`wounds < maxWounds`) then everyone else, and
+takes the first `count` ids — that's the entire ordering rule. A new
+"Auto-Allocate" button renders only in the non-wipe branch of
+`buildAllocationBarContent` (the wipe branch's existing "Remove All
+Models" already IS a one-click, decision-free removal — a second button
+doing the identical thing there would be redundant, not a feature). Its
+click handler computes `deadIds` via `computeAutoAllocation` and calls
+`window.GameState.allocateCasualties(...)` — **the exact same function
+the manual Confirm Removal button calls**, same arguments shape, no
+parallel write path. Manual per-model toggle selection is completely
+untouched — the two buttons sit side by side, either one usable per the
+brief's "shortcut, not a replacement."
+
+### Test — all 4 required checks, pass
+
+Synthetic Firebase fixtures + real Playwright/CDP interaction (disposable
+test games, deleted after verification), matching this project's
+established one-off-test convention.
+
+1. **5-model unit, model_0 already wounded (1/3), 3 pending wounds.
+   Auto-Allocate.** PASS — model_0 (wounded) died along with 2 fresh
+   models (3 dead total, 2 alive), `pendingCasualties` cleared to `null`
+   in one click — no separate Confirm step needed since the button IS the
+   confirm action.
+2. **Other client sees the same result.** PASS — two real separate
+   browser contexts; both showed identical post-allocation "2 models"
+   for the eldar player strip, no desync.
+3. **Manual allocation untouched.** PASS — fresh fixture, manually
+   clicked 2 models (no Auto-Allocate interaction at all), Confirm
+   Removal worked exactly as before BUG-40K-CASUALTY-LOCK/this brief.
+4. **Full wipe edge (wounds ≥ unit size).** PASS — the wipe branch's
+   pre-existing "Remove All Models" one-click (this brief's "via
+   auto-allocate" is already satisfied by that path — no per-model
+   decision exists to make when everyone dies, so no second button was
+   added there) still removed the whole 5-model unit cleanly; confirmed
+   `#btn-auto-allocate` correctly does NOT render in this branch.
+
+**Determinism:** no randomness anywhere in `computeAutoAllocation` — a
+pure sort + slice over the same `units` snapshot both clients already
+have, writing through the identical `allocateCasualties` path manual
+allocation uses. Test 2 confirms no observed divergence.
+
+Files: `warhammer40k/js/game.js` (`computeAutoAllocation`,
+`buildAllocationBarContent`, new `btn-auto-allocate` handler).
