@@ -1874,3 +1874,102 @@ Files: `warhammer40k/js/hit-fx.js` (new), `warhammer40k/js/board.js`
 (`collectHitFX`, `lastKnownHealth`, wiring in `drawUnits`),
 `warhammer40k/css/styles.css` (`.hitfx-wound`/`.hitfx-kill` keyframes),
 `warhammer40k/index.html` (script tag).
+
+---
+
+## BUG-40K-LOSING-SCREEN — loser saw VICTORY instead of defeat (2026-07-19)
+
+Brief: `briefs/BUG_40K_LOSING_SCREEN_BRIEF.md`. Live playtest report:
+elimination win, both browser windows rendered the same "VICTORY /
+<winner> / <loser> has been eliminated" screen.
+
+### Root cause: option (b) — 40k's screen never had per-viewer logic
+
+Read `renderGameOver()` (`js/game.js`, was ~line 1501) before touching
+anything, per standing rule. It builds its HTML entirely from
+`game.gameOver.{winner,reason}` — never reads `localFaction` at all, so
+every client rendered the identical winner-perspective markup regardless
+of who was actually looking at it. Not a broken copy of KT's screen
+(KT's `renderGameOver(playerSlot)` — `killteam/index.html` ~line 1519 —
+compares `winner === playerSlot` and has since KT-3); 40k's version
+predates that pattern and never had one. Confirmed the correct identity
+source: `renderInitiative()` two functions up already does exactly this
+comparison (`iAmWinner = winner === localFaction`, `js/game.js:1395`)
+for the roll-off screen, so this fix reuses that existing concept
+instead of inventing a second one.
+
+### Fix — same data, per-viewer render
+
+`renderGameOver` now computes `iAmWinner = winner === localFaction` and
+branches the DOM on it: title stays the winner's name either way (both
+players should agree on WHO won), subtitle switches "Victory"/"Defeat",
+detail text switches from "eliminated the loser" framing to "your force
+was eliminated" framing, and the screen root gets an `is-victory`/
+`is-defeat` class. CSS (`css/styles.css`): defeat's subtitle recolors to
+`var(--red-bright)` (the same red already used for `.btn-primary`,
+nothing new introduced); victory keeps the existing dim/gold look
+untouched. Win-DETECTION (`state.js`'s three `gameOver` write sites) was
+not touched, per the brief.
+
+### Draw/mutual-wipe path: does not exist in 40k, confirmed by reading, not fixed
+
+The brief asked me to check. All three `state.js` write sites
+(`confirmMeleeAttack`, `confirmUnitShoot`, `allocateCasualties`) handle
+a simultaneous double-wipe by picking a winner anyway (`deadFac ===
+'guard' ? 'eldar' : 'guard'` off whichever unit happened to die) rather
+than writing `winner: null` the way KT's `checkForWipeout` does. 40k has
+no draw screen and no draw detection — a true mutual wipeout currently
+gets attributed to one side arbitrarily. Out of scope here (brief:
+"don't touch win-detection logic" and treats a winner as already
+correctly found) — flagging as a real gap for a future brief, not
+fixing it silently. If it *were* to fire today, this session's new
+render code would make it worse in a specific way worth knowing:
+`loser = winner === 'guard' ? 'eldar' : 'guard'` resolves `loser =
+'guard'` when `winner` is null/absent, and `iAmWinner = winner ===
+localFaction` is false for both viewers — both clients would show
+DEFEAT, nobody would see victory. Noted for whoever picks up the draw
+gap; not triggerable from current write-site code so not tested live.
+
+### Test — two real browser contexts, MANDATORY per project rule
+
+Local static server (`python3 -m http.server`) + Playwright/CDP via the
+existing `.playwright-libs` `libasound.so.2` workaround (borrowed from
+`killteam/`, same as prior 40k sessions — `warhammer40k/` still has no
+copy of its own). Disposable `games/` fixtures written directly via the
+Firebase REST API (full valid schema incl. `gameOver` pre-set, matching
+KT_ELIMINATION_MODE's precedent) rather than playing a game to an actual
+wipeout, since the only code path under test is the end-game render —
+win-detection is untouched and covered by existing tests. Two separate
+Playwright *browser contexts* (separate `localStorage`, so each can hold
+its own `w40k_faction_{gameId}`), not two tabs in one context. Both
+fixtures deleted from live Firebase after the run.
+
+1. **Guard wins, eldar loses (`gameOver.winner: 'guard'`).** PASS —
+   guard's window: `is-victory`, subtitle "Victory", detail led with the
+   loser being eliminated. Eldar's window: `is-defeat`, subtitle
+   "Defeat", detail led with "Your force has been eliminated," red
+   subtitle color confirmed via `getComputedStyle` (`rgb(160,32,32)` =
+   `--red-bright`).
+2. **Both windows agree on WHO won.** PASS — both windows' title text
+   was byte-identical (`"AaronP"`), read via `textContent` on the live
+   DOM (not page-source regex — KT's own devlog flagged that exact
+   false-pass trap once, checked here on purpose).
+3. **Reverse case — eldar wins, guard loses.** Not in the brief's
+   checklist but added since the first pass alone couldn't rule out a
+   hardcoded-by-slot bug (e.g. "guard always sees victory" would have
+   also passed check 1 by coincidence). PASS — guard's window showed
+   `is-defeat`/"Defeat", eldar's showed `is-victory`/"Victory", proving
+   the branch follows `localFaction` and not slot identity.
+4. **Draw/mutual-wipe path.** Not tested live — confirmed by reading
+   `state.js` that 40k cannot currently produce a `gameOver` write with
+   a null/absent winner, so there is no reachable state to test. See
+   above.
+
+One flaky first run: eldar's screen read back `null` at a 1200ms wait on
+the reverse-case check (second `newContext()`'s Firebase subscription
+hadn't resolved yet) — not a product bug, raised the wait to 2000ms and
+it passed consistently on rerun. Noted so a future session doesn't
+mistake a short Playwright wait for a real intermittent bug here.
+
+Files: `warhammer40k/js/game.js` (`renderGameOver`), `warhammer40k/css/
+styles.css` (`.game-over-screen.is-defeat .game-over-subtitle`).

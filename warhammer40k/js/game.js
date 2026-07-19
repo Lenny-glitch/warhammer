@@ -1511,15 +1511,23 @@ window.Game = (() => {
     const losName = losPlayer.name || FACTION_NAMES[loser]  || loser;
     const winnerAlive = Object.values(units).filter(u => u.faction === winner && u.alive).length;
 
+    // BUG-40K-LOSING-SCREEN: render relative to the LOCAL viewer, same
+    // identity check renderInitiative already uses (`iAmWinner`), not
+    // the winner unconditionally — this screen used to show "Victory"
+    // to both clients.
+    const iAmWinner = winner === localFaction;
+
     // Stop listening — game is over
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
 
     document.getElementById('game-content').innerHTML = `
-      <div class="game-over-screen">
+      <div class="game-over-screen ${iAmWinner ? 'is-victory' : 'is-defeat'}">
         <div class="game-over-eyebrow">${reason === 'annihilation' ? 'Annihilation' : 'Game Over'}</div>
         <div class="game-over-title">${escHtml(winName)}</div>
-        <div class="game-over-subtitle">Victory</div>
-        <div class="game-over-detail">${escHtml(losName)} has been eliminated.<br>${winnerAlive} model${winnerAlive !== 1 ? 's' : ''} remaining.</div>
+        <div class="game-over-subtitle">${iAmWinner ? 'Victory' : 'Defeat'}</div>
+        <div class="game-over-detail">${iAmWinner
+          ? `${escHtml(losName)} has been eliminated.<br>${winnerAlive} model${winnerAlive !== 1 ? 's' : ''} remaining.`
+          : `Your force has been eliminated.<br>${escHtml(winName)} stands victorious with ${winnerAlive} model${winnerAlive !== 1 ? 's' : ''} remaining.`}</div>
         <a href="/" class="btn btn-primary game-over-btn">Return to Lobby</a>
       </div>
     `;

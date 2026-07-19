@@ -782,6 +782,9 @@ body {
   letter-spacing: 0.15em;
   margin-bottom: 1rem;
 }
+/* BUG-40K-LOSING-SCREEN: per-viewer verdict — victory stays gold,
+   defeat reads in the same red already used for primary/danger action. */
+.game-over-screen.is-defeat .game-over-subtitle { color: var(--red-bright); }
 .game-over-detail {
   font-size: 0.9rem;
   color: var(--text-dim);
