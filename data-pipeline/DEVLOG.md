@@ -700,3 +700,95 @@ documented permissive gap (same posture as the already-accepted
 Phosphor blaster case).
 
 Files: none (investigation only, per the brief's own stop condition).
+
+---
+
+## KT-RANGE-AUDIT — reframed question, answer is "none found" (2026-07-18)
+
+Brief: `briefs/KT_RANGE_AUDIT_BRIEF.md`. Nox corrected the prior lane's
+framing directly: KT2024 RAW has MOST ranged weapons genuinely uncapped
+(small killzone, GW doesn't bother capping most guns) — the 459
+null-range non-psychic weapons that `BUG_KT_MISSING_RANGE` flagged as "the
+bug" are mostly CORRECT, not broken. This brief narrows the real question
+to: is there a SMALL subset within that list that RAW actually does have
+a stated range, wrongly showing ∞? Archetype defaults are explicitly dead
+and not attempted.
+
+### Method
+
+Four independent checks, none of which found a confirmed bug:
+
+1. **Glossary structural check.** Read `output/rules-glossary-kt.json` (the
+   pipeline's own canonical 22-entry KT weapon-rule vocabulary) end to
+   end for anything that might express a range limit OTHER than the
+   literal `Range x` rule itself, per the brief's explicit "watch for a
+   keyword, not just a numeric field" warning. Exactly one entry mentions
+   range at all, and it IS `Range x` ("Only operatives within *x* of the
+   active operative can be valid targets"). The one keyword whose NAME
+   sounded plausible, `Limited x`, actually means an ammo-count cap ("used
+   this weapon *x* times in the battle"), not range — checked its
+   description directly, not assumed from the name. **No hidden
+   range-limiting keyword mechanism exists in this ruleset at all** — the
+   brief's core worry doesn't apply here structurally, not just in the
+   samples checked.
+2. **Cross-referenced the highest-risk categories against real published
+   KT2024 rules** (Wahapedia's `kill-team3` section — the same kind of
+   external rules reference this project already trusts for 40k
+   scraping), not just BSData source text, per the brief's own allowance
+   to use "KT2024 rules knowledge" as a method. Picked grenade/thrown
+   weapons and sniper weapons specifically because real-world tabletop
+   convention makes them the most PLAUSIBLE candidates for a genuinely
+   stated range unlike ordinary guns: Auxiliary Grenade Launcher
+   (frag/krak) and Bolt Sniper Rifle (hyperfrag), both Angels of Death.
+   Wahapedia's own current KT3 datacard text confirms **no range value on
+   any of the three** — real RAW, not a data gap.
+3. **Dual-profile internal check.** Several weapons in the flagged list
+   follow a `(focused)`/`(sweeping)` split (Heavy bolter and others) —
+   worth checking whether one profile secretly carries a range the other
+   is missing (which would prove a genuine partial-population gap).
+   Checked Heavy bolter's own two profiles directly: **both** null, not
+   one-has-it-one-doesn't — consistent with the prior lane's own confirmed
+   BSData read for this exact weapon (no `Range N"` text in source at
+   all), not a new finding but a useful sanity check on the dual-profile
+   pattern generally.
+4. **Cross-faction consistency check** (a pure internal-data check,
+   independent of outside rules knowledge): grouped all 342 distinct
+   non-psychic ranged weapon names across all 47 factions and checked
+   whether the SAME weapon name ever shows a real range value in one
+   faction's copy but null in another's — the cleanest possible signal
+   for a spotty per-faction data-entry gap, since the same physical weapon
+   can't have two different real ranges. **Zero inconsistencies found**
+   across all 342 names — every weapon's range value (populated or null)
+   is identical everywhere it appears. Rules out the most likely shape a
+   real gap would take.
+
+One `(skytorch)` Flamer variant (Vespid Stingwings) initially looked like
+a same-weapon-different-range case (`Flamer (standard)` has `8"`,
+`Flamer (skytorch)` is null) — checked its keywords directly before
+flagging it: it carries a custom `Skytorch` keyword and `Torrent 0"` (not
+the standard `Torrent 2"` its sibling has), marking it as a genuinely
+different, intentionally-unusual named sub-profile, not an incomplete
+copy of the same weapon. Not a bug.
+
+### Result: no confirmed bugs found
+
+Combined with the prior lane's own direct BSData XML reads (8 Nemesis
+Claw weapons + Bolt rifle, all confirmed no `Range N"` phrase in source),
+every weapon actually checked across both sessions — by source-text
+inspection, by real published rules, and by internal cross-faction
+consistency — came back "correctly uncapped." **No `patches.json` change
+made. No upload needed.** This is exactly the "nothing is broken, the ∞
+is correct" outcome the brief said was valid and welcome — not a
+non-result, a real answer.
+
+**What wasn't done, stated plainly:** this is a targeted, evidence-based
+sample (the categories and checks most likely to surface a real gap), not
+an exhaustive card-by-card check of all 138–197 distinct flagged weapon
+names against official datacards. If Aaron or Nox hits a SPECIFIC weapon
+in live play that they know RAW has a printed range and it's shooting
+unlimited, that's a concrete, sourceable report worth its own small
+patch — this audit closes the general "is this a systemic bug" question,
+not every individual weapon's provenance.
+
+Files: none (investigation only — no patch, no upload, matching the
+brief's own "none found" being a valid stop condition).
