@@ -1599,3 +1599,67 @@ allocation uses. Test 2 confirms no observed divergence.
 
 Files: `warhammer40k/js/game.js` (`computeAutoAllocation`,
 `buildAllocationBarContent`, new `btn-auto-allocate` handler).
+
+---
+
+## 40K-INFO-LEGIBILITY item 1 — health visible at full, not just when damaged (2026-07-18)
+
+Brief: `briefs/40K_INFO_LEGIBILITY_BRIEF.md`. Nox's #10: a 13-wound Leman
+Russ and a 1-wound trooper look identical at full health — health only
+shows once a model is already damaged.
+
+**Investigated first.** Found the single existing on-token health visual:
+`board.js`'s `drawUnits` draws MISSING wounds as a red pie wedge, gated
+`if (u.wounds < u.maxWounds)`. Grepped the rest of the codebase for any
+other wound display — none exists besides this wedge and the hover-only
+SVG `<title>` tooltip (W40K-UX1's `"{label} — {wounds}/{maxWounds}W"`,
+already flagged elsewhere as not touch-reachable and, same complaint
+here, not glance-reachable either).
+
+**Removing the gate alone can't fix this, confirmed before writing code:**
+the wedge represents the MISSING fraction of max wounds — at full health
+that's mathematically 0% regardless of whether max is 1 or 13, so even
+with the `if` deleted a fresh 1-wound trooper and a fresh 13-wound vehicle
+would still both draw a literal zero-degree wedge (nothing). A pure
+percentage can't carry absolute magnitude. Left the wedge itself
+completely untouched (it does its one job — missing proportion — 
+correctly already) and instead added the thing that actually carries
+magnitude: a small always-drawn `${wounds}/${maxWounds}` text below each
+token, using the exact same technique already used for the `abbrev` type
+letter right above it (a plain SVG `<text>`, same font/weight
+convention) — reusing the existing presentation's own drawing style
+rather than introducing a new indicator type. Damaged models render this
+text in the same red the wedge already uses, so the two signals read as
+one coherent system instead of two competing ones. No per-viewer
+branching exists anywhere in `drawUnits` — this text renders for every
+alive token regardless of whose faction is looking, same as the wedge
+already did.
+
+### Test — all 3 required checks, pass
+
+Synthetic Firebase fixture + Playwright (disposable test game, deleted
+after):
+
+1. **Fresh unit, no damage.** PASS — a 1-wound trooper at full health
+   shows `1/1`, a 13-wound vehicle at full health shows `13/13`. Neither
+   was blank.
+2. **Damage it, confirm updates + no regression.** PASS — dropping the
+   13-wound vehicle to 5 wounds updated the text to `5/13` (turning red)
+   and the pre-existing red wedge still drew exactly as before —
+   untouched code path, confirmed still firing.
+3. **1-wound vs 13-wound read differently at full health.** PASS — `1/1`
+   vs `13/13`, distinguishable at a glance without any damage having
+   happened yet.
+
+**Opponent visibility confirmed directly**, per the brief's explicit
+ask: loaded as the eldar player and read the GUARD player's own trooper
+token — `1/1` renders identically for the non-owning viewer, since
+`drawUnits` has no faction-gating on this text (or the wedge, or the
+tooltip) at all.
+
+Nothing here turned out bigger than expected — this was genuinely a
+"the info exists, just wasn't shown" fix, one new text element reusing
+an existing drawing pattern.
+
+Files: `warhammer40k/js/board.js` (`drawUnits` — new always-on wounds
+text, wedge untouched).

@@ -428,6 +428,28 @@ window.Board = (() => {
       label.textContent = abbrev;
       g.appendChild(label);
 
+      // 40K-INFO-LEGIBILITY item 1: the health sector above only ever draws
+      // MISSING wounds as a red wedge — at full health that's correctly a
+      // 0° wedge, i.e. nothing, so a 13-wound Leman Russ and a 1-wound
+      // trooper looked identical until the first hit landed. That sector
+      // alone can never fix this even with its gate removed: a percentage
+      // (0% missing) can't distinguish absolute magnitude at full health.
+      // Reusing the same technique as the `abbrev` label above (a plain
+      // always-drawn text, not a new widget) to show the actual wounds
+      // count/max — visible to BOTH players (this whole render path has no
+      // per-viewer branching), same tooltip numbers already carried, just
+      // no longer hover-only. Damaged state reuses the wedge's own red so
+      // the two signals read as one system, not two competing ones.
+      const woundsLabel = svgEl('text', {
+        x: pos.x, y: pos.y + r * 1.9,
+        'text-anchor': 'middle',
+        fill: u.wounds < u.maxWounds ? 'rgba(220,70,70,0.95)' : stroke,
+        'font-size': Math.max(r * 0.55, 0.32),
+        'font-family': 'sans-serif', 'font-weight': 700
+      });
+      woundsLabel.textContent = `${u.wounds}/${u.maxWounds}`;
+      g.appendChild(woundsLabel);
+
       // Passive card-highlight ring (gold, non-interactive)
       if (highlightGroup && u.unitGroup === highlightGroup) {
         g.insertBefore(svgEl('circle', {
