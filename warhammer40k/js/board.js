@@ -5,6 +5,16 @@ window.Board = (() => {
   let docMove = null;
   let docUp   = null;
 
+  // 40K-BLOOD-FX: last-known {wounds, alive} per unit id, used to detect a
+  // wound/kill purely from state deltas (same pattern game.js's
+  // lastShotKey already uses for the shot tracer) — never a local click,
+  // so both clients independently see the identical Firebase write and
+  // play the identical effect. Starts empty on every fresh page load; a
+  // unit with no prior snapshot (first render after join/reload, OR a
+  // squad that just deployed) is seeded silently with no effect, so
+  // rejoining mid-game never replays every historical hit.
+  let lastKnownHealth = {};
+
   // ---- SVG helpers ----
 
   function svgEl(tag, attrs) {
@@ -317,6 +327,27 @@ window.Board = (() => {
     return SIZE_TIER_RADIUS[tier];
   }
 
+  // 40K-BLOOD-FX: pure state-diff, no drawing — collects {x,y,kind,
+  // intensity} for any unit whose wounds dropped or who just died since
+  // the LAST time this render loop saw it. Reacts only to real
+  // `u.wounds`/`u.alive` (the actual Firebase-synced fields), never a
+  // client-local `pending` drag overlay, so it can't fire from a purely
+  // local action and both clients compute the identical result from the
+  // identical synced state. Damage magnitude (prev - current, or
+  // whatever was left at the moment of death) is cheap to derive from
+  // the snapshot already being kept, so intensity scales with it rather
+  // than being flat.
+  function collectHitFX(u, x, y, sink) {
+    const prev = lastKnownHealth[u.id];
+    lastKnownHealth[u.id] = { wounds: u.wounds, alive: u.alive };
+    if (!prev) return; // no prior snapshot — first sight of this unit, don't fire
+    if (prev.alive && !u.alive) {
+      sink.push({ x, y, kind: 'kill', intensity: Math.max(1, prev.wounds) });
+    } else if (u.alive && u.wounds < prev.wounds) {
+      sink.push({ x, y, kind: 'wound', intensity: prev.wounds - u.wounds });
+    }
+  }
+
   function drawUnits(parent, units, opts) {
     const { activeGroup, pending, snapshots, coherencyOk,
             shooterGroup, validTargetGroups, selectedTargetGroup,
@@ -326,6 +357,12 @@ window.Board = (() => {
 
     const inShootMode  = !!shooterGroup;
     const showCoherency = activeGroup && coherencyOk;
+
+    // Collected during the loop below, played AFTER every token is drawn
+    // so the effect always paints on top regardless of unit draw order
+    // (appending mid-loop could land a hit flash underneath a
+    // later-drawn token).
+    const hitFxTriggers = [];
 
     allModels.forEach(u => {
       // W40K-UX1 item 1: readable name for the hover tooltip — roster-built
@@ -341,6 +378,7 @@ window.Board = (() => {
 
       // Destroyed token — generic, works for any model type
       if (!u.alive) {
+        collectHitFX(u, u.x, u.y, hitFxTriggers);
         const r = getTokenVisualRadius(u);
         const g = svgEl('g', { 'data-unit-id': u.id, 'data-unit-group': u.unitGroup, class: 'token-hoverable' });
         g.style.opacity = '0.38';
@@ -367,6 +405,7 @@ window.Board = (() => {
 
       // Effective position: pending override → Firebase
       const pos = (pending && pending[u.id]) ? pending[u.id] : { x: u.x, y: u.y };
+      collectHitFX(u, pos.x, pos.y, hitFxTriggers);
 
       const g = svgEl('g', { 'data-unit-id': u.id, 'data-unit-group': u.unitGroup, class: 'token-hoverable' });
       const title = svgEl('title', {});
@@ -521,6 +560,12 @@ window.Board = (() => {
 
       parent.appendChild(g);
     });
+
+    // Play collected hit/kill effects AFTER every token is drawn, so a
+    // flash always paints on top regardless of unit draw order.
+    if (window.HitFX && hitFxTriggers.length) {
+      hitFxTriggers.forEach(t => window.HitFX.play(parent, t.x, t.y, { kind: t.kind, intensity: t.intensity }));
+    }
   }
 
   // ---- Terrain collision ----

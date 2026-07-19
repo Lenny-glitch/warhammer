@@ -729,6 +729,25 @@ body {
   pointer-events: none;
 }
 
+/* ---- Hit/damage feedback (40K-BLOOD-FX, js/hit-fx.js) ---- */
+@keyframes hitfx-wound-fade {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+.hitfx-wound {
+  animation: hitfx-wound-fade 420ms ease-out forwards;
+  pointer-events: none;
+}
+@keyframes hitfx-kill-fade {
+  0%   { opacity: 1;    }
+  55%  { opacity: 0.95; }
+  100% { opacity: 0;    }
+}
+.hitfx-kill {
+  animation: hitfx-kill-fade 750ms ease-out forwards;
+  pointer-events: none;
+}
+
 /* ---- Game over ---- */
 .game-over-screen {
   display: flex;

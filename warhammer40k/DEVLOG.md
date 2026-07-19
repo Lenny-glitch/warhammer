@@ -1763,3 +1763,114 @@ first, picked the cheapest option with a stated reason, stopped there.
 
 Files: `warhammer40k/js/game.js` (`enemyUnitsHTML`, both `#panel-units`
 build sites).
+
+---
+
+## 40K-BLOOD-FX — hit/damage visual feedback (2026-07-19)
+
+Brief: `briefs/40K_BLOOD_FX_BRIEF.md`. Aaron wants more visceral feedback
+on a hit/kill; stylized impact feedback (KT's tone), not gore.
+
+### The seam — where the effect lives, what the caller passes
+
+`js/hit-fx.js` (new file, `window.HitFX.play(svg, x, y, opts)`) is the
+whole effect. It is genuinely game-agnostic: it takes an SVG element to
+draw into, board-space coordinates, and `{ kind: 'wound'|'kill',
+intensity }` — it never looks up its own SVG, never reads a unit object,
+never touches Firebase. "A function KT could call tomorrow with its own
+numbers" per the brief's own framing: KT would need its own SVG board
+element and its own (x, y, kind, intensity) — nothing else. Positioning
+is entirely in board units (inches, same space `drawUnits` already draws
+tokens in), so the COORDINATE TRAP the brief calls out doesn't apply —
+this never touches `rect.width/viewBox.width` or any screen-pixel math
+at all, so pan/zoom (an SVG viewBox mutation) carries an in-flight effect
+for free.
+
+The TRIGGER — deciding WHEN a wound/kill happened — is 40k-specific and
+lives entirely in `board.js`'s `drawUnits` (a new `collectHitFX`
+helper + a module-level `lastKnownHealth` snapshot, same pattern
+`game.js`'s existing `lastShotKey` already uses for the shot tracer, so
+this isn't a new architectural idea in this codebase). Every render
+compares each unit's CURRENT `wounds`/`alive` (the real Firebase-synced
+fields — never a client-local `pending` drag overlay) against the
+LAST time this render loop saw that unit; a drop in wounds or an
+alive→dead flip queues an effect at that unit's real board position.
+Effects are drawn in a second pass AFTER every token is appended, so a
+flash always paints on top regardless of unit iteration order. A unit
+with no prior snapshot (first render after join/reload, or a squad that
+just deployed) is seeded silently — rejoining mid-game doesn't replay
+every historical hit.
+
+### Intensity: scales with damage, not flat
+
+Cheap to compute since the snapshot already holds the "before" wounds:
+`intensity = prevWounds - currentWounds` for a wound, or `prevWounds` (at
+least 1) for a kill — no extra reads, no extra state. Bigger hits draw a
+larger flash with more radiating spikes; the module clamps the caller's
+value internally so an extreme input can't produce a degenerate result.
+
+### Visual design
+
+Two CSS keyframe animations (`css/styles.css`, following the existing
+`.tracer-line`/`@keyframes tracer-fade` pattern exactly — same
+mechanism, not a new one): `.hitfx-wound` (420ms opacity fade) and
+`.hitfx-kill` (750ms, bigger/more spikes/red vs amber). Each play() call
+draws one `<g>`: a filled circle (impact flash) plus a handful of
+radiating line spikes (impact marks / brief spatter) — matches the
+brief's explicit "impact marks, brief spatter, hit flash," explicitly
+not gore. Self-removes on `animationend`, with a `setTimeout` fallback
+matching `playTracer`'s own precedent for the case a full board rebuild
+detaches the node before the animation naturally finishes (an accepted,
+pre-existing limitation in this codebase, not something new introduced
+here).
+
+### Determinism verified, not assumed
+
+The trigger reacts to `game.units`, the same object BOTH clients receive
+from their own independent Firebase subscription — there is no local
+click path into it at all (confirmed by reading `collectHitFX`: its only
+inputs are the unit object and the snapshot, no `moveState`/click-handler
+involvement). Verified live with two real separate browser contexts
+(not dev-mode single-tab perspective switching): a REST write killing a
+guard model played the kill effect on BOTH the eldar ("shooter") and the
+guard ("watching") client's own board, independently.
+
+### Test — all 5 required checks, pass
+
+Synthetic Firebase fixtures + Playwright/CDP (disposable games, deleted
+after):
+
+1. **Wound, model survives.** PASS — dropping a Wraithguard from 3→2
+   wounds played a `.hitfx-wound` group at its exact board coordinates
+   (20, 30), confirmed by reading the drawn circle's own `cx`/`cy`.
+2. **Kill, model removed.** PASS — a `.hitfx-kill` group played and the
+   token switched to the destroyed/skull rendering in the same render
+   pass.
+3. **Other client sees the same hit.** PASS — two real separate browser
+   contexts; a kill triggered by one write showed the kill effect on
+   BOTH clients independently, not just whichever page issued the write.
+4. **Pan/zoom anchoring.** PASS — zoomed in (real wheel events, viewBox
+   confirmed to actually change), then took a hit: the effect's drawn
+   `cx`/`cy` were still the raw board coordinates (20, 30), unaffected by
+   the current zoom — it rides the same viewBox transform every token
+   already does.
+5. **Big unit, many simultaneous hits.** PASS — one atomic 20-model
+   Firebase update (all `alive:false` in a single `.update()`-shaped
+   write, matching how a real big volley's `confirmUnitShoot` already
+   writes) rendered all 20 destroyed tokens and 20 simultaneous kill
+   effects within ~300ms (network round-trip included), no page errors,
+   no hang. Not pooled or capped — 20 short-lived SVG groups that
+   self-remove within under a second wasn't judged heavy enough to
+   justify the extra mechanism; noted here as the actual scale tested,
+   not asserted from a design he didn't measure.
+
+### What KT would need to reuse this (one line, per the brief's own ask)
+
+Its own board SVG element and a `{kind, intensity}` call at the right
+(x, y) when ITS OWN wound/kill state changes — `hit-fx.js` itself would
+not need to change at all.
+
+Files: `warhammer40k/js/hit-fx.js` (new), `warhammer40k/js/board.js`
+(`collectHitFX`, `lastKnownHealth`, wiring in `drawUnits`),
+`warhammer40k/css/styles.css` (`.hitfx-wound`/`.hitfx-kill` keyframes),
+`warhammer40k/index.html` (script tag).
