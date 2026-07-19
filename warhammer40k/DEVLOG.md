@@ -1663,3 +1663,103 @@ an existing drawing pattern.
 
 Files: `warhammer40k/js/board.js` (`drawUnits` — new always-on wounds
 text, wedge untouched).
+
+---
+
+## 40K-INFO-LEGIBILITY item 2 — army-at-a-glance (2026-07-18)
+
+Brief's own #3, deliberately open ("investigate and propose before
+building").
+
+### Investigated first
+
+Read how the enemy force is currently presented:
+- **Token colors**: fixed per faction (guard olive, eldar blue) — no
+  per-unit-TYPE distinction.
+- **Token size**: already keyword-tiered (TITANIC/VEHICLE/MOUNTED/default,
+  W40K-UX2 item 1) — the closest existing thing to "type at a glance,"
+  but coarse (4 tiers) and not what this item is about.
+- **Hover tooltip**: name + wounds, but hover-only — already flagged
+  elsewhere (MOBILE-1) as not touch-reachable; same complaint applies
+  here for "at a glance" on desktop too (you still have to point at one
+  token at a time).
+- **The unit-list side panel** (`unitCardsHTML`): exists and is genuinely
+  good (name, alive/total, full stat block) — but **both of its call
+  sites always pass the LOCAL viewer's own faction**
+  (`localFaction`/`myFac`). The opponent's roster is never shown
+  anywhere. This is the actual gap, confirmed by reading, not guessed.
+- **Fog-of-war check** (brief's explicit ask before proposing anything):
+  grepped the whole codebase for `fog`/`concealed`/`hidden.*deploy`/
+  `stealth` — nothing. `drawUnits` already renders every alive model of
+  BOTH factions with real position and current wounds unconditionally
+  (confirmed again for item 1 above). There is no hidden-information
+  concept in this simulator to accidentally violate.
+
+### Chosen fix and why
+
+**Show the opponent's unit list**, the brief's own first-listed
+candidate — picked over the other two for being genuinely cheapest:
+it reuses `unitCardsHTML`'s existing grouping logic and CSS classes
+almost entirely (a new `enemyUnitsHTML`, not a rewrite), needs zero new
+interaction/click-handling, and adds zero clutter to the BOARD itself
+(a real constraint here — MOBILE-1 already found tokens as small as
+4×4px on some presets; a per-unit board label or a new
+color/icon-by-type system would compete for the same cramped space that
+work fought hard to win back). The other two candidates were rejected,
+not just skipped:
+- **A per-unit board label** would need its own always-legible sizing
+  independent of token size, real risk of re-clutter on exactly the
+  small-token cases MOBILE-1 flagged, and duplicates info the panel can
+  show more cheaply.
+- **Color/icon by unit type** is a real, bigger design surface (needs a
+  type→icon/color taxonomy, decisions about what counts as a "type,"
+  and touches the token rendering MOBILE-1/2 already tuned carefully) —
+  explicitly the kind of "if your best idea is big, propose and stop"
+  case the brief warns about. Not attempted.
+
+**Deliberately a LIGHTER render than the full unit card** — name +
+alive/total only, no stat row, no expand-on-click (`enemyUnitsHTML` has
+no `data-card-group`, so it's inert, not wired into the existing
+expand-listener at all) — a full mirrored stat card for BOTH rosters
+stacked in the same panel would double the vertical footprint for detail
+nobody asked to glance at; reusing `.unit-card`/`.unit-card-name`/
+`.unit-card-count` keeps the visual language identical while staying
+compact. Appended as a second "Enemy Army" section under the existing
+"Units" title in the SAME left side panel — no new panel, no layout
+change, matches existing style by construction since it's the same CSS
+classes.
+
+Wired into both places `#panel-units`'s HTML gets built: the main
+render() (`js/game.js`) and the delegated own-card-expand click handler,
+which rebuilds `#panel-units`'s innerHTML on every own-card click — had
+to add the enemy section there too or it would vanish the moment a
+player expanded one of their own cards.
+
+### Test — before/after readability, both required checks
+
+Synthetic Firebase fixture (guard: a 3-model squad + a 13-wound Leman
+Russ; eldar: 5 Wraithguard, 1 already dead) + Playwright, disposable
+game deleted after:
+
+- **Before** (this brief's own baseline, confirmed by reading
+  `unitCardsHTML`'s faction filter): the only way to know what the
+  enemy has is hovering each token one at a time, reading wounds off a
+  tooltip, with no name/count summary available anywhere.
+- **After**: guard's own panel now also lists "Wraithguard — 4/5 models
+  · 1 lost" under "Enemy Army" without touching the board at all — one
+  glance at a static panel section, not N hovers.
+- **Symmetric check**: loaded as the eldar viewer too — sees "Cadian
+  Shock Troops — 3/3 models" and "Leman Russ Battle Tank — 1/1 models"
+  under their own "Enemy Army" section. Confirms this isn't a one-sided
+  fix.
+- **Partial re-render regression check**: clicked one of the viewer's
+  OWN unit cards (the existing expand/highlight interaction) —
+  confirmed the Enemy Army section survives that re-render rather than
+  disappearing, since that code path rebuilds `#panel-units` from
+  scratch.
+
+Nothing here turned out bigger than the brief anticipated — investigated
+first, picked the cheapest option with a stated reason, stopped there.
+
+Files: `warhammer40k/js/game.js` (`enemyUnitsHTML`, both `#panel-units`
+build sites).

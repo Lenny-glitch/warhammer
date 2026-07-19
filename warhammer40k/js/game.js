@@ -529,6 +529,51 @@ window.Game = (() => {
     }).join('');
   }
 
+  // 40K-INFO-LEGIBILITY item 2: army-at-a-glance. Investigated first —
+  // `unitCardsHTML` above always filters to the LOCAL viewer's own
+  // faction (both call sites pass `localFaction`/`myFac`); the opponent's
+  // unit list is never shown anywhere, matching Nox's own complaint
+  // exactly. No fog-of-war/hidden-deployment concept exists in this
+  // codebase at all (grepped for it — nothing) and `drawUnits` already
+  // renders every alive model of BOTH factions with real position and
+  // wounds unconditionally, so a compact enemy roster leaks nothing not
+  // already fully visible on the board itself; it just makes it readable
+  // without hovering every token. Deliberately a LIGHTER render than
+  // unitCardsHTML's full card (name + alive/total only, no stat row, no
+  // expand-on-click) — reuses the same `.unit-card`/`.unit-card-name`/
+  // `.unit-card-count` classes for visual consistency, but this was
+  // picked over mirroring the full card 1:1 specifically to avoid
+  // doubling the panel's vertical footprint with weapon-stat detail
+  // nobody asked to glance at. No `data-card-group` attribute, so these
+  // cards are inert (not wired into the existing expand-on-click
+  // delegated listener) — read-only by construction, not by an extra
+  // check.
+  function enemyUnitsHTML(units, myFaction) {
+    const enemyFaction = myFaction === 'guard' ? 'eldar' : 'guard';
+    const groups = {};
+    Object.values(units).forEach(u => {
+      if (u.faction !== enemyFaction) return;
+      if (!groups[u.unitGroup]) groups[u.unitGroup] = { alive: 0, total: 0 };
+      groups[u.unitGroup].total++;
+      if (u.alive) groups[u.unitGroup].alive++;
+    });
+    const entries = Object.entries(groups);
+    if (!entries.length) {
+      return `<p class="side-panel-empty">No enemy units on the board yet.</p>`;
+    }
+    return entries.map(([gId, info]) => {
+      const deadCount = info.total - info.alive;
+      return `
+        <div class="unit-card ${enemyFaction}-card" style="cursor:default;">
+          <div class="unit-card-name">${escHtml(groupLabel(gId))}</div>
+          <div class="unit-card-count">
+            <span class="alive">${info.alive}</span>/<span>${info.total}</span> models
+            ${deadCount ? `<span class="dead"> · ${deadCount} lost</span>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
   function diceLogHTML(shotLog) {
     const entries = getShotLogEntries(shotLog);
     if (!entries.length) {
@@ -1742,6 +1787,8 @@ window.Game = (() => {
         <div class="side-panel side-panel-left" id="panel-units">
           <div class="side-panel-title">Units</div>
           ${unitCardsHTML(units, localFaction)}
+          <div class="side-panel-title" style="margin-top:1rem;">Enemy Army</div>
+          ${enemyUnitsHTML(units, localFaction)}
         </div>
         <div id="board-wrap" class="board-wrap"></div>
         <div class="side-panel side-panel-right" id="panel-dice">
@@ -2315,7 +2362,8 @@ window.Game = (() => {
         const gId = card.dataset.cardGroup;
         cardState.expanded    = cardState.expanded    === gId ? null : gId;
         cardState.highlighted = cardState.highlighted === gId ? null : gId;
-        cardPanel.innerHTML = `<div class="side-panel-title">Units</div>` + unitCardsHTML(game.units || {}, localFaction);
+        cardPanel.innerHTML = `<div class="side-panel-title">Units</div>` + unitCardsHTML(game.units || {}, localFaction) +
+          `<div class="side-panel-title" style="margin-top:1rem;">Enemy Army</div>` + enemyUnitsHTML(game.units || {}, localFaction);
         renderBoard(game);
       });
     }
